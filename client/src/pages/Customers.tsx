@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { Search, MoreHorizontal, Plus, Edit, Users, Phone, Mail, CreditCard, Clock, History, Crown, Receipt } from "lucide-react";
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Customer, CreditPayment, Sale } from "@shared/schema";
@@ -51,6 +51,117 @@ const emptyForm: CustomerFormData = {
   creditLimit: "0",
   creditPeriodDays: 30,
 };
+
+interface CustomerFormFieldsProps {
+  formData: CustomerFormData;
+  setFormData: React.Dispatch<React.SetStateAction<CustomerFormData>>;
+  isPro: boolean;
+}
+
+const CustomerFormFields = memo(function CustomerFormFields({ formData, setFormData, isPro }: CustomerFormFieldsProps) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label htmlFor="name">Customer Name *</Label>
+        <Input
+          id="name"
+          value={formData.name}
+          onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+          placeholder="Enter customer name"
+          className="mt-1.5"
+          data-testid="input-customer-name"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="phone">Phone Number</Label>
+          <Input
+            id="phone"
+            value={formData.phone}
+            onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+            placeholder="+91 98765 43210"
+            className="mt-1.5"
+            data-testid="input-phone"
+          />
+        </div>
+        <div>
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+            placeholder="customer@email.com"
+            className="mt-1.5"
+            data-testid="input-email"
+          />
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="address">Address</Label>
+        <Textarea
+          id="address"
+          value={formData.address}
+          onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+          placeholder="Enter address"
+          className="mt-1.5"
+          rows={2}
+          data-testid="input-address"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="gstin">GSTIN</Label>
+          <Input
+            id="gstin"
+            value={formData.gstin}
+            onChange={(e) => setFormData(prev => ({ ...prev, gstin: e.target.value }))}
+            placeholder="e.g., 33AABCU9603R1ZM"
+            className="mt-1.5"
+            data-testid="input-gstin"
+          />
+        </div>
+        <div>
+          <Label htmlFor="creditLimit">Credit Limit (₹)</Label>
+          <Input
+            id="creditLimit"
+            type="number"
+            min={0}
+            value={formData.creditLimit}
+            onChange={(e) => setFormData(prev => ({ ...prev, creditLimit: e.target.value }))}
+            placeholder="0"
+            className="mt-1.5"
+            data-testid="input-credit-limit"
+          />
+        </div>
+      </div>
+      {isPro && (
+        <div className="pt-4 border-t">
+          <div className="flex items-center gap-2 mb-3">
+            <Crown className="h-4 w-4 text-amber-600" />
+            <span className="text-sm font-medium text-amber-600">PRO Features</span>
+          </div>
+          <div>
+            <Label htmlFor="creditPeriodDays">Credit Period (Days)</Label>
+            <Input
+              id="creditPeriodDays"
+              type="number"
+              min={0}
+              value={formData.creditPeriodDays}
+              onChange={(e) => setFormData(prev => ({ ...prev, creditPeriodDays: parseInt(e.target.value) || 30 }))}
+              placeholder="30"
+              className="mt-1.5"
+              data-testid="input-credit-period"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Default credit period for calculating bill due dates
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
 
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -189,109 +300,6 @@ export default function Customers() {
 
   const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstandingBalance || 0), 0);
   const customersWithCredit = customers.filter((c) => Number(c.creditLimit || 0) > 0).length;
-
-  const customerFormFields = (
-    <div className="space-y-4">
-      <div>
-        <Label htmlFor="name">Customer Name *</Label>
-        <Input
-          id="name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Enter customer name"
-          className="mt-1.5"
-          data-testid="input-customer-name"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="phone">Phone Number</Label>
-          <Input
-            id="phone"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            placeholder="+91 98765 43210"
-            className="mt-1.5"
-            data-testid="input-phone"
-          />
-        </div>
-        <div>
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            placeholder="customer@email.com"
-            className="mt-1.5"
-            data-testid="input-email"
-          />
-        </div>
-      </div>
-      <div>
-        <Label htmlFor="address">Address</Label>
-        <Textarea
-          id="address"
-          value={formData.address}
-          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          placeholder="Enter address"
-          className="mt-1.5"
-          rows={2}
-          data-testid="input-address"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="gstin">GSTIN</Label>
-          <Input
-            id="gstin"
-            value={formData.gstin}
-            onChange={(e) => setFormData({ ...formData, gstin: e.target.value })}
-            placeholder="e.g., 33AABCU9603R1ZM"
-            className="mt-1.5"
-            data-testid="input-gstin"
-          />
-        </div>
-        <div>
-          <Label htmlFor="creditLimit">Credit Limit (₹)</Label>
-          <Input
-            id="creditLimit"
-            type="number"
-            min={0}
-            value={formData.creditLimit}
-            onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
-            placeholder="0"
-            className="mt-1.5"
-            data-testid="input-credit-limit"
-          />
-        </div>
-      </div>
-      {isPro && (
-        <div className="pt-4 border-t">
-          <div className="flex items-center gap-2 mb-3">
-            <Crown className="h-4 w-4 text-amber-600" />
-            <span className="text-sm font-medium text-amber-600">PRO Features</span>
-          </div>
-          <div>
-            <Label htmlFor="creditPeriodDays">Credit Period (Days)</Label>
-            <Input
-              id="creditPeriodDays"
-              type="number"
-              min={0}
-              value={formData.creditPeriodDays}
-              onChange={(e) => setFormData({ ...formData, creditPeriodDays: parseInt(e.target.value) || 30 })}
-              placeholder="30"
-              className="mt-1.5"
-              data-testid="input-credit-period"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Default credit period for calculating bill due dates
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <AppLayout title="Customer Management">
@@ -490,7 +498,7 @@ export default function Customers() {
             <DialogTitle>Add New Customer</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            {customerFormFields}
+            <CustomerFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
@@ -511,7 +519,7 @@ export default function Customers() {
             <DialogTitle>Customer Details</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            {customerFormFields}
+            <CustomerFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
             {selectedCustomer && Number(selectedCustomer.outstandingBalance || 0) > 0 && (
               <div className="mt-4 p-4 rounded-lg bg-red-50 border border-red-200">
                 <p className="text-sm font-medium text-red-800">Outstanding Balance</p>

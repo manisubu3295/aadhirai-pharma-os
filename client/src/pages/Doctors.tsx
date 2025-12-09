@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { Search, MoreHorizontal, Plus, Edit, Stethoscope, Phone, BadgeCheck, Crown, Lock } from "lucide-react";
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Doctor } from "@shared/schema";
@@ -44,6 +44,58 @@ const emptyForm: DoctorFormData = {
   phone: "",
   registrationNo: "",
 };
+
+interface DoctorFormFieldsProps {
+  formData: DoctorFormData;
+  setFormData: React.Dispatch<React.SetStateAction<DoctorFormData>>;
+}
+
+const DoctorFormFields = memo(function DoctorFormFields({ formData, setFormData }: DoctorFormFieldsProps) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label htmlFor="name">Doctor Name *</Label>
+        <Input
+          id="name"
+          value={formData.name}
+          onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+          placeholder="Dr. Name"
+          data-testid="input-doctor-name"
+        />
+      </div>
+      <div>
+        <Label htmlFor="specialization">Specialization</Label>
+        <Input
+          id="specialization"
+          value={formData.specialization}
+          onChange={(e) => setFormData(prev => ({ ...prev, specialization: e.target.value }))}
+          placeholder="e.g., General Physician, Cardiologist"
+          data-testid="input-doctor-specialization"
+        />
+      </div>
+      <div>
+        <Label htmlFor="phone">Phone</Label>
+        <Input
+          id="phone"
+          value={formData.phone}
+          onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+          placeholder="+91 98765 43210"
+          data-testid="input-doctor-phone"
+        />
+      </div>
+      <div>
+        <Label htmlFor="registrationNo">Registration No.</Label>
+        <Input
+          id="registrationNo"
+          value={formData.registrationNo}
+          onChange={(e) => setFormData(prev => ({ ...prev, registrationNo: e.target.value }))}
+          placeholder="MCI/State registration number"
+          data-testid="input-doctor-registration"
+        />
+      </div>
+    </div>
+  );
+});
 
 export default function Doctors() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -160,51 +212,6 @@ export default function Doctors() {
     if (!formData.name.trim() || !selectedDoctor) return;
     updateMutation.mutate({ ...formData, id: selectedDoctor.id });
   };
-
-  const doctorFormFields = (
-    <div className="space-y-4">
-      <div>
-        <Label htmlFor="name">Doctor Name *</Label>
-        <Input
-          id="name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Dr. Name"
-          data-testid="input-doctor-name"
-        />
-      </div>
-      <div>
-        <Label htmlFor="specialization">Specialization</Label>
-        <Input
-          id="specialization"
-          value={formData.specialization}
-          onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
-          placeholder="e.g., General Physician, Cardiologist"
-          data-testid="input-doctor-specialization"
-        />
-      </div>
-      <div>
-        <Label htmlFor="phone">Phone</Label>
-        <Input
-          id="phone"
-          value={formData.phone}
-          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          placeholder="+91 98765 43210"
-          data-testid="input-doctor-phone"
-        />
-      </div>
-      <div>
-        <Label htmlFor="registrationNo">Registration No.</Label>
-        <Input
-          id="registrationNo"
-          value={formData.registrationNo}
-          onChange={(e) => setFormData({ ...formData, registrationNo: e.target.value })}
-          placeholder="MCI/State registration number"
-          data-testid="input-doctor-registration"
-        />
-      </div>
-    </div>
-  );
 
   return (
     <AppLayout title="Doctors">
@@ -358,7 +365,7 @@ export default function Doctors() {
           <DialogHeader>
             <DialogTitle>Add New Doctor</DialogTitle>
           </DialogHeader>
-          {doctorFormFields}
+          <DoctorFormFields formData={formData} setFormData={setFormData} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)} data-testid="button-cancel-add-doctor">
               Cancel
@@ -375,7 +382,7 @@ export default function Doctors() {
           <DialogHeader>
             <DialogTitle>Edit Doctor</DialogTitle>
           </DialogHeader>
-          {doctorFormFields}
+          <DoctorFormFields formData={formData} setFormData={setFormData} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)} data-testid="button-cancel-edit-doctor">
               Cancel
