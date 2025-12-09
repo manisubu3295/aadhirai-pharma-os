@@ -45,6 +45,28 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // Health check endpoint for production verification
+  app.get("/api/health", async (req, res) => {
+    try {
+      // Test database connection
+      const medicines = await storage.getMedicines();
+      res.json({ 
+        status: "healthy", 
+        database: "connected",
+        medicineCount: medicines.length,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Health check failed:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ 
+        status: "unhealthy", 
+        database: "error",
+        error: errorMessage 
+      });
+    }
+  });
+
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = loginSchema.parse(req.body);
