@@ -98,6 +98,55 @@ export async function registerRoutes(
     res.json({ user: userWithoutPassword });
   });
 
+  app.post("/api/auth/setup", async (req, res) => {
+    try {
+      const existingUsers = await storage.getUsers();
+      if (existingUsers.length > 0) {
+        return res.status(400).json({ error: "Setup already completed. Users already exist." });
+      }
+      
+      const password = await bcrypt.hash("password123", 10);
+      
+      await storage.createUser({
+        username: "owner",
+        password,
+        name: "Admin User",
+        role: "owner",
+        email: "admin@pharmacy.com",
+        phone: "9876543210",
+      });
+      
+      await storage.createUser({
+        username: "pharmacist",
+        password,
+        name: "Pharmacist User",
+        role: "pharmacist",
+        email: "pharmacist@pharmacy.com",
+        phone: "9876543211",
+      });
+      
+      await storage.createUser({
+        username: "cashier",
+        password,
+        name: "Cashier User",
+        role: "cashier",
+        email: "cashier@pharmacy.com",
+        phone: "9876543212",
+      });
+      
+      res.json({ 
+        message: "Setup completed successfully. Default users created.", 
+        credentials: {
+          username: "owner",
+          password: "password123"
+        }
+      });
+    } catch (error) {
+      console.error("Setup error:", error);
+      res.status(500).json({ error: "Setup failed" });
+    }
+  });
+
   app.get("/api/users", requireRole("owner"), async (req, res) => {
     try {
       const users = await storage.getUsers();
