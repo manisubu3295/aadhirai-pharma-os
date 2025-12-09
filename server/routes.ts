@@ -123,42 +123,54 @@ export async function registerRoutes(
 
   app.post("/api/auth/setup", async (req, res) => {
     try {
-      const existingUsers = await storage.getUsers();
-      if (existingUsers.length > 0) {
-        return res.status(400).json({ error: "Setup already completed. Users already exist." });
+      const password = await bcrypt.hash("password123", 10);
+      const created: string[] = [];
+      
+      const ownerExists = await storage.getUserByUsername("owner");
+      if (!ownerExists) {
+        await storage.createUser({
+          username: "owner",
+          password,
+          name: "Admin User",
+          role: "owner",
+          email: "admin@pharmacy.com",
+          phone: "9876543210",
+        });
+        created.push("owner");
       }
       
-      const password = await bcrypt.hash("password123", 10);
+      const pharmacistExists = await storage.getUserByUsername("pharmacist");
+      if (!pharmacistExists) {
+        await storage.createUser({
+          username: "pharmacist",
+          password,
+          name: "Pharmacist User",
+          role: "pharmacist",
+          email: "pharmacist@pharmacy.com",
+          phone: "9876543211",
+        });
+        created.push("pharmacist");
+      }
       
-      await storage.createUser({
-        username: "owner",
-        password,
-        name: "Admin User",
-        role: "owner",
-        email: "admin@pharmacy.com",
-        phone: "9876543210",
-      });
+      const cashierExists = await storage.getUserByUsername("cashier");
+      if (!cashierExists) {
+        await storage.createUser({
+          username: "cashier",
+          password,
+          name: "Cashier User",
+          role: "cashier",
+          email: "cashier@pharmacy.com",
+          phone: "9876543212",
+        });
+        created.push("cashier");
+      }
       
-      await storage.createUser({
-        username: "pharmacist",
-        password,
-        name: "Pharmacist User",
-        role: "pharmacist",
-        email: "pharmacist@pharmacy.com",
-        phone: "9876543211",
-      });
-      
-      await storage.createUser({
-        username: "cashier",
-        password,
-        name: "Cashier User",
-        role: "cashier",
-        email: "cashier@pharmacy.com",
-        phone: "9876543212",
-      });
+      if (created.length === 0) {
+        return res.json({ message: "All default users already exist." });
+      }
       
       res.json({ 
-        message: "Setup completed successfully. Default users created.", 
+        message: `Setup completed. Created users: ${created.join(", ")}`, 
         credentials: {
           username: "owner",
           password: "password123"
