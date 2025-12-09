@@ -38,9 +38,11 @@ export function Sidebar() {
 
       <div className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
         <div className="px-3 mb-2">
-           <button className="w-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors h-10 rounded-md flex items-center justify-center gap-2 text-sm font-medium shadow-sm">
-             <Plus className="w-4 h-4" /> New Sale
-           </button>
+           <Link href="/new-sale">
+             <button className="w-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors h-10 rounded-md flex items-center justify-center gap-2 text-sm font-medium shadow-sm">
+               <Plus className="w-4 h-4" /> New Sale
+             </button>
+           </Link>
         </div>
         
         <div className="h-4"></div>

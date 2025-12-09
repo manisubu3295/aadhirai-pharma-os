@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import Inventory from "@/pages/Inventory";
 import POS from "@/pages/POS";
+import NewSale from "@/pages/NewSale";
 
 function Router() {
   return (
@@ -14,6 +15,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/inventory" component={Inventory} />
       <Route path="/pos" component={POS} />
+      <Route path="/new-sale" component={NewSale} />
       <Route component={NotFound} />
     </Switch>
   );
