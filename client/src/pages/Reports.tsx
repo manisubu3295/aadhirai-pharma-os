@@ -1,0 +1,381 @@
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  BarChart3, 
+  TrendingUp, 
+  Package, 
+  AlertTriangle, 
+  CreditCard,
+  Calendar
+} from "lucide-react";
+import type { Sale, Medicine, Customer } from "@shared/schema";
+
+export default function Reports() {
+  const { data: sales = [] } = useQuery<Sale[]>({
+    queryKey: ["/api/sales"],
+    queryFn: async () => {
+      const res = await fetch("/api/sales");
+      if (!res.ok) throw new Error("Failed to fetch sales");
+      return res.json();
+    },
+  });
+
+  const { data: medicines = [] } = useQuery<Medicine[]>({
+    queryKey: ["/api/medicines"],
+    queryFn: async () => {
+      const res = await fetch("/api/medicines");
+      if (!res.ok) throw new Error("Failed to fetch medicines");
+      return res.json();
+    },
+  });
+
+  const { data: customers = [] } = useQuery<Customer[]>({
+    queryKey: ["/api/customers"],
+    queryFn: async () => {
+      const res = await fetch("/api/customers");
+      if (!res.ok) throw new Error("Failed to fetch customers");
+      return res.json();
+    },
+  });
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const todaySales = sales.filter(s => {
+    const saleDate = new Date(s.createdAt).toISOString().split('T')[0];
+    return saleDate === todayStr;
+  });
+
+  const weekSales = sales.filter(s => new Date(s.createdAt) >= weekAgo);
+
+  const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total), 0);
+  const weekTotal = weekSales.reduce((sum, s) => sum + Number(s.total), 0);
+
+  const isNearExpiry = (expiryDate: string) => {
+    const expiry = new Date(expiryDate);
+    const threeMonths = new Date();
+    threeMonths.setMonth(threeMonths.getMonth() + 3);
+    return expiry <= threeMonths && expiry > new Date();
+  };
+
+  const isExpired = (expiryDate: string) => {
+    return new Date(expiryDate) <= new Date();
+  };
+
+  const expiringMedicines = medicines.filter(m => isNearExpiry(m.expiryDate) && !isExpired(m.expiryDate));
+  const expiredMedicines = medicines.filter(m => isExpired(m.expiryDate));
+  const lowStockMedicines = medicines.filter(m => m.status === "Low Stock" || m.status === "Out of Stock");
+  const customersWithDue = customers.filter(c => Number(c.outstandingBalance || 0) > 0);
+
+  const totalDue = customersWithDue.reduce((sum, c) => sum + Number(c.outstandingBalance || 0), 0);
+
+  return (
+    <AppLayout title="Reports">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-green-100">
+                <TrendingUp className="h-6 w-6 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Today's Sales</p>
+                <p className="text-2xl font-bold text-green-600" data-testid="text-today-sales">
+                  ₹{todayTotal.toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">{todaySales.length} invoices</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-blue-100">
+                <Calendar className="h-6 w-6 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">This Week</p>
+                <p className="text-2xl font-bold text-blue-600" data-testid="text-week-sales">
+                  ₹{weekTotal.toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">{weekSales.length} invoices</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-orange-100">
+                <AlertTriangle className="h-6 w-6 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Expiring Soon</p>
+                <p className="text-2xl font-bold text-orange-600" data-testid="text-expiring">
+                  {expiringMedicines.length}
+                </p>
+                <p className="text-xs text-muted-foreground">items within 3 months</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-red-100">
+                <CreditCard className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Credit Due</p>
+                <p className="text-2xl font-bold text-red-600" data-testid="text-credit-due">
+                  ₹{totalDue.toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">{customersWithDue.length} customers</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="sales" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="sales" data-testid="tab-sales">
+            <BarChart3 className="h-4 w-4 mr-2" /> Sales Report
+          </TabsTrigger>
+          <TabsTrigger value="expiry" data-testid="tab-expiry">
+            <AlertTriangle className="h-4 w-4 mr-2" /> Expiry Report
+          </TabsTrigger>
+          <TabsTrigger value="stock" data-testid="tab-stock">
+            <Package className="h-4 w-4 mr-2" /> Stock Report
+          </TabsTrigger>
+          <TabsTrigger value="credit" data-testid="tab-credit">
+            <CreditCard className="h-4 w-4 mr-2" /> Credit Due
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sales">
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Sales</CardTitle>
+              <CardDescription>Last 50 sales transactions</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sales.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No sales recorded yet.</div>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Invoice #</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead className="text-right">Subtotal</TableHead>
+                        <TableHead className="text-right">Tax</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead>Payment</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sales.slice(0, 50).map((sale) => (
+                        <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`}>
+                          <TableCell className="font-mono text-xs">
+                            {sale.invoiceNo || `INV-${String(sale.id).padStart(4, '0')}`}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {new Date(sale.createdAt).toLocaleDateString('en-IN')}
+                          </TableCell>
+                          <TableCell>{sale.customerName}</TableCell>
+                          <TableCell className="text-right">₹{Number(sale.subtotal).toFixed(2)}</TableCell>
+                          <TableCell className="text-right">₹{Number(sale.tax).toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-medium">₹{Number(sale.total).toFixed(2)}</TableCell>
+                          <TableCell>
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100">
+                              {sale.paymentMethod.toUpperCase()}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="expiry">
+          <Card>
+            <CardHeader>
+              <CardTitle>Expiry Report</CardTitle>
+              <CardDescription>Medicines expiring within 3 months or already expired</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {expiringMedicines.length === 0 && expiredMedicines.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No medicines expiring soon.</div>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Medicine</TableHead>
+                        <TableHead>Batch</TableHead>
+                        <TableHead>Expiry Date</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {[...expiredMedicines, ...expiringMedicines].map((med) => (
+                        <TableRow key={med.id} data-testid={`row-expiry-${med.id}`}>
+                          <TableCell className="font-medium">
+                            <div>{med.name}</div>
+                            <div className="text-xs text-muted-foreground">{med.manufacturer}</div>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{med.batchNumber}</TableCell>
+                          <TableCell className={isExpired(med.expiryDate) ? "text-red-600 font-medium" : "text-orange-600 font-medium"}>
+                            {med.expiryDate}
+                          </TableCell>
+                          <TableCell className="text-right">{med.quantity}</TableCell>
+                          <TableCell className="text-right">
+                            ₹{(Number(med.price) * med.quantity).toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              isExpired(med.expiryDate) 
+                                ? "bg-red-100 text-red-700" 
+                                : "bg-orange-100 text-orange-700"
+                            }`}>
+                              {isExpired(med.expiryDate) ? "Expired" : "Expiring Soon"}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="stock">
+          <Card>
+            <CardHeader>
+              <CardTitle>Stock Report</CardTitle>
+              <CardDescription>Low stock and out of stock items</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {lowStockMedicines.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">All items are well stocked.</div>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Medicine</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead className="text-right">Current Stock</TableHead>
+                        <TableHead className="text-right">Reorder Level</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lowStockMedicines.map((med) => (
+                        <TableRow key={med.id} data-testid={`row-stock-${med.id}`}>
+                          <TableCell className="font-medium">
+                            <div>{med.name}</div>
+                            <div className="text-xs text-muted-foreground">{med.manufacturer}</div>
+                          </TableCell>
+                          <TableCell>{med.category}</TableCell>
+                          <TableCell className="text-right font-medium">{med.quantity}</TableCell>
+                          <TableCell className="text-right">{med.reorderLevel}</TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              med.status === "Out of Stock" 
+                                ? "bg-red-100 text-red-700" 
+                                : "bg-amber-100 text-amber-700"
+                            }`}>
+                              {med.status}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="credit">
+          <Card>
+            <CardHeader>
+              <CardTitle>Credit Due Report</CardTitle>
+              <CardDescription>Customers with outstanding balances</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {customersWithDue.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No outstanding credit dues.</div>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead className="text-right">Credit Limit</TableHead>
+                        <TableHead className="text-right">Outstanding</TableHead>
+                        <TableHead className="text-right">Available</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {customersWithDue.map((customer) => {
+                        const limit = Number(customer.creditLimit || 0);
+                        const outstanding = Number(customer.outstandingBalance || 0);
+                        const available = Math.max(0, limit - outstanding);
+                        return (
+                          <TableRow key={customer.id} data-testid={`row-credit-${customer.id}`}>
+                            <TableCell className="font-medium">{customer.name}</TableCell>
+                            <TableCell>{customer.phone || "-"}</TableCell>
+                            <TableCell className="text-right">₹{limit.toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-red-600 font-medium">
+                              ₹{outstanding.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right text-green-600">
+                              ₹{available.toFixed(2)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-red-800">Total Outstanding Amount</span>
+                  <span className="text-2xl font-bold text-red-600">₹{totalDue.toFixed(2)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </AppLayout>
+  );
+}

@@ -10,6 +10,9 @@ import Dashboard from "@/pages/Dashboard";
 import Inventory from "@/pages/Inventory";
 import POS from "@/pages/POS";
 import NewSale from "@/pages/NewSale";
+import Customers from "@/pages/Customers";
+import Reports from "@/pages/Reports";
+import Settings from "@/pages/Settings";
 
 function Router() {
   return (
@@ -33,6 +36,21 @@ function Router() {
       <Route path="/new-sale">
         <ProtectedRoute>
           <NewSale />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/customers">
+        <ProtectedRoute>
+          <Customers />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/reports">
+        <ProtectedRoute>
+          <Reports />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/settings">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <Settings />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />

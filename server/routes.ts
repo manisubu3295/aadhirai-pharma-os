@@ -203,6 +203,36 @@ export async function registerRoutes(
     }
   });
 
+  app.put("/api/customers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertCustomerSchema.partial().parse(req.body);
+      const customer = await storage.updateCustomer(id, data);
+      if (!customer) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+      res.json(customer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update customer" });
+    }
+  });
+
+  app.delete("/api/customers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteCustomer(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete customer" });
+    }
+  });
+
   app.get("/api/doctors", async (req, res) => {
     try {
       const doctors = await storage.getDoctors();
