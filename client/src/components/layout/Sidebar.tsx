@@ -51,8 +51,8 @@ export function Sidebar() {
           const isActive = location === item.href;
           return (
             <Link key={item.href} href={item.href}>
-              <a className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 group",
+              <div className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 group cursor-pointer",
                 isActive 
                   ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
                   : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
@@ -62,7 +62,7 @@ export function Sidebar() {
                   isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary transition-colors"
                 )} />
                 {item.label}
-              </a>
+              </div>
             </Link>
           );
         })}

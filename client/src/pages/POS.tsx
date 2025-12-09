@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { inventoryData } from "@/lib/mockData";
+import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, ShoppingCart, Trash2, CreditCard, Banknote, User } from "lucide-react";
@@ -8,8 +8,17 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 export default function POS() {
-  const [cart, setCart] = useState<{id: string, name: string, price: number, quantity: number}[]>([]);
+  const [cart, setCart] = useState<{id: number, name: string, price: string, quantity: number}[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+
+  const { data: medicines = [] } = useQuery({
+    queryKey: ["medicines"],
+    queryFn: async () => {
+      const response = await fetch("/api/medicines");
+      if (!response.ok) throw new Error("Failed to fetch medicines");
+      return response.json();
+    },
+  });
 
   const addToCart = (item: any) => {
     setCart(prev => {
@@ -21,11 +30,11 @@ export default function POS() {
     });
   };
 
-  const removeFromCart = (id: string) => {
+  const removeFromCart = (id: number) => {
     setCart(prev => prev.filter(i => i.id !== id));
   };
 
-  const updateQuantity = (id: string, delta: number) => {
+  const updateQuantity = (id: number, delta: number) => {
     setCart(prev => prev.map(i => {
       if (i.id === id) {
         const newQty = Math.max(1, i.quantity + delta);
@@ -35,20 +44,19 @@ export default function POS() {
     }));
   };
 
-  const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  const subtotal = cart.reduce((acc, item) => acc + (parseFloat(item.price) * item.quantity), 0);
   const tax = subtotal * 0.08;
   const total = subtotal + tax;
 
-  const filteredItems = inventoryData.filter(item => 
+  const filteredItems = medicines.filter((item: any) => 
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    item.id.toLowerCase().includes(searchTerm.toLowerCase())
+    String(item.id).includes(searchTerm)
   );
 
   return (
     <AppLayout title="Point of Sale">
       <div className="grid grid-cols-12 gap-6 h-[calc(100vh-8rem)]">
         
-        {/* Left Side: Product Selection */}
         <div className="col-span-8 flex flex-col gap-4">
           <Card className="flex-1 flex flex-col overflow-hidden border-0 shadow-none bg-transparent">
             <div className="flex items-center gap-4 mb-4">
@@ -66,7 +74,7 @@ export default function POS() {
             </div>
 
             <div className="grid grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2 pb-4">
-              {filteredItems.map(item => (
+              {filteredItems.map((item: any) => (
                 <div 
                   key={item.id} 
                   onClick={() => addToCart(item)}
@@ -81,7 +89,7 @@ export default function POS() {
                   <h3 className="font-medium text-sm truncate" title={item.name}>{item.name}</h3>
                   <p className="text-xs text-muted-foreground mb-2">{item.category}</p>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-primary">${item.price.toFixed(2)}</span>
+                    <span className="font-bold text-primary">₹{parseFloat(item.price).toFixed(2)}</span>
                     <span className={cn(
                       "text-[10px] px-1.5 py-0.5 rounded-full border",
                       item.status === "In Stock" ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
@@ -97,7 +105,6 @@ export default function POS() {
           </Card>
         </div>
 
-        {/* Right Side: Cart & Checkout */}
         <div className="col-span-4 flex flex-col h-full">
           <Card className="flex-1 flex flex-col shadow-lg border-l border-t-0 border-r-0 border-b-0 rounded-none -mr-6 -my-6 h-[calc(100%+3rem)]">
             <CardHeader className="border-b pb-4">
@@ -127,7 +134,7 @@ export default function POS() {
                     <div key={item.id} className="p-4 flex items-center justify-between group hover:bg-muted/20">
                       <div className="flex-1">
                         <h4 className="font-medium text-sm">{item.name}</h4>
-                        <div className="text-xs text-muted-foreground mt-1">${item.price.toFixed(2)} / unit</div>
+                        <div className="text-xs text-muted-foreground mt-1">₹{parseFloat(item.price).toFixed(2)} / unit</div>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1 bg-background border rounded-md h-8">
@@ -146,7 +153,7 @@ export default function POS() {
                           </button>
                         </div>
                         <div className="w-16 text-right font-medium text-sm">
-                          ${(item.price * item.quantity).toFixed(2)}
+                          ₹{(parseFloat(item.price) * item.quantity).toFixed(2)}
                         </div>
                         <button 
                           onClick={() => removeFromCart(item.id)}
@@ -165,15 +172,15 @@ export default function POS() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-muted-foreground">
                   <span>Subtotal</span>
-                  <span>${subtotal.toFixed(2)}</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Tax (8%)</span>
-                  <span>${tax.toFixed(2)}</span>
+                  <span>₹{tax.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg pt-2 border-t">
                   <span>Total</span>
-                  <span>${total.toFixed(2)}</span>
+                  <span>₹{total.toFixed(2)}</span>
                 </div>
               </div>
 

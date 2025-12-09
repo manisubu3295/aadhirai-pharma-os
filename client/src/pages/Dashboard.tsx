@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { dashboardStats, recentSales } from "@/lib/mockData";
+import { useQuery } from "@tanstack/react-query";
 import { DollarSign, ShoppingCart, AlertTriangle, Users, TrendingUp, TrendingDown, ArrowUpRight } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -15,22 +15,60 @@ const chartData = [
 ];
 
 export default function Dashboard() {
-  const getIcon = (iconName: string) => {
-    switch (iconName) {
-      case "DollarSign": return DollarSign;
-      case "ShoppingCart": return ShoppingCart;
-      case "AlertTriangle": return AlertTriangle;
-      case "Users": return Users;
-      default: return DollarSign;
-    }
-  };
+  const { data: stats } = useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: async () => {
+      const response = await fetch("/api/dashboard/stats");
+      if (!response.ok) throw new Error("Failed to fetch stats");
+      return response.json();
+    },
+  });
+
+  const { data: recentSales = [] } = useQuery({
+    queryKey: ["recent-sales"],
+    queryFn: async () => {
+      const response = await fetch("/api/sales?limit=5");
+      if (!response.ok) throw new Error("Failed to fetch sales");
+      return response.json();
+    },
+  });
+
+  const dashboardStats = [
+    {
+      title: "Total Revenue",
+      value: stats ? `₹${parseFloat(stats.totalRevenue).toFixed(2)}` : "₹0.00",
+      change: "+15%",
+      trend: "up",
+      icon: DollarSign,
+    },
+    {
+      title: "Active Orders",
+      value: stats ? stats.activeOrders.toString() : "0",
+      change: "+5%",
+      trend: "up",
+      icon: ShoppingCart,
+    },
+    {
+      title: "Low Stock Items",
+      value: stats ? stats.lowStockItems.toString() : "0",
+      change: "-2",
+      trend: "down",
+      icon: AlertTriangle,
+    },
+    {
+      title: "Customers Today",
+      value: stats ? stats.customersToday.toString() : "0",
+      change: "+12%",
+      trend: "up",
+      icon: Users,
+    },
+  ];
 
   return (
     <AppLayout title="Dashboard Overview">
-      {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {dashboardStats.map((stat, i) => {
-          const Icon = getIcon(stat.icon);
+          const Icon = stat.icon;
           return (
             <Card key={i} className="hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -61,7 +99,6 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* Chart */}
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle>Revenue Overview</CardTitle>
@@ -92,7 +129,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
         <Card className="col-span-3">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -107,28 +143,32 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
-              {recentSales.map((sale) => (
-                <div key={sale.id} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-secondary-foreground">
-                      {sale.customerName.charAt(0)}
+              {recentSales.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No sales yet</p>
+              ) : (
+                recentSales.map((sale: any) => (
+                  <div key={sale.id} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-secondary-foreground">
+                        {sale.customerName.charAt(0)}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium leading-none">{sale.customerName}</p>
+                        <p className="text-xs text-muted-foreground">{sale.paymentMethod}</p>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium leading-none">{sale.customerName}</p>
-                      <p className="text-xs text-muted-foreground">{sale.items} items • {sale.paymentMethod}</p>
+                    <div className="text-right">
+                      <p className="text-sm font-bold">₹{parseFloat(sale.total).toFixed(2)}</p>
+                      <p className={`text-[10px] uppercase font-semibold ${
+                        sale.status === "Completed" ? "text-emerald-500" : 
+                        sale.status === "Pending" ? "text-amber-500" : "text-destructive"
+                      }`}>
+                        {sale.status}
+                      </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold">${sale.total.toFixed(2)}</p>
-                    <p className={`text-[10px] uppercase font-semibold ${
-                      sale.status === "Completed" ? "text-emerald-500" : 
-                      sale.status === "Pending" ? "text-amber-500" : "text-destructive"
-                    }`}>
-                      {sale.status}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
