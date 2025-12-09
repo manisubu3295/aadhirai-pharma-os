@@ -11,17 +11,26 @@ import {
   type InsertSale,
   type SaleItem,
   type InsertSaleItem,
+  type Location,
+  type InsertLocation,
+  type AuditLog,
+  type InsertAuditLog,
+  type CreditPayment,
+  type InsertCreditPayment,
   users,
   medicines,
   customers,
   doctors,
   sales,
-  saleItems
+  saleItems,
+  locations,
+  auditLogs,
+  creditPayments
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -63,6 +72,18 @@ export interface IStorage {
     lowStockItems: number;
     customersToday: number;
   }>;
+  
+  getLocations(): Promise<Location[]>;
+  getLocation(id: number): Promise<Location | undefined>;
+  createLocation(location: InsertLocation): Promise<Location>;
+  updateLocation(id: number, location: Partial<InsertLocation>): Promise<Location | undefined>;
+  deleteLocation(id: number): Promise<boolean>;
+  
+  getAuditLogs(from?: Date, to?: Date): Promise<AuditLog[]>;
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  
+  getCreditPayments(saleId?: number, customerId?: number): Promise<CreditPayment[]>;
+  createCreditPayment(payment: InsertCreditPayment): Promise<CreditPayment>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -221,6 +242,59 @@ export class DatabaseStorage implements IStorage {
       lowStockItems: Number(lowStock[0]?.count || 0),
       customersToday: Number(todayCustomers[0]?.count || 0),
     };
+  }
+
+  async getLocations(): Promise<Location[]> {
+    return await db.select().from(locations).orderBy(locations.rack);
+  }
+
+  async getLocation(id: number): Promise<Location | undefined> {
+    const result = await db.select().from(locations).where(eq(locations.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createLocation(location: InsertLocation): Promise<Location> {
+    const result = await db.insert(locations).values(location).returning();
+    return result[0];
+  }
+
+  async updateLocation(id: number, location: Partial<InsertLocation>): Promise<Location | undefined> {
+    const result = await db.update(locations).set(location).where(eq(locations.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteLocation(id: number): Promise<boolean> {
+    const result = await db.delete(locations).where(eq(locations.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getAuditLogs(from?: Date, to?: Date): Promise<AuditLog[]> {
+    if (from && to) {
+      return await db.select().from(auditLogs)
+        .where(and(gte(auditLogs.createdAt, from), lte(auditLogs.createdAt, to)))
+        .orderBy(desc(auditLogs.createdAt));
+    }
+    return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(500);
+  }
+
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const result = await db.insert(auditLogs).values(log).returning();
+    return result[0];
+  }
+
+  async getCreditPayments(saleId?: number, customerId?: number): Promise<CreditPayment[]> {
+    if (saleId) {
+      return await db.select().from(creditPayments).where(eq(creditPayments.saleId, saleId)).orderBy(desc(creditPayments.createdAt));
+    }
+    if (customerId) {
+      return await db.select().from(creditPayments).where(eq(creditPayments.customerId, customerId)).orderBy(desc(creditPayments.createdAt));
+    }
+    return await db.select().from(creditPayments).orderBy(desc(creditPayments.createdAt));
+  }
+
+  async createCreditPayment(payment: InsertCreditPayment): Promise<CreditPayment> {
+    const result = await db.insert(creditPayments).values(payment).returning();
+    return result[0];
   }
 }
 

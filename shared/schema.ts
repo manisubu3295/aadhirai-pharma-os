@@ -42,6 +42,10 @@ export const medicines = pgTable("medicines", {
   category: text("category").notNull(),
   status: text("status").notNull().default("In Stock"),
   reorderLevel: integer("reorder_level").notNull().default(50),
+  barcode: text("barcode"),
+  minStock: integer("min_stock").default(10),
+  maxStock: integer("max_stock").default(500),
+  locationId: integer("location_id"),
 });
 
 export const customers = pgTable("customers", {
@@ -53,6 +57,41 @@ export const customers = pgTable("customers", {
   gstin: text("gstin"),
   creditLimit: decimal("credit_limit", { precision: 10, scale: 2 }).default("0"),
   outstandingBalance: decimal("outstanding_balance", { precision: 10, scale: 2 }).default("0"),
+  creditPeriodDays: integer("credit_period_days").default(30),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const locations = pgTable("locations", {
+  id: serial("id").primaryKey(),
+  rack: text("rack").notNull(),
+  row: text("row").notNull(),
+  bin: text("bin").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id").notNull(),
+  entityName: text("entity_name").notNull(),
+  userId: varchar("user_id").notNull(),
+  userName: text("user_name").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  details: text("details"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const creditPayments = pgTable("credit_payments", {
+  id: serial("id").primaryKey(),
+  saleId: integer("sale_id").notNull(),
+  customerId: integer("customer_id").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  notes: text("notes"),
+  userId: varchar("user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -117,6 +156,9 @@ export const insertCustomerSchema = createInsertSchema(customers).omit({ id: tru
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
 export const insertSaleSchema = createInsertSchema(sales).omit({ id: true, createdAt: true });
 export const insertSaleItemSchema = createInsertSchema(saleItems).omit({ id: true });
+export const insertLocationSchema = createInsertSchema(locations).omit({ id: true, createdAt: true });
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export const insertCreditPaymentSchema = createInsertSchema(creditPayments).omit({ id: true, createdAt: true });
 
 export type InsertMedicine = z.infer<typeof insertMedicineSchema>;
 export type Medicine = typeof medicines.$inferSelect;
@@ -132,3 +174,12 @@ export type Sale = typeof sales.$inferSelect;
 
 export type InsertSaleItem = z.infer<typeof insertSaleItemSchema>;
 export type SaleItem = typeof saleItems.$inferSelect;
+
+export type InsertLocation = z.infer<typeof insertLocationSchema>;
+export type Location = typeof locations.$inferSelect;
+
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
+
+export type InsertCreditPayment = z.infer<typeof insertCreditPaymentSchema>;
+export type CreditPayment = typeof creditPayments.$inferSelect;

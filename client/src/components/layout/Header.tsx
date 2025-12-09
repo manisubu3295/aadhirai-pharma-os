@@ -1,4 +1,4 @@
-import { Search, Bell, HelpCircle } from "lucide-react";
+import { Search, Bell, HelpCircle, Crown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -8,7 +8,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
+import { usePlan } from "@/lib/planContext";
 
 const roleLabels: Record<string, string> = {
   owner: "Owner",
@@ -18,6 +20,7 @@ const roleLabels: Record<string, string> = {
 
 export function Header({ title }: { title: string }) {
   const { user, logout } = useAuth();
+  const { plan, setPlan, isPro } = usePlan();
 
   const getInitials = (name: string) => {
     return name
@@ -33,6 +36,20 @@ export function Header({ title }: { title: string }) {
       <h2 className="text-lg font-semibold text-white">{title}</h2>
 
       <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20">
+          <span className={`text-xs font-medium ${!isPro ? 'text-white' : 'text-white/50'}`}>BASIC</span>
+          <Switch
+            checked={isPro}
+            onCheckedChange={(checked) => setPlan(checked ? "PRO" : "BASIC")}
+            className="data-[state=checked]:bg-amber-500"
+            data-testid="switch-plan-toggle"
+          />
+          <span className={`text-xs font-medium flex items-center gap-1 ${isPro ? 'text-amber-400' : 'text-white/50'}`}>
+            <Crown className="w-3 h-3" />
+            PRO
+          </span>
+        </div>
+
         <div className="relative w-64 hidden md:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/60" />
           <input

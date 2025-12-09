@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, ProtectedRoute } from "@/lib/auth";
+import { PlanProvider } from "@/lib/planContext";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
@@ -13,6 +14,10 @@ import NewSale from "@/pages/NewSale";
 import Customers from "@/pages/Customers";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
+import Collections from "@/pages/Collections";
+import LocationMaster from "@/pages/LocationMaster";
+import AuditLog from "@/pages/AuditLog";
+import TallyExport from "@/pages/TallyExport";
 
 function Router() {
   return (
@@ -53,6 +58,26 @@ function Router() {
           <Settings />
         </ProtectedRoute>
       </Route>
+      <Route path="/collections">
+        <ProtectedRoute>
+          <Collections />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/locations">
+        <ProtectedRoute>
+          <LocationMaster />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/audit-log">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <AuditLog />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/tally-export">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <TallyExport />
+        </ProtectedRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -61,12 +86,14 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </AuthProvider>
+      <PlanProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AuthProvider>
+      </PlanProvider>
     </QueryClientProvider>
   );
 }

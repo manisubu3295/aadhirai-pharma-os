@@ -6,7 +6,10 @@ import {
   insertCustomerSchema, 
   insertDoctorSchema, 
   insertSaleSchema,
-  insertSaleItemSchema 
+  insertSaleItemSchema,
+  insertLocationSchema,
+  insertAuditLogSchema,
+  insertCreditPaymentSchema
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
@@ -310,6 +313,106 @@ export async function registerRoutes(
       res.json(stats);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  app.get("/api/locations", async (req, res) => {
+    try {
+      const locations = await storage.getLocations();
+      res.json(locations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch locations" });
+    }
+  });
+
+  app.post("/api/locations", async (req, res) => {
+    try {
+      const data = insertLocationSchema.parse(req.body);
+      const location = await storage.createLocation(data);
+      res.status(201).json(location);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create location" });
+    }
+  });
+
+  app.put("/api/locations/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertLocationSchema.partial().parse(req.body);
+      const location = await storage.updateLocation(id, data);
+      if (!location) {
+        return res.status(404).json({ error: "Location not found" });
+      }
+      res.json(location);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update location" });
+    }
+  });
+
+  app.delete("/api/locations/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteLocation(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Location not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete location" });
+    }
+  });
+
+  app.get("/api/audit-logs", requireRole("owner"), async (req, res) => {
+    try {
+      const from = req.query.from ? new Date(req.query.from as string) : undefined;
+      const to = req.query.to ? new Date(req.query.to as string) : undefined;
+      const logs = await storage.getAuditLogs(from, to);
+      res.json(logs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch audit logs" });
+    }
+  });
+
+  app.post("/api/audit-logs", async (req, res) => {
+    try {
+      const data = insertAuditLogSchema.parse(req.body);
+      const log = await storage.createAuditLog(data);
+      res.status(201).json(log);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create audit log" });
+    }
+  });
+
+  app.get("/api/credit-payments", async (req, res) => {
+    try {
+      const saleId = req.query.saleId ? parseInt(req.query.saleId as string) : undefined;
+      const customerId = req.query.customerId ? parseInt(req.query.customerId as string) : undefined;
+      const payments = await storage.getCreditPayments(saleId, customerId);
+      res.json(payments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch credit payments" });
+    }
+  });
+
+  app.post("/api/credit-payments", async (req, res) => {
+    try {
+      const data = insertCreditPaymentSchema.parse(req.body);
+      const payment = await storage.createCreditPayment(data);
+      res.status(201).json(payment);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create credit payment" });
     }
   });
 

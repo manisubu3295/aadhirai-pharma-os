@@ -1,0 +1,153 @@
+You are working inside an existing Pharmacy Management BASIC app.
+Do not overwrite or regenerate the whole project. Do not delete existing features.
+Your job is to extend the app with a PRO plan (premium features) on top of BASIC, preserving the current UI theme and flows.
+
+Global rules
+	1.	Keep all BASIC screens and logic working exactly as now.
+	2.	Only add new components/routes/tables or minimally extend models.
+	3.	Introduce a plan mode: "BASIC" or "PRO" with a simple toggle in the UI.
+	4.	When plan = BASIC, PRO features are either hidden or shown as disabled with a “PRO” badge.
+
+⸻
+
+Plan Modes
+	•	BASIC (existing):
+	•	Single branch
+	•	Cash Billing
+	•	Simple Credit Billing (if present)
+	•	Medicine + Batch + Stock
+	•	Basic alerts & simple reports
+	•	PRO (premium):
+	•	PRO Credit Billing (fully enabled and richer)
+	•	Enhanced Reports with date-filtered CSV + PDF exports
+	•	Barcode + Rack/Row/Bin location tracking
+	•	Collections module (daily/monthly collection)
+	•	Tally export for accounting
+	•	Advanced inventory, credit, audit, and analytics modules
+
+⸻
+
+1. Plan Toggle
+	•	Add a simple plan selector in the top-right (e.g. dropdown or toggle: BASIC / PRO).
+	•	Store current plan in localStorage or user context.
+	•	Sidebar:
+	•	Show PRO-only menus with a small “PRO” tag.
+	•	Disable or hide them when plan = BASIC.
+
+⸻
+
+2. PRO Inventory Enhancements
+
+Add these Pro-only features:
+	1.	Location Master
+	•	New master: Rack / Row / Bin.
+	•	A UI to manage rack/shelf/bin definitions.
+	•	Extend batch model to include locationId or rack, row, bin fields.
+	•	On medicine/batch view and billing selection, show the location: “Rack A → Shelf 3 → Bin 2”.
+	2.	Barcode Support
+	•	Store a barcode field for medicine or batch.
+	•	In billing and stock-in screens, allow barcode input (text field first; scanning-friendly).
+	•	If possible, provide a small “Print Label” action (just a simple printable label page).
+	3.	Reorder & Min/Max
+	•	Add fields: minStock, maxStock, reorderLevel on medicine.
+	•	Create a Pro-only “Reorder Suggestions” report based on current stock vs levels.
+
+⸻
+
+3. PRO Front Desk – Credit & Doctor
+	1.	PRO Credit Billing
+	•	Enhance existing credit billing:
+	•	customer credit limit
+	•	remaining limit
+	•	credit period & auto due date
+	•	partial payment history
+	•	Keep basic credit behavior for BASIC plan; unlock full features in PRO.
+	2.	Doctor & Prescription
+	•	Add Doctor master.
+	•	Allow linking a bill to a doctor and optional prescription ID.
+	•	Add optional file upload for prescription (if simple storage is feasible).
+
+⸻
+
+4. Collections Module (Pro)
+
+Create a Collections screen (menu: “Collections” – PRO only):
+	•	Filters:
+	•	Date range
+	•	Branch (if multi-branch present)
+	•	Cashier/user
+	•	Payment mode (Cash, UPI, Card, Wallet, Credit receipt)
+	•	Show:
+	•	Total by payment mode
+	•	Grand total
+	•	List or grouped summary of bills/receipts.
+
+Exports (must):
+	•	Export CSV for the selected date range.
+	•	Export PDF for the selected date range.
+	•	Buttons: “Export CSV” and “Export PDF”.
+	•	Reuse reporting export utilities if they exist.
+
+⸻
+
+5. Reports Studio – Enhanced (Pro)
+
+Extend or create a Reports Studio as PRO, but keep existing basic reports:
+	•	Add date range filters to all reports.
+	•	Add more analytics-style reports:
+	•	Sales trends, top medicines, slow movers
+	•	Expiry aging
+	•	Credit outstanding aging
+	•	For each report:
+	•	Implement /reports/<name>?from=YYYY-MM-DD&to=YYYY-MM-DD endpoints.
+	•	Implement /reports/<name>/export/csv?... and /reports/<name>/export/pdf?....
+
+All exports must reflect selected dates and filters.
+
+⸻
+
+6. Tally Integration (Pro)
+
+Add a Tally Export screen (Pro-only):
+	•	Allow basic configuration (ledger names).
+	•	For selected date range, generate export files for:
+	•	Sales vouchers
+	•	Purchase vouchers
+	•	Collections/Receipts
+	•	Start with CSV format structured for Tally import.
+
+⸻
+
+7. Audit & Analytics (Pro)
+	1.	Audit Log
+	•	Add AuditLog table if not present.
+	•	Log:
+	•	price changes
+	•	stock adjustments
+	•	bill cancellations/returns
+	•	credit limit changes
+	•	user role changes
+	•	Simple UI to filter by user/date/action.
+	2.	Owner Dashboard
+	•	Pro-only dashboard:
+	•	Sales by day/week/month
+	•	Top medicines
+	•	Expiry risk (value of near-expiry stock)
+	•	Credit outstanding
+
+⸻
+
+8. Safety & Testing
+	•	After all changes:
+	•	Verify BASIC plan still runs exactly as before:
+	•	login
+	•	cash billing
+	•	stock
+	•	existing reports.
+	•	Verify switching to PRO:
+	•	PRO-only menus appear
+	•	Credit Billing is enhanced
+	•	Collections screen works with CSV/PDF export
+	•	Reports export CSV/PDF for selected dates.
+
+Do not remove or break any existing BASIC features. Only extend the system for PRO.
