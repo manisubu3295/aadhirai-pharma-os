@@ -10,13 +10,15 @@ import {
   type Sale,
   type InsertSale,
   type SaleItem,
-  type InsertSaleItem,
+  type CreateSaleItem,
   type Location,
   type InsertLocation,
   type AuditLog,
   type InsertAuditLog,
   type CreditPayment,
   type InsertCreditPayment,
+  type HeldBill,
+  type InsertHeldBill,
   users,
   medicines,
   customers,
@@ -25,7 +27,8 @@ import {
   saleItems,
   locations,
   auditLogs,
-  creditPayments
+  creditPayments,
+  heldBills
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -65,7 +68,7 @@ export interface IStorage {
   
   getSales(limit?: number): Promise<Sale[]>;
   getSale(id: number): Promise<Sale | undefined>;
-  createSale(sale: InsertSale, items: InsertSaleItem[]): Promise<Sale>;
+  createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<Sale>;
   getSaleItems(saleId: number): Promise<SaleItem[]>;
   
   getDashboardStats(): Promise<{
@@ -86,6 +89,11 @@ export interface IStorage {
   
   getCreditPayments(saleId?: number, customerId?: number): Promise<CreditPayment[]>;
   createCreditPayment(payment: InsertCreditPayment): Promise<CreditPayment>;
+  
+  getHeldBills(): Promise<HeldBill[]>;
+  getHeldBill(id: number): Promise<HeldBill | undefined>;
+  createHeldBill(bill: InsertHeldBill): Promise<HeldBill>;
+  deleteHeldBill(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -205,7 +213,7 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async createSale(sale: InsertSale, items: InsertSaleItem[]): Promise<Sale> {
+  async createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<Sale> {
     const saleResult = await db.insert(sales).values(sale).returning();
     const createdSale = saleResult[0];
     
@@ -307,6 +315,25 @@ export class DatabaseStorage implements IStorage {
   async createCreditPayment(payment: InsertCreditPayment): Promise<CreditPayment> {
     const result = await db.insert(creditPayments).values(payment).returning();
     return result[0];
+  }
+
+  async getHeldBills(): Promise<HeldBill[]> {
+    return await db.select().from(heldBills).orderBy(desc(heldBills.createdAt));
+  }
+
+  async getHeldBill(id: number): Promise<HeldBill | undefined> {
+    const result = await db.select().from(heldBills).where(eq(heldBills.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createHeldBill(bill: InsertHeldBill): Promise<HeldBill> {
+    const result = await db.insert(heldBills).values(bill).returning();
+    return result[0];
+  }
+
+  async deleteHeldBill(id: number): Promise<boolean> {
+    const result = await db.delete(heldBills).where(eq(heldBills.id, id)).returning();
+    return result.length > 0;
   }
 }
 

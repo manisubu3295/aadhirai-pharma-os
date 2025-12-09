@@ -6,10 +6,11 @@ import {
   insertCustomerSchema, 
   insertDoctorSchema, 
   insertSaleSchema,
-  insertSaleItemSchema,
+  createSaleItemSchema,
   insertLocationSchema,
   insertAuditLogSchema,
-  insertCreditPaymentSchema
+  insertCreditPaymentSchema,
+  insertHeldBillSchema
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
@@ -325,7 +326,7 @@ export async function registerRoutes(
     try {
       const { items, ...saleData } = req.body;
       const sale = insertSaleSchema.parse(saleData);
-      const saleItems = z.array(insertSaleItemSchema).parse(items);
+      const saleItems = z.array(createSaleItemSchema).parse(items);
       
       const createdSale = await storage.createSale(sale, saleItems);
       res.status(201).json(createdSale);
@@ -443,6 +444,54 @@ export async function registerRoutes(
         return res.status(400).json({ error: error.errors });
       }
       res.status(500).json({ error: "Failed to create credit payment" });
+    }
+  });
+
+  app.get("/api/held-bills", async (req, res) => {
+    try {
+      const bills = await storage.getHeldBills();
+      res.json(bills);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch held bills" });
+    }
+  });
+
+  app.get("/api/held-bills/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const bill = await storage.getHeldBill(id);
+      if (!bill) {
+        return res.status(404).json({ error: "Held bill not found" });
+      }
+      res.json(bill);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch held bill" });
+    }
+  });
+
+  app.post("/api/held-bills", async (req, res) => {
+    try {
+      const data = insertHeldBillSchema.parse(req.body);
+      const bill = await storage.createHeldBill(data);
+      res.status(201).json(bill);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create held bill" });
+    }
+  });
+
+  app.delete("/api/held-bills/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteHeldBill(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Held bill not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete held bill" });
     }
   });
 

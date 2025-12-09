@@ -156,9 +156,30 @@ export const insertCustomerSchema = createInsertSchema(customers).omit({ id: tru
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
 export const insertSaleSchema = createInsertSchema(sales).omit({ id: true, createdAt: true });
 export const insertSaleItemSchema = createInsertSchema(saleItems).omit({ id: true });
+export const createSaleItemSchema = createInsertSchema(saleItems).omit({ id: true, saleId: true });
 export const insertLocationSchema = createInsertSchema(locations).omit({ id: true, createdAt: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 export const insertCreditPaymentSchema = createInsertSchema(creditPayments).omit({ id: true, createdAt: true });
+
+export const heldBills = pgTable("held_bills", {
+  id: serial("id").primaryKey(),
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"),
+  customerId: integer("customer_id"),
+  doctorId: integer("doctor_id"),
+  doctorName: text("doctor_name"),
+  items: text("items").notNull(),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  discount: decimal("discount", { precision: 10, scale: 2 }).default("0"),
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
+  tax: decimal("tax", { precision: 10, scale: 2 }).notNull(),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  notes: text("notes"),
+  userId: varchar("user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertHeldBillSchema = createInsertSchema(heldBills).omit({ id: true, createdAt: true });
 
 export type InsertMedicine = z.infer<typeof insertMedicineSchema>;
 export type Medicine = typeof medicines.$inferSelect;
@@ -183,3 +204,7 @@ export type AuditLog = typeof auditLogs.$inferSelect;
 
 export type InsertCreditPayment = z.infer<typeof insertCreditPaymentSchema>;
 export type CreditPayment = typeof creditPayments.$inferSelect;
+
+export type CreateSaleItem = z.infer<typeof createSaleItemSchema>;
+export type InsertHeldBill = z.infer<typeof insertHeldBillSchema>;
+export type HeldBill = typeof heldBills.$inferSelect;
