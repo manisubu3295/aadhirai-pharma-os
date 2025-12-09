@@ -47,13 +47,16 @@ import {
   UserPlus,
   Check,
   ChevronsUpDown,
-  AlertTriangle
+  AlertTriangle,
+  Pause,
+  Play,
+  Clock
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import type { Customer, Doctor, Medicine } from "@shared/schema";
+import type { Customer, Doctor, Medicine, HeldBill } from "@shared/schema";
 
 interface SaleItem {
   id: string;
@@ -90,6 +93,7 @@ export default function NewSale() {
   const [newCustomerDialog, setNewCustomerDialog] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [heldBillsDialogOpen, setHeldBillsDialogOpen] = useState(false);
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
@@ -114,6 +118,15 @@ export default function NewSale() {
     queryFn: async () => {
       const res = await fetch("/api/medicines");
       if (!res.ok) throw new Error("Failed to fetch medicines");
+      return res.json();
+    },
+  });
+
+  const { data: heldBills = [] } = useQuery<HeldBill[]>({
+    queryKey: ["/api/held-bills"],
+    queryFn: async () => {
+      const res = await fetch("/api/held-bills");
+      if (!res.ok) throw new Error("Failed to fetch held bills");
       return res.json();
     },
   });
@@ -159,6 +172,42 @@ export default function NewSale() {
     },
     onError: () => {
       toast({ title: "Failed to create sale", variant: "destructive" });
+    },
+  });
+
+  const holdBillMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/held-bills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to hold bill");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/held-bills"] });
+      toast({ title: "Bill put on hold successfully" });
+      resetForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to hold bill", variant: "destructive" });
+    },
+  });
+
+  const deleteHeldBillMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/held-bills/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete held bill");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/held-bills"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete held bill", variant: "destructive" });
     },
   });
 
@@ -362,6 +411,94 @@ export default function NewSale() {
     createSaleMutation.mutate(saleData);
   };
 
+  const handleHoldBill = () => {
+    if (items.length === 0) {
+      toast({ title: "Please add at least one item to hold", variant: "destructive" });
+      return;
+    }
+
+    const holdData = {
+      customerName: selectedCustomer?.name || "Walk-in Customer",
+      customerPhone: selectedCustomer?.phone || null,
+      customerId: selectedCustomer?.id || null,
+      doctorId: selectedDoctor?.id || null,
+      doctorName: selectedDoctor?.name || null,
+      items: JSON.stringify(items),
+      subtotal: calculations.subtotal.toFixed(2),
+      discount: billDiscount,
+      discountPercent: "0",
+      tax: calculations.tax.toFixed(2),
+      total: calculations.netAmount.toFixed(2),
+      notes: null,
+      userId: null,
+    };
+
+    holdBillMutation.mutate(holdData);
+  };
+
+  const handleResumeBill = (heldBill: HeldBill) => {
+    try {
+      const rawItems = JSON.parse(heldBill.items as string);
+      const parsedItems: SaleItem[] = rawItems.map((item: any) => ({
+        id: String(item.id),
+        medicineId: Number(item.medicineId),
+        name: String(item.name),
+        batchNumber: String(item.batchNumber),
+        expiryDate: String(item.expiryDate),
+        hsnCode: item.hsnCode ? String(item.hsnCode) : null,
+        quantity: Number(item.quantity),
+        price: Number(item.price),
+        mrp: item.mrp ? Number(item.mrp) : null,
+        gstRate: Number(item.gstRate),
+        discount: Number(item.discount),
+        availableQty: Number(item.availableQty),
+      }));
+      
+      setItems(parsedItems);
+      setBillDiscount(heldBill.discount ? String(heldBill.discount) : "0");
+      
+      if (heldBill.customerId) {
+        const customer = customers.find(c => c.id === heldBill.customerId);
+        if (customer) {
+          setSelectedCustomer(customer);
+        } else {
+          setSelectedCustomer(null);
+        }
+      } else {
+        setSelectedCustomer(null);
+      }
+      
+      if (heldBill.doctorId) {
+        const doctor = doctors.find(d => d.id === heldBill.doctorId);
+        if (doctor) {
+          setSelectedDoctor(doctor);
+        } else {
+          setSelectedDoctor(null);
+        }
+      } else {
+        setSelectedDoctor(null);
+      }
+      
+      setHeldBillsDialogOpen(false);
+      toast({ title: "Bill resumed successfully" });
+      deleteHeldBillMutation.mutate(heldBill.id);
+    } catch (error) {
+      console.error("Failed to parse held bill items:", error);
+      toast({ title: "Failed to resume bill - invalid data", variant: "destructive" });
+    }
+  };
+
+  const formatHeldBillTime = (createdAt: string | Date | null) => {
+    if (!createdAt) return "Unknown";
+    const date = new Date(createdAt);
+    return date.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <AppLayout title="New Sale / Invoice">
       <div className="flex flex-col lg:flex-row gap-6 h-full">
@@ -374,6 +511,30 @@ export default function NewSale() {
               data-testid="button-new-bill"
             >
               New Bill
+            </Button>
+            <Button 
+              variant="outline" 
+              className="h-9"
+              onClick={handleHoldBill}
+              disabled={items.length === 0 || holdBillMutation.isPending}
+              data-testid="button-hold-bill"
+            >
+              <Pause className="h-4 w-4 mr-1.5" />
+              {holdBillMutation.isPending ? "Holding..." : "Hold Bill"}
+            </Button>
+            <Button 
+              variant="outline" 
+              className="h-9"
+              onClick={() => setHeldBillsDialogOpen(true)}
+              data-testid="button-resume-bill"
+            >
+              <Play className="h-4 w-4 mr-1.5" />
+              Resume Bill
+              {heldBills.length > 0 && (
+                <span className="ml-1.5 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded-full">
+                  {heldBills.length}
+                </span>
+              )}
             </Button>
             <Button 
               variant="outline" 
@@ -902,6 +1063,78 @@ export default function NewSale() {
               data-testid="button-save-customer"
             >
               {createCustomerMutation.isPending ? "Saving..." : "Save Customer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={heldBillsDialogOpen} onOpenChange={setHeldBillsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Held Bills</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {heldBills.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No bills on hold
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {heldBills.map((bill) => (
+                  <div 
+                    key={bill.id} 
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
+                    data-testid={`held-bill-${bill.id}`}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{bill.customerName}</span>
+                        {bill.customerPhone && (
+                          <span className="text-sm text-muted-foreground">
+                            ({bill.customerPhone})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatHeldBillTime(bill.createdAt)}
+                        </span>
+                        <span className="font-medium text-foreground">
+                          ₹{Number(bill.total).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleResumeBill(bill)}
+                        data-testid={`button-resume-${bill.id}`}
+                      >
+                        <Play className="h-4 w-4 mr-1" />
+                        Resume
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => {
+                          deleteHeldBillMutation.mutate(bill.id);
+                        }}
+                        data-testid={`button-delete-held-${bill.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHeldBillsDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
