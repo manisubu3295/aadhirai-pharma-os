@@ -42,9 +42,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package } from "lucide-react";
+import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { usePlan } from "@/lib/planContext";
 import type { Medicine } from "@shared/schema";
 
 const CATEGORIES = ["Tablets", "Capsules", "Syrups", "Injections", "Drops", "Ointments", "Creams", "Powders", "Other"];
@@ -63,6 +64,10 @@ interface MedicineFormData {
   hsnCode: string;
   category: string;
   reorderLevel: number;
+  barcode: string;
+  minStock: number;
+  maxStock: number;
+  locationId: number | null;
 }
 
 const emptyForm: MedicineFormData = {
@@ -78,6 +83,10 @@ const emptyForm: MedicineFormData = {
   hsnCode: "",
   category: "Tablets",
   reorderLevel: 50,
+  barcode: "",
+  minStock: 10,
+  maxStock: 500,
+  locationId: null,
 };
 
 export default function Inventory() {
@@ -91,6 +100,7 @@ export default function Inventory() {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isPro } = usePlan();
 
   const { data: medicines = [], isLoading } = useQuery<Medicine[]>({
     queryKey: ["/api/medicines"],
@@ -178,10 +188,12 @@ export default function Inventory() {
   };
 
   const filteredMedicines = medicines.filter((item) => {
+    const searchLower = searchTerm.toLowerCase();
     const matchesSearch = 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.batchNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.manufacturer.toLowerCase().includes(searchTerm.toLowerCase());
+      item.name.toLowerCase().includes(searchLower) ||
+      item.batchNumber.toLowerCase().includes(searchLower) ||
+      item.manufacturer.toLowerCase().includes(searchLower) ||
+      (item.barcode && item.barcode.toLowerCase().includes(searchLower));
     
     if (filterStatus === "all") return matchesSearch;
     if (filterStatus === "low") return matchesSearch && item.status === "Low Stock";
@@ -206,8 +218,48 @@ export default function Inventory() {
       hsnCode: medicine.hsnCode || "",
       category: medicine.category,
       reorderLevel: medicine.reorderLevel,
+      barcode: medicine.barcode || "",
+      minStock: medicine.minStock || 10,
+      maxStock: medicine.maxStock || 500,
+      locationId: medicine.locationId || null,
     });
     setEditDialogOpen(true);
+  };
+
+  const printBarcodeLabel = (medicine: Medicine) => {
+    const printWindow = window.open('', '_blank', 'width=400,height=300');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Barcode Label - ${medicine.name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+            .label { border: 2px dashed #ccc; padding: 15px; width: 280px; text-align: center; }
+            .name { font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+            .barcode { font-family: 'Libre Barcode 128', monospace; font-size: 48px; margin: 10px 0; letter-spacing: 2px; }
+            .barcode-text { font-size: 12px; font-family: monospace; margin-bottom: 8px; }
+            .info { font-size: 11px; color: #666; }
+            .price { font-size: 16px; font-weight: bold; margin-top: 8px; }
+            @media print { .no-print { display: none; } }
+          </style>
+          <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128&display=swap" rel="stylesheet">
+        </head>
+        <body>
+          <div class="label">
+            <div class="name">${medicine.name}</div>
+            <div class="barcode">${medicine.barcode || medicine.batchNumber}</div>
+            <div class="barcode-text">${medicine.barcode || medicine.batchNumber}</div>
+            <div class="info">Batch: ${medicine.batchNumber} | Exp: ${medicine.expiryDate}</div>
+            <div class="price">₹${parseFloat(String(medicine.price)).toFixed(2)}</div>
+          </div>
+          <button class="no-print" onclick="window.print()" style="margin-top: 20px; padding: 10px 20px; cursor: pointer;">Print Label</button>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
   };
 
   const openDeleteDialog = (medicine: Medicine) => {
@@ -376,6 +428,51 @@ export default function Inventory() {
           data-testid="input-hsn-code"
         />
       </div>
+      {isPro && (
+        <>
+          <div className="col-span-2 pt-2 border-t">
+            <div className="flex items-center gap-2 mb-2">
+              <Barcode className="h-4 w-4 text-amber-600" />
+              <span className="text-sm font-medium text-amber-600">PRO Features</span>
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="barcode">Barcode</Label>
+            <Input
+              id="barcode"
+              value={formData.barcode}
+              onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+              placeholder="Scan or enter barcode"
+              className="mt-1.5"
+              data-testid="input-barcode"
+            />
+          </div>
+          <div>
+            <Label htmlFor="minStock">Min Stock Level</Label>
+            <Input
+              id="minStock"
+              type="number"
+              min={0}
+              value={formData.minStock}
+              onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+              className="mt-1.5"
+              data-testid="input-min-stock"
+            />
+          </div>
+          <div>
+            <Label htmlFor="maxStock">Max Stock Level</Label>
+            <Input
+              id="maxStock"
+              type="number"
+              min={0}
+              value={formData.maxStock}
+              onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+              className="mt-1.5"
+              data-testid="input-max-stock"
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -414,7 +511,7 @@ export default function Inventory() {
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by name, batch, or manufacturer..."
+                placeholder={isPro ? "Search by name, batch, barcode..." : "Search by name, batch, manufacturer..."}
                 className="pl-9 h-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -451,6 +548,7 @@ export default function Inventory() {
                     <TableHead>Medicine Name</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Batch No.</TableHead>
+                    {isPro && <TableHead>Barcode</TableHead>}
                     <TableHead>Expiry</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-right">Price</TableHead>
@@ -471,6 +569,18 @@ export default function Inventory() {
                       </TableCell>
                       <TableCell>{item.category}</TableCell>
                       <TableCell className="font-mono text-xs">{item.batchNumber}</TableCell>
+                      {isPro && (
+                        <TableCell className="font-mono text-xs">
+                          {item.barcode ? (
+                            <div className="flex items-center gap-1">
+                              <Barcode className="h-3 w-3 text-muted-foreground" />
+                              {item.barcode}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <span className={`text-xs ${isExpired(item.expiryDate) ? 'text-red-600 font-medium' : isNearExpiry(item.expiryDate) ? 'text-orange-600 font-medium' : ''}`}>
                           {item.expiryDate}
@@ -508,6 +618,11 @@ export default function Inventory() {
                             <DropdownMenuItem onClick={() => openEditDialog(item)}>
                               <Edit className="h-4 w-4 mr-2" /> Edit
                             </DropdownMenuItem>
+                            {isPro && (
+                              <DropdownMenuItem onClick={() => printBarcodeLabel(item)}>
+                                <Printer className="h-4 w-4 mr-2" /> Print Label
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem 
                               className="text-destructive"
                               onClick={() => openDeleteDialog(item)}

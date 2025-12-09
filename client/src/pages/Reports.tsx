@@ -10,17 +10,37 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { 
   BarChart3, 
   TrendingUp, 
   Package, 
   AlertTriangle, 
   CreditCard,
-  Calendar
+  Calendar,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Crown
 } from "lucide-react";
+import { useState } from "react";
+import { usePlan } from "@/lib/planContext";
+import { useToast } from "@/hooks/use-toast";
 import type { Sale, Medicine, Customer } from "@shared/schema";
 
 export default function Reports() {
+  const { isPro } = usePlan();
+  const { toast } = useToast();
+  
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+  
+  const [fromDate, setFromDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
+  const [toDate, setToDate] = useState(today.toISOString().split('T')[0]);
+
   const { data: sales = [] } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
     queryFn: async () => {
@@ -48,7 +68,6 @@ export default function Reports() {
     },
   });
 
-  const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
@@ -59,8 +78,14 @@ export default function Reports() {
 
   const weekSales = sales.filter(s => new Date(s.createdAt) >= weekAgo);
 
+  const filteredSales = sales.filter(s => {
+    const saleDate = new Date(s.createdAt).toISOString().split('T')[0];
+    return saleDate >= fromDate && saleDate <= toDate;
+  });
+
   const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total), 0);
   const weekTotal = weekSales.reduce((sum, s) => sum + Number(s.total), 0);
+  const filteredTotal = filteredSales.reduce((sum, s) => sum + Number(s.total), 0);
 
   const isNearExpiry = (expiryDate: string) => {
     const expiry = new Date(expiryDate);
@@ -79,6 +104,99 @@ export default function Reports() {
   const customersWithDue = customers.filter(c => Number(c.outstandingBalance || 0) > 0);
 
   const totalDue = customersWithDue.reduce((sum, c) => sum + Number(c.outstandingBalance || 0), 0);
+
+  const exportSalesCSV = () => {
+    if (!isPro) {
+      toast({ title: "PRO feature", description: "Upgrade to PRO to export reports", variant: "destructive" });
+      return;
+    }
+    const headers = ["Invoice No", "Date", "Customer", "Subtotal", "Tax", "Total", "Payment Method"];
+    const rows = filteredSales.map(s => [
+      s.invoiceNo || `INV-${String(s.id).padStart(4, '0')}`,
+      new Date(s.createdAt).toLocaleDateString('en-IN'),
+      s.customerName,
+      Number(s.subtotal).toFixed(2),
+      Number(s.tax).toFixed(2),
+      Number(s.total).toFixed(2),
+      s.paymentMethod
+    ]);
+    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
+    downloadFile(csv, `sales_report_${fromDate}_to_${toDate}.csv`, "text/csv");
+    toast({ title: "Sales report exported" });
+  };
+
+  const exportExpiryCSV = () => {
+    if (!isPro) {
+      toast({ title: "PRO feature", description: "Upgrade to PRO to export reports", variant: "destructive" });
+      return;
+    }
+    const headers = ["Medicine", "Manufacturer", "Batch", "Expiry Date", "Quantity", "Value", "Status"];
+    const data = [...expiredMedicines, ...expiringMedicines];
+    const rows = data.map(m => [
+      m.name,
+      m.manufacturer,
+      m.batchNumber,
+      m.expiryDate,
+      m.quantity,
+      (Number(m.price) * m.quantity).toFixed(2),
+      isExpired(m.expiryDate) ? "Expired" : "Expiring Soon"
+    ]);
+    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
+    downloadFile(csv, `expiry_report_${todayStr}.csv`, "text/csv");
+    toast({ title: "Expiry report exported" });
+  };
+
+  const exportStockCSV = () => {
+    if (!isPro) {
+      toast({ title: "PRO feature", description: "Upgrade to PRO to export reports", variant: "destructive" });
+      return;
+    }
+    const headers = ["Medicine", "Manufacturer", "Category", "Current Stock", "Reorder Level", "Status"];
+    const rows = lowStockMedicines.map(m => [
+      m.name,
+      m.manufacturer,
+      m.category,
+      m.quantity,
+      m.reorderLevel,
+      m.status
+    ]);
+    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
+    downloadFile(csv, `stock_report_${todayStr}.csv`, "text/csv");
+    toast({ title: "Stock report exported" });
+  };
+
+  const exportCreditCSV = () => {
+    if (!isPro) {
+      toast({ title: "PRO feature", description: "Upgrade to PRO to export reports", variant: "destructive" });
+      return;
+    }
+    const headers = ["Customer", "Phone", "Credit Limit", "Outstanding", "Available"];
+    const rows = customersWithDue.map(c => {
+      const limit = Number(c.creditLimit || 0);
+      const outstanding = Number(c.outstandingBalance || 0);
+      const available = Math.max(0, limit - outstanding);
+      return [
+        c.name,
+        c.phone || "-",
+        limit.toFixed(2),
+        outstanding.toFixed(2),
+        available.toFixed(2)
+      ];
+    });
+    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
+    downloadFile(csv, `credit_due_report_${todayStr}.csv`, "text/csv");
+    toast({ title: "Credit due report exported" });
+  };
+
+  const downloadFile = (content: string, filename: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <AppLayout title="Reports">
@@ -168,12 +286,61 @@ export default function Reports() {
         <TabsContent value="sales">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Sales</CardTitle>
-              <CardDescription>Last 50 sales transactions</CardDescription>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    Sales Report
+                    {isPro && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/20 text-amber-600 border-amber-500/30">
+                        <Crown className="w-2.5 h-2.5 mr-0.5" />
+                        PRO
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    {filteredSales.length} sales ({fromDate} to {toDate}) • Total: ₹{filteredTotal.toFixed(2)}
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="from-date" className="text-sm">From</Label>
+                    <Input 
+                      id="from-date"
+                      type="date" 
+                      value={fromDate} 
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="w-36"
+                      data-testid="input-from-date"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="to-date" className="text-sm">To</Label>
+                    <Input 
+                      id="to-date"
+                      type="date" 
+                      value={toDate} 
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="w-36"
+                      data-testid="input-to-date"
+                    />
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={exportSalesCSV}
+                    disabled={!isPro}
+                    data-testid="button-export-sales-csv"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 mr-1" />
+                    CSV
+                    {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              {sales.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">No sales recorded yet.</div>
+              {filteredSales.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No sales recorded in selected period.</div>
               ) : (
                 <div className="rounded-md border overflow-x-auto">
                   <Table>
@@ -189,7 +356,7 @@ export default function Reports() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sales.slice(0, 50).map((sale) => (
+                      {filteredSales.slice(0, 100).map((sale) => (
                         <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`}>
                           <TableCell className="font-mono text-xs">
                             {sale.invoiceNo || `INV-${String(sale.id).padStart(4, '0')}`}
@@ -219,8 +386,23 @@ export default function Reports() {
         <TabsContent value="expiry">
           <Card>
             <CardHeader>
-              <CardTitle>Expiry Report</CardTitle>
-              <CardDescription>Medicines expiring within 3 months or already expired</CardDescription>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Expiry Report</CardTitle>
+                  <CardDescription>Medicines expiring within 3 months or already expired</CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportExpiryCSV}
+                  disabled={!isPro}
+                  data-testid="button-export-expiry-csv"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-1" />
+                  Export CSV
+                  {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {expiringMedicines.length === 0 && expiredMedicines.length === 0 ? (
@@ -275,8 +457,23 @@ export default function Reports() {
         <TabsContent value="stock">
           <Card>
             <CardHeader>
-              <CardTitle>Stock Report</CardTitle>
-              <CardDescription>Low stock and out of stock items</CardDescription>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Stock Report</CardTitle>
+                  <CardDescription>Low stock and out of stock items</CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportStockCSV}
+                  disabled={!isPro}
+                  data-testid="button-export-stock-csv"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-1" />
+                  Export CSV
+                  {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {lowStockMedicines.length === 0 ? (
@@ -325,8 +522,23 @@ export default function Reports() {
         <TabsContent value="credit">
           <Card>
             <CardHeader>
-              <CardTitle>Credit Due Report</CardTitle>
-              <CardDescription>Customers with outstanding balances</CardDescription>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Credit Due Report</CardTitle>
+                  <CardDescription>Customers with outstanding balances</CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={exportCreditCSV}
+                  disabled={!isPro}
+                  data-testid="button-export-credit-csv"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-1" />
+                  Export CSV
+                  {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {customersWithDue.length === 0 ? (

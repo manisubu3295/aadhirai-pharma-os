@@ -14,7 +14,8 @@ import {
   Shield,
   Calculator,
   Crown,
-  BarChart3
+  BarChart3,
+  Stethoscope
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
@@ -40,10 +41,12 @@ export function Sidebar() {
     { icon: ShoppingCart, label: "Point of Sale", href: "/pos" },
     { icon: Users, label: "Customers", href: "/customers" },
     { icon: FileText, label: "Reports", href: "/reports" },
+    { icon: Stethoscope, label: "Doctors", href: "/doctors", proOnly: true },
     { icon: CreditCard, label: "Collections", href: "/collections", proOnly: true },
     { icon: MapPin, label: "Locations", href: "/locations", proOnly: true },
     { icon: Shield, label: "Audit Log", href: "/audit-log", proOnly: true, ownerOnly: true },
     { icon: Calculator, label: "Tally Export", href: "/tally-export", proOnly: true, ownerOnly: true },
+    { icon: BarChart3, label: "Owner Analytics", href: "/owner-dashboard", proOnly: true, ownerOnly: true },
     { icon: Settings, label: "Settings", href: "/settings", ownerOnly: true },
   ];
 

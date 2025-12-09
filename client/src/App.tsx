@@ -18,6 +18,8 @@ import Collections from "@/pages/Collections";
 import LocationMaster from "@/pages/LocationMaster";
 import AuditLog from "@/pages/AuditLog";
 import TallyExport from "@/pages/TallyExport";
+import Doctors from "@/pages/Doctors";
+import OwnerDashboard from "@/pages/OwnerDashboard";
 
 function Router() {
   return (
@@ -76,6 +78,16 @@ function Router() {
       <Route path="/tally-export">
         <ProtectedRoute allowedRoles={["owner"]}>
           <TallyExport />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/doctors">
+        <ProtectedRoute>
+          <Doctors />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/owner-dashboard">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <OwnerDashboard />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />

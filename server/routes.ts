@@ -258,6 +258,36 @@ export async function registerRoutes(
     }
   });
 
+  app.put("/api/doctors/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertDoctorSchema.partial().parse(req.body);
+      const doctor = await storage.updateDoctor(id, data);
+      if (!doctor) {
+        return res.status(404).json({ error: "Doctor not found" });
+      }
+      res.json(doctor);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update doctor" });
+    }
+  });
+
+  app.delete("/api/doctors/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteDoctor(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Doctor not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete doctor" });
+    }
+  });
+
   app.get("/api/sales", async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;

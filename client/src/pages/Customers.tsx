@@ -26,10 +26,11 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Users, Phone, Mail, CreditCard } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Users, Phone, Mail, CreditCard, Clock, History, Crown, Receipt } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { Customer } from "@shared/schema";
+import { usePlan } from "@/lib/planContext";
+import type { Customer, CreditPayment, Sale } from "@shared/schema";
 
 interface CustomerFormData {
   name: string;
@@ -38,6 +39,7 @@ interface CustomerFormData {
   address: string;
   gstin: string;
   creditLimit: string;
+  creditPeriodDays: number;
 }
 
 const emptyForm: CustomerFormData = {
@@ -47,17 +49,20 @@ const emptyForm: CustomerFormData = {
   address: "",
   gstin: "",
   creditLimit: "0",
+  creditPeriodDays: 30,
 };
 
 export default function Customers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isPro } = usePlan();
 
   const { data: customers = [], isLoading } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
@@ -66,6 +71,32 @@ export default function Customers() {
       if (!response.ok) throw new Error("Failed to fetch customers");
       return response.json();
     },
+  });
+
+  const { data: creditPayments = [] } = useQuery<CreditPayment[]>({
+    queryKey: ["/api/credit-payments", selectedCustomer?.id],
+    queryFn: async () => {
+      if (!selectedCustomer) return [];
+      const response = await fetch(`/api/credit-payments?customerId=${selectedCustomer.id}`);
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!selectedCustomer && paymentHistoryDialogOpen,
+  });
+
+  const { data: creditSales = [] } = useQuery<Sale[]>({
+    queryKey: ["/api/sales", "credit", selectedCustomer?.id],
+    queryFn: async () => {
+      if (!selectedCustomer) return [];
+      const response = await fetch(`/api/sales`);
+      if (!response.ok) return [];
+      const allSales = await response.json();
+      return allSales.filter((s: Sale) => 
+        s.customerId === selectedCustomer.id && 
+        s.paymentMethod === "Credit"
+      );
+    },
+    enabled: !!selectedCustomer && paymentHistoryDialogOpen,
   });
 
   const createMutation = useMutation({
@@ -89,6 +120,28 @@ export default function Customers() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: CustomerFormData }) => {
+      const res = await fetch(`/api/customers/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update customer");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setEditDialogOpen(false);
+      setSelectedCustomer(null);
+      setFormData(emptyForm);
+      toast({ title: "Customer updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update customer", variant: "destructive" });
+    },
+  });
+
   const filteredCustomers = customers.filter((customer) =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (customer.phone && customer.phone.includes(searchTerm)) ||
@@ -104,8 +157,26 @@ export default function Customers() {
       address: customer.address || "",
       gstin: customer.gstin || "",
       creditLimit: String(customer.creditLimit || "0"),
+      creditPeriodDays: customer.creditPeriodDays || 30,
     });
     setEditDialogOpen(true);
+  };
+
+  const openPaymentHistoryDialog = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setPaymentHistoryDialogOpen(true);
+  };
+
+  const calculateDueDate = (saleDate: string | Date, creditDays: number) => {
+    const date = new Date(saleDate);
+    date.setDate(date.getDate() + creditDays);
+    return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const isOverdue = (saleDate: string | Date, creditDays: number) => {
+    const dueDate = new Date(saleDate);
+    dueDate.setDate(dueDate.getDate() + creditDays);
+    return new Date() > dueDate;
   };
 
   const handleSubmit = () => {
@@ -195,6 +266,30 @@ export default function Customers() {
           />
         </div>
       </div>
+      {isPro && (
+        <div className="pt-4 border-t">
+          <div className="flex items-center gap-2 mb-3">
+            <Crown className="h-4 w-4 text-amber-600" />
+            <span className="text-sm font-medium text-amber-600">PRO Features</span>
+          </div>
+          <div>
+            <Label htmlFor="creditPeriodDays">Credit Period (Days)</Label>
+            <Input
+              id="creditPeriodDays"
+              type="number"
+              min={0}
+              value={formData.creditPeriodDays}
+              onChange={(e) => setFormData({ ...formData, creditPeriodDays: parseInt(e.target.value) || 30 })}
+              placeholder="30"
+              className="mt-1.5"
+              data-testid="input-credit-period"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Default credit period for calculating bill due dates
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -296,6 +391,7 @@ export default function Customers() {
                     <TableHead>Contact</TableHead>
                     <TableHead>GSTIN</TableHead>
                     <TableHead className="text-right">Credit Limit</TableHead>
+                    {isPro && <TableHead className="text-center">Credit Period</TableHead>}
                     <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -335,6 +431,18 @@ export default function Customers() {
                           "-"
                         )}
                       </TableCell>
+                      {isPro && (
+                        <TableCell className="text-center">
+                          {Number(customer.creditLimit || 0) > 0 ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <Clock className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-sm">{customer.creditPeriodDays || 30} days</span>
+                            </div>
+                          ) : (
+                            "-"
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right">
                         {Number(customer.outstandingBalance || 0) > 0 ? (
                           <span className="text-red-600 font-medium">
@@ -356,6 +464,11 @@ export default function Customers() {
                             <DropdownMenuItem onClick={() => openEditDialog(customer)}>
                               <Edit className="h-4 w-4 mr-2" /> View / Edit
                             </DropdownMenuItem>
+                            {isPro && Number(customer.outstandingBalance || 0) > 0 && (
+                              <DropdownMenuItem onClick={() => openPaymentHistoryDialog(customer)}>
+                                <History className="h-4 w-4 mr-2" /> Payment History
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -409,10 +522,141 @@ export default function Customers() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={() => {
+                if (selectedCustomer) {
+                  updateMutation.mutate({ id: selectedCustomer.id, data: formData });
+                }
+              }}
+              disabled={updateMutation.isPending}
+              data-testid="button-update-customer"
+            >
+              {updateMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {isPro && (
+        <Dialog open={paymentHistoryDialogOpen} onOpenChange={setPaymentHistoryDialogOpen}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Payment History - {selectedCustomer?.name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-lg bg-red-50 border border-red-200">
+                  <p className="text-sm text-red-700">Outstanding Balance</p>
+                  <p className="text-xl font-bold text-red-600">
+                    ₹{Number(selectedCustomer?.outstandingBalance || 0).toFixed(2)}
+                  </p>
+                </div>
+                <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
+                  <p className="text-sm text-blue-700">Credit Period</p>
+                  <p className="text-xl font-bold text-blue-600">
+                    {selectedCustomer?.creditPeriodDays || 30} Days
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <Receipt className="h-4 w-4" />
+                  Credit Sales
+                </h4>
+                {creditSales.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No credit sales found</p>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Invoice #</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>Due Date</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {creditSales.map((sale) => (
+                          <TableRow key={sale.id}>
+                            <TableCell className="font-mono text-sm">{sale.invoiceNo || `INV-${sale.id}`}</TableCell>
+                            <TableCell className="text-sm">
+                              {new Date(sale.createdAt).toLocaleDateString('en-IN')}
+                            </TableCell>
+                            <TableCell className="text-right font-medium">₹{Number(sale.total).toFixed(2)}</TableCell>
+                            <TableCell className="text-sm">
+                              {calculateDueDate(sale.createdAt, selectedCustomer?.creditPeriodDays || 30)}
+                            </TableCell>
+                            <TableCell>
+                              {isOverdue(sale.createdAt, selectedCustomer?.creditPeriodDays || 30) ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
+                                  Overdue
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                                  Pending
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <CreditCard className="h-4 w-4" />
+                  Payment Records
+                </h4>
+                {creditPayments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No payments recorded yet</p>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>Method</TableHead>
+                          <TableHead>Notes</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {creditPayments.map((payment) => (
+                          <TableRow key={payment.id}>
+                            <TableCell className="text-sm">
+                              {new Date(payment.createdAt).toLocaleDateString('en-IN')}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-green-600">
+                              ₹{Number(payment.amount).toFixed(2)}
+                            </TableCell>
+                            <TableCell>{payment.paymentMethod}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {payment.notes || "-"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPaymentHistoryDialogOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </AppLayout>
   );
 }
