@@ -43,7 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer } from "lucide-react";
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Medicine } from "@shared/schema";
@@ -88,6 +88,211 @@ const emptyForm: MedicineFormData = {
   maxStock: 500,
   locationId: null,
 };
+
+interface MedicineFormFieldsProps {
+  formData: MedicineFormData;
+  setFormData: React.Dispatch<React.SetStateAction<MedicineFormData>>;
+  isPro: boolean;
+}
+
+const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormData, isPro }: MedicineFormFieldsProps) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <div className="col-span-2">
+        <Label htmlFor="name">Medicine Name *</Label>
+        <Input
+          id="name"
+          value={formData.name}
+          onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+          placeholder="e.g., Paracetamol 500mg"
+          className="mt-1.5"
+          data-testid="input-medicine-name"
+        />
+      </div>
+      <div>
+        <Label htmlFor="batchNumber">Batch Number *</Label>
+        <Input
+          id="batchNumber"
+          value={formData.batchNumber}
+          onChange={(e) => setFormData(prev => ({ ...prev, batchNumber: e.target.value }))}
+          placeholder="e.g., BT2024001"
+          className="mt-1.5"
+          data-testid="input-batch-number"
+        />
+      </div>
+      <div>
+        <Label htmlFor="expiryDate">Expiry Date *</Label>
+        <Input
+          id="expiryDate"
+          type="date"
+          value={formData.expiryDate}
+          onChange={(e) => setFormData(prev => ({ ...prev, expiryDate: e.target.value }))}
+          className="mt-1.5"
+          data-testid="input-expiry-date"
+        />
+      </div>
+      <div>
+        <Label htmlFor="manufacturer">Manufacturer *</Label>
+        <Input
+          id="manufacturer"
+          value={formData.manufacturer}
+          onChange={(e) => setFormData(prev => ({ ...prev, manufacturer: e.target.value }))}
+          placeholder="e.g., Sun Pharma"
+          className="mt-1.5"
+          data-testid="input-manufacturer"
+        />
+      </div>
+      <div>
+        <Label htmlFor="category">Category</Label>
+        <Select value={formData.category} onValueChange={(v) => setFormData(prev => ({ ...prev, category: v }))}>
+          <SelectTrigger className="mt-1.5" data-testid="select-category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATEGORIES.map((cat) => (
+              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor="quantity">Quantity</Label>
+        <Input
+          id="quantity"
+          type="number"
+          min={0}
+          value={formData.quantity}
+          onChange={(e) => setFormData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+          className="mt-1.5"
+          data-testid="input-quantity"
+        />
+      </div>
+      <div>
+        <Label htmlFor="reorderLevel">Reorder Level</Label>
+        <Input
+          id="reorderLevel"
+          type="number"
+          min={0}
+          value={formData.reorderLevel}
+          onChange={(e) => setFormData(prev => ({ ...prev, reorderLevel: parseInt(e.target.value) || 0 }))}
+          className="mt-1.5"
+          data-testid="input-reorder-level"
+        />
+      </div>
+      <div>
+        <Label htmlFor="costPrice">Cost Price (₹)</Label>
+        <Input
+          id="costPrice"
+          type="number"
+          step="0.01"
+          min={0}
+          value={formData.costPrice}
+          onChange={(e) => setFormData(prev => ({ ...prev, costPrice: e.target.value }))}
+          placeholder="0.00"
+          className="mt-1.5"
+          data-testid="input-cost-price"
+        />
+      </div>
+      <div>
+        <Label htmlFor="price">Selling Price (₹) *</Label>
+        <Input
+          id="price"
+          type="number"
+          step="0.01"
+          min={0}
+          value={formData.price}
+          onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
+          placeholder="0.00"
+          className="mt-1.5"
+          data-testid="input-price"
+        />
+      </div>
+      <div>
+        <Label htmlFor="mrp">MRP (₹)</Label>
+        <Input
+          id="mrp"
+          type="number"
+          step="0.01"
+          min={0}
+          value={formData.mrp}
+          onChange={(e) => setFormData(prev => ({ ...prev, mrp: e.target.value }))}
+          placeholder="0.00"
+          className="mt-1.5"
+          data-testid="input-mrp"
+        />
+      </div>
+      <div>
+        <Label htmlFor="gstRate">GST Rate (%)</Label>
+        <Select value={formData.gstRate} onValueChange={(v) => setFormData(prev => ({ ...prev, gstRate: v }))}>
+          <SelectTrigger className="mt-1.5" data-testid="select-gst-rate">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {GST_RATES.map((rate) => (
+              <SelectItem key={rate} value={rate}>{rate}%</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor="hsnCode">HSN Code</Label>
+        <Input
+          id="hsnCode"
+          value={formData.hsnCode}
+          onChange={(e) => setFormData(prev => ({ ...prev, hsnCode: e.target.value }))}
+          placeholder="e.g., 3004"
+          className="mt-1.5"
+          data-testid="input-hsn-code"
+        />
+      </div>
+      {isPro && (
+        <>
+          <div className="col-span-2 pt-2 border-t">
+            <div className="flex items-center gap-2 mb-2">
+              <Barcode className="h-4 w-4 text-amber-600" />
+              <span className="text-sm font-medium text-amber-600">PRO Features</span>
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="barcode">Barcode</Label>
+            <Input
+              id="barcode"
+              value={formData.barcode}
+              onChange={(e) => setFormData(prev => ({ ...prev, barcode: e.target.value }))}
+              placeholder="Scan or enter barcode"
+              className="mt-1.5"
+              data-testid="input-barcode"
+            />
+          </div>
+          <div>
+            <Label htmlFor="minStock">Min Stock Level</Label>
+            <Input
+              id="minStock"
+              type="number"
+              min={0}
+              value={formData.minStock}
+              onChange={(e) => setFormData(prev => ({ ...prev, minStock: parseInt(e.target.value) || 0 }))}
+              className="mt-1.5"
+              data-testid="input-min-stock"
+            />
+          </div>
+          <div>
+            <Label htmlFor="maxStock">Max Stock Level</Label>
+            <Input
+              id="maxStock"
+              type="number"
+              min={0}
+              value={formData.maxStock}
+              onChange={(e) => setFormData(prev => ({ ...prev, maxStock: parseInt(e.target.value) || 0 }))}
+              className="mt-1.5"
+              data-testid="input-max-stock"
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+});
 
 export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -279,203 +484,6 @@ export default function Inventory() {
     }
   };
 
-  const MedicineFormFields = () => (
-    <div className="grid grid-cols-2 gap-4">
-      <div className="col-span-2">
-        <Label htmlFor="name">Medicine Name *</Label>
-        <Input
-          id="name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="e.g., Paracetamol 500mg"
-          className="mt-1.5"
-          data-testid="input-medicine-name"
-        />
-      </div>
-      <div>
-        <Label htmlFor="batchNumber">Batch Number *</Label>
-        <Input
-          id="batchNumber"
-          value={formData.batchNumber}
-          onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
-          placeholder="e.g., BT2024001"
-          className="mt-1.5"
-          data-testid="input-batch-number"
-        />
-      </div>
-      <div>
-        <Label htmlFor="expiryDate">Expiry Date *</Label>
-        <Input
-          id="expiryDate"
-          type="date"
-          value={formData.expiryDate}
-          onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-          className="mt-1.5"
-          data-testid="input-expiry-date"
-        />
-      </div>
-      <div>
-        <Label htmlFor="manufacturer">Manufacturer *</Label>
-        <Input
-          id="manufacturer"
-          value={formData.manufacturer}
-          onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
-          placeholder="e.g., Sun Pharma"
-          className="mt-1.5"
-          data-testid="input-manufacturer"
-        />
-      </div>
-      <div>
-        <Label htmlFor="category">Category</Label>
-        <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-          <SelectTrigger className="mt-1.5" data-testid="select-category">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CATEGORIES.map((cat) => (
-              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <Label htmlFor="quantity">Quantity</Label>
-        <Input
-          id="quantity"
-          type="number"
-          min={0}
-          value={formData.quantity}
-          onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
-          className="mt-1.5"
-          data-testid="input-quantity"
-        />
-      </div>
-      <div>
-        <Label htmlFor="reorderLevel">Reorder Level</Label>
-        <Input
-          id="reorderLevel"
-          type="number"
-          min={0}
-          value={formData.reorderLevel}
-          onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
-          className="mt-1.5"
-          data-testid="input-reorder-level"
-        />
-      </div>
-      <div>
-        <Label htmlFor="costPrice">Cost Price (₹)</Label>
-        <Input
-          id="costPrice"
-          type="number"
-          step="0.01"
-          min={0}
-          value={formData.costPrice}
-          onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
-          placeholder="0.00"
-          className="mt-1.5"
-          data-testid="input-cost-price"
-        />
-      </div>
-      <div>
-        <Label htmlFor="price">Selling Price (₹) *</Label>
-        <Input
-          id="price"
-          type="number"
-          step="0.01"
-          min={0}
-          value={formData.price}
-          onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-          placeholder="0.00"
-          className="mt-1.5"
-          data-testid="input-price"
-        />
-      </div>
-      <div>
-        <Label htmlFor="mrp">MRP (₹)</Label>
-        <Input
-          id="mrp"
-          type="number"
-          step="0.01"
-          min={0}
-          value={formData.mrp}
-          onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
-          placeholder="0.00"
-          className="mt-1.5"
-          data-testid="input-mrp"
-        />
-      </div>
-      <div>
-        <Label htmlFor="gstRate">GST Rate (%)</Label>
-        <Select value={formData.gstRate} onValueChange={(v) => setFormData({ ...formData, gstRate: v })}>
-          <SelectTrigger className="mt-1.5" data-testid="select-gst-rate">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GST_RATES.map((rate) => (
-              <SelectItem key={rate} value={rate}>{rate}%</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <Label htmlFor="hsnCode">HSN Code</Label>
-        <Input
-          id="hsnCode"
-          value={formData.hsnCode}
-          onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
-          placeholder="e.g., 3004"
-          className="mt-1.5"
-          data-testid="input-hsn-code"
-        />
-      </div>
-      {isPro && (
-        <>
-          <div className="col-span-2 pt-2 border-t">
-            <div className="flex items-center gap-2 mb-2">
-              <Barcode className="h-4 w-4 text-amber-600" />
-              <span className="text-sm font-medium text-amber-600">PRO Features</span>
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="barcode">Barcode</Label>
-            <Input
-              id="barcode"
-              value={formData.barcode}
-              onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-              placeholder="Scan or enter barcode"
-              className="mt-1.5"
-              data-testid="input-barcode"
-            />
-          </div>
-          <div>
-            <Label htmlFor="minStock">Min Stock Level</Label>
-            <Input
-              id="minStock"
-              type="number"
-              min={0}
-              value={formData.minStock}
-              onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-              className="mt-1.5"
-              data-testid="input-min-stock"
-            />
-          </div>
-          <div>
-            <Label htmlFor="maxStock">Max Stock Level</Label>
-            <Input
-              id="maxStock"
-              type="number"
-              min={0}
-              value={formData.maxStock}
-              onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-              className="mt-1.5"
-              data-testid="input-max-stock"
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
-
   return (
     <AppLayout title="Inventory Management">
       <Card>
@@ -650,7 +658,7 @@ export default function Inventory() {
             <DialogTitle>Add New Medicine</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <MedicineFormFields />
+            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
@@ -671,7 +679,7 @@ export default function Inventory() {
             <DialogTitle>Edit Medicine</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <MedicineFormFields />
+            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>

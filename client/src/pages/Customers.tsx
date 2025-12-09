@@ -190,7 +190,7 @@ export default function Customers() {
   const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstandingBalance || 0), 0);
   const customersWithCredit = customers.filter((c) => Number(c.creditLimit || 0) > 0).length;
 
-  const CustomerFormFields = () => (
+  const customerFormFields = (
     <div className="space-y-4">
       <div>
         <Label htmlFor="name">Customer Name *</Label>
@@ -490,7 +490,7 @@ export default function Customers() {
             <DialogTitle>Add New Customer</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <CustomerFormFields />
+            {customerFormFields}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
@@ -511,7 +511,7 @@ export default function Customers() {
             <DialogTitle>Customer Details</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <CustomerFormFields />
+            {customerFormFields}
             {selectedCustomer && Number(selectedCustomer.outstandingBalance || 0) > 0 && (
               <div className="mt-4 p-4 rounded-lg bg-red-50 border border-red-200">
                 <p className="text-sm font-medium text-red-800">Outstanding Balance</p>

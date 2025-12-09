@@ -161,7 +161,7 @@ export default function Doctors() {
     updateMutation.mutate({ ...formData, id: selectedDoctor.id });
   };
 
-  const DoctorFormFields = () => (
+  const doctorFormFields = (
     <div className="space-y-4">
       <div>
         <Label htmlFor="name">Doctor Name *</Label>
@@ -358,7 +358,7 @@ export default function Doctors() {
           <DialogHeader>
             <DialogTitle>Add New Doctor</DialogTitle>
           </DialogHeader>
-          <DoctorFormFields />
+          {doctorFormFields}
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)} data-testid="button-cancel-add-doctor">
               Cancel
@@ -375,7 +375,7 @@ export default function Doctors() {
           <DialogHeader>
             <DialogTitle>Edit Doctor</DialogTitle>
           </DialogHeader>
-          <DoctorFormFields />
+          {doctorFormFields}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)} data-testid="button-cancel-edit-doctor">
               Cancel
