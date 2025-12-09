@@ -98,6 +98,29 @@ export async function registerRoutes(
     res.json({ user: userWithoutPassword });
   });
 
+  app.post("/api/auth/reset-passwords", async (req, res) => {
+    try {
+      const users = await storage.getUsers();
+      if (users.length === 0) {
+        return res.status(400).json({ error: "No users to reset" });
+      }
+      
+      const password = await bcrypt.hash("password123", 10);
+      
+      for (const user of users) {
+        await storage.updateUser(user.id, { password });
+      }
+      
+      res.json({ 
+        message: "Passwords reset successfully for all users",
+        credentials: { password: "password123" }
+      });
+    } catch (error) {
+      console.error("Password reset error:", error);
+      res.status(500).json({ error: "Password reset failed" });
+    }
+  });
+
   app.post("/api/auth/setup", async (req, res) => {
     try {
       const existingUsers = await storage.getUsers();
