@@ -41,6 +41,170 @@ const pool = new Pool({
 
 const db = drizzle(pool);
 
+export async function initializeDatabase() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid(),
+        username TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT 'staff',
+        email TEXT,
+        phone TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS medicines (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        batch_number TEXT NOT NULL,
+        manufacturer TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0,
+        price DECIMAL(10,2) NOT NULL,
+        cost_price DECIMAL(10,2),
+        mrp DECIMAL(10,2),
+        gst_rate DECIMAL(5,2) NOT NULL DEFAULT 18,
+        hsn_code TEXT,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'In Stock',
+        reorder_level INTEGER NOT NULL DEFAULT 50,
+        barcode TEXT,
+        min_stock INTEGER DEFAULT 10,
+        max_stock INTEGER DEFAULT 500,
+        location_id INTEGER
+      );
+      
+      CREATE TABLE IF NOT EXISTS customers (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        phone TEXT,
+        email TEXT,
+        address TEXT,
+        gstin TEXT,
+        credit_limit DECIMAL(10,2) DEFAULT 0,
+        outstanding_balance DECIMAL(10,2) DEFAULT 0,
+        credit_period_days INTEGER DEFAULT 30,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS doctors (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        specialization TEXT,
+        phone TEXT,
+        registration_no TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS locations (
+        id SERIAL PRIMARY KEY,
+        rack TEXT NOT NULL,
+        row TEXT NOT NULL,
+        bin TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS sales (
+        id SERIAL PRIMARY KEY,
+        invoice_no TEXT,
+        customer_id INTEGER,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT,
+        customer_gstin TEXT,
+        doctor_id INTEGER,
+        doctor_name TEXT,
+        prescription_url TEXT,
+        subtotal DECIMAL(10,2) NOT NULL,
+        discount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        discount_percent DECIMAL(5,2) DEFAULT 0,
+        cgst DECIMAL(10,2) NOT NULL DEFAULT 0,
+        sgst DECIMAL(10,2) NOT NULL DEFAULT 0,
+        igst DECIMAL(10,2) DEFAULT 0,
+        tax DECIMAL(10,2) NOT NULL,
+        total DECIMAL(10,2) NOT NULL,
+        round_off DECIMAL(10,2) DEFAULT 0,
+        payment_method TEXT NOT NULL,
+        received_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        change_amount DECIMAL(10,2) DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'Completed',
+        print_invoice BOOLEAN NOT NULL DEFAULT false,
+        send_via_email BOOLEAN NOT NULL DEFAULT false,
+        user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS sale_items (
+        id SERIAL PRIMARY KEY,
+        sale_id INTEGER NOT NULL,
+        medicine_id INTEGER NOT NULL,
+        medicine_name TEXT NOT NULL,
+        batch_number TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        hsn_code TEXT,
+        quantity INTEGER NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        mrp DECIMAL(10,2),
+        gst_rate DECIMAL(5,2) NOT NULL DEFAULT 18,
+        cgst DECIMAL(10,2) DEFAULT 0,
+        sgst DECIMAL(10,2) DEFAULT 0,
+        discount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        total DECIMAL(10,2) NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id SERIAL PRIMARY KEY,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
+        entity_name TEXT NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
+        user_name TEXT NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS credit_payments (
+        id SERIAL PRIMARY KEY,
+        sale_id INTEGER NOT NULL,
+        customer_id INTEGER NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        payment_method TEXT NOT NULL,
+        notes TEXT,
+        user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS held_bills (
+        id SERIAL PRIMARY KEY,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT,
+        customer_id INTEGER,
+        doctor_id INTEGER,
+        doctor_name TEXT,
+        items TEXT NOT NULL,
+        subtotal DECIMAL(10,2) NOT NULL,
+        discount DECIMAL(10,2) DEFAULT 0,
+        discount_percent DECIMAL(5,2) DEFAULT 0,
+        tax DECIMAL(10,2) NOT NULL,
+        total DECIMAL(10,2) NOT NULL,
+        notes TEXT,
+        user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+    console.log("Database tables initialized successfully");
+  } catch (error) {
+    console.error("Database initialization error:", error);
+    throw error;
+  }
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;

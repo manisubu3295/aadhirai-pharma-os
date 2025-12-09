@@ -232,10 +232,12 @@ export async function registerRoutes(
       const medicine = await storage.createMedicine(data);
       res.status(201).json(medicine);
     } catch (error) {
+      console.error("Medicine creation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: "Failed to create medicine" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create medicine", details: errorMessage });
     }
   });
 
@@ -284,10 +286,12 @@ export async function registerRoutes(
       const customer = await storage.createCustomer(data);
       res.status(201).json(customer);
     } catch (error) {
+      console.error("Customer creation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: "Failed to create customer" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create customer", details: errorMessage });
     }
   });
 
@@ -336,10 +340,12 @@ export async function registerRoutes(
       const doctor = await storage.createDoctor(data);
       res.status(201).json(doctor);
     } catch (error) {
+      console.error("Doctor creation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: "Failed to create doctor" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create doctor", details: errorMessage });
     }
   });
 

@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import { initializeDatabase } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -93,6 +94,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize database tables on startup
+  await initializeDatabase();
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
