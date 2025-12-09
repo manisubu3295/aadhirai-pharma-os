@@ -20,6 +20,10 @@ import AuditLog from "@/pages/AuditLog";
 import TallyExport from "@/pages/TallyExport";
 import Doctors from "@/pages/Doctors";
 import OwnerDashboard from "@/pages/OwnerDashboard";
+import Suppliers from "@/pages/Suppliers";
+import SupplierRates from "@/pages/SupplierRates";
+import PurchaseOrders from "@/pages/PurchaseOrders";
+import GoodsReceipts from "@/pages/GoodsReceipts";
 
 function Router() {
   return (
@@ -88,6 +92,26 @@ function Router() {
       <Route path="/owner-dashboard">
         <ProtectedRoute allowedRoles={["owner"]}>
           <OwnerDashboard />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/suppliers">
+        <ProtectedRoute>
+          <Suppliers />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/supplier-rates">
+        <ProtectedRoute>
+          <SupplierRates />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/purchase-orders">
+        <ProtectedRoute>
+          <PurchaseOrders />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/goods-receipts">
+        <ProtectedRoute>
+          <GoodsReceipts />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />

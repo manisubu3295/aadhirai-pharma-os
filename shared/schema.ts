@@ -208,3 +208,128 @@ export type CreditPayment = typeof creditPayments.$inferSelect;
 export type CreateSaleItem = z.infer<typeof createSaleItemSchema>;
 export type InsertHeldBill = z.infer<typeof insertHeldBillSchema>;
 export type HeldBill = typeof heldBills.$inferSelect;
+
+export const suppliers = pgTable("suppliers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  code: text("code").notNull().unique(),
+  contactPerson: text("contact_person"),
+  phone: text("phone"),
+  email: text("email"),
+  address: text("address"),
+  gstin: text("gstin"),
+  panNumber: text("pan_number"),
+  paymentTermsDays: integer("payment_terms_days").default(30),
+  bankName: text("bank_name"),
+  bankAccount: text("bank_account"),
+  ifscCode: text("ifsc_code"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const supplierRates = pgTable("supplier_rates", {
+  id: serial("id").primaryKey(),
+  supplierId: integer("supplier_id").notNull(),
+  medicineId: integer("medicine_id").notNull(),
+  rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  mrp: decimal("mrp", { precision: 10, scale: 2 }),
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
+  gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
+  minOrderQty: integer("min_order_qty").default(1),
+  leadTimeDays: integer("lead_time_days").default(3),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  poNumber: text("po_number").notNull().unique(),
+  supplierId: integer("supplier_id").notNull(),
+  supplierName: text("supplier_name").notNull(),
+  orderDate: timestamp("order_date").defaultNow().notNull(),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
+  status: text("status").notNull().default("Draft"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: serial("id").primaryKey(),
+  poId: integer("po_id").notNull(),
+  medicineId: integer("medicine_id").notNull(),
+  medicineName: text("medicine_name").notNull(),
+  supplierRateId: integer("supplier_rate_id"),
+  quantity: integer("quantity").notNull(),
+  receivedQty: integer("received_qty").notNull().default(0),
+  rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  mrp: decimal("mrp", { precision: 10, scale: 2 }),
+  gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+});
+
+export const goodsReceipts = pgTable("goods_receipts", {
+  id: serial("id").primaryKey(),
+  grnNumber: text("grn_number").notNull().unique(),
+  poId: integer("po_id"),
+  supplierId: integer("supplier_id").notNull(),
+  supplierName: text("supplier_name").notNull(),
+  supplierInvoiceNo: text("supplier_invoice_no"),
+  supplierInvoiceDate: timestamp("supplier_invoice_date"),
+  receiptDate: timestamp("receipt_date").defaultNow().notNull(),
+  status: text("status").notNull().default("Completed"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  receivedBy: varchar("received_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const goodsReceiptItems = pgTable("goods_receipt_items", {
+  id: serial("id").primaryKey(),
+  grnId: integer("grn_id").notNull(),
+  poItemId: integer("po_item_id"),
+  medicineId: integer("medicine_id").notNull(),
+  medicineName: text("medicine_name").notNull(),
+  batchNumber: text("batch_number").notNull(),
+  expiryDate: text("expiry_date").notNull(),
+  quantity: integer("quantity").notNull(),
+  rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  mrp: decimal("mrp", { precision: 10, scale: 2 }),
+  gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+});
+
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
+export const insertSupplierRateSchema = createInsertSchema(supplierRates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({ id: true, createdAt: true });
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({ id: true });
+export const insertGoodsReceiptSchema = createInsertSchema(goodsReceipts).omit({ id: true, createdAt: true });
+export const insertGoodsReceiptItemSchema = createInsertSchema(goodsReceiptItems).omit({ id: true });
+
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type Supplier = typeof suppliers.$inferSelect;
+
+export type InsertSupplierRate = z.infer<typeof insertSupplierRateSchema>;
+export type SupplierRate = typeof supplierRates.$inferSelect;
+
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+
+export type InsertGoodsReceipt = z.infer<typeof insertGoodsReceiptSchema>;
+export type GoodsReceipt = typeof goodsReceipts.$inferSelect;
+
+export type InsertGoodsReceiptItem = z.infer<typeof insertGoodsReceiptItemSchema>;
+export type GoodsReceiptItem = typeof goodsReceiptItems.$inferSelect;

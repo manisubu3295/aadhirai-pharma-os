@@ -10,7 +10,13 @@ import {
   insertLocationSchema,
   insertAuditLogSchema,
   insertCreditPaymentSchema,
-  insertHeldBillSchema
+  insertHeldBillSchema,
+  insertSupplierSchema,
+  insertSupplierRateSchema,
+  insertPurchaseOrderSchema,
+  insertPurchaseOrderItemSchema,
+  insertGoodsReceiptSchema,
+  insertGoodsReceiptItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
@@ -604,6 +610,283 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete held bill" });
+    }
+  });
+
+  app.get("/api/suppliers", async (req, res) => {
+    try {
+      const suppliers = await storage.getSuppliers();
+      res.json(suppliers);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch suppliers" });
+    }
+  });
+
+  app.get("/api/suppliers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const supplier = await storage.getSupplier(id);
+      if (!supplier) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.json(supplier);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier" });
+    }
+  });
+
+  app.post("/api/suppliers", async (req, res) => {
+    try {
+      const data = insertSupplierSchema.parse(req.body);
+      const supplier = await storage.createSupplier(data);
+      res.status(201).json(supplier);
+    } catch (error) {
+      console.error("Supplier creation error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create supplier", details: errorMessage });
+    }
+  });
+
+  app.put("/api/suppliers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertSupplierSchema.partial().parse(req.body);
+      const supplier = await storage.updateSupplier(id, data);
+      if (!supplier) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.json(supplier);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update supplier" });
+    }
+  });
+
+  app.delete("/api/suppliers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteSupplier(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete supplier" });
+    }
+  });
+
+  app.get("/api/supplier-rates", async (req, res) => {
+    try {
+      const supplierId = req.query.supplierId ? parseInt(req.query.supplierId as string) : undefined;
+      const rates = await storage.getSupplierRates(supplierId);
+      res.json(rates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier rates" });
+    }
+  });
+
+  app.get("/api/suppliers/:id/rates", async (req, res) => {
+    try {
+      const supplierId = parseInt(req.params.id);
+      const rates = await storage.getSupplierRates(supplierId);
+      res.json(rates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier rates" });
+    }
+  });
+
+  app.post("/api/supplier-rates", async (req, res) => {
+    try {
+      const data = insertSupplierRateSchema.parse(req.body);
+      const rate = await storage.createSupplierRate(data);
+      res.status(201).json(rate);
+    } catch (error) {
+      console.error("Supplier rate creation error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create supplier rate", details: errorMessage });
+    }
+  });
+
+  app.put("/api/supplier-rates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertSupplierRateSchema.partial().parse(req.body);
+      const rate = await storage.updateSupplierRate(id, data);
+      if (!rate) {
+        return res.status(404).json({ error: "Supplier rate not found" });
+      }
+      res.json(rate);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update supplier rate" });
+    }
+  });
+
+  app.delete("/api/supplier-rates/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteSupplierRate(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Supplier rate not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete supplier rate" });
+    }
+  });
+
+  app.get("/api/purchase-orders", async (req, res) => {
+    try {
+      const purchaseOrders = await storage.getPurchaseOrders();
+      res.json(purchaseOrders);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch purchase orders" });
+    }
+  });
+
+  app.get("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const po = await storage.getPurchaseOrder(id);
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      res.json(po);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch purchase order" });
+    }
+  });
+
+  app.get("/api/purchase-orders/:id/items", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const items = await storage.getPurchaseOrderItems(id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch purchase order items" });
+    }
+  });
+
+  app.post("/api/purchase-orders", async (req, res) => {
+    try {
+      const { items, ...poData } = req.body;
+      const po = insertPurchaseOrderSchema.parse(poData);
+      const poItems = z.array(insertPurchaseOrderItemSchema.omit({ poId: true })).parse(items || []);
+      const itemsWithDummyPoId = poItems.map(item => ({ ...item, poId: 0 }));
+      
+      const createdPo = await storage.createPurchaseOrder(po, itemsWithDummyPoId);
+      res.status(201).json(createdPo);
+    } catch (error) {
+      console.error("Purchase order creation error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create purchase order", details: errorMessage });
+    }
+  });
+
+  app.patch("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertPurchaseOrderSchema.partial().parse(req.body);
+      const po = await storage.updatePurchaseOrder(id, data);
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      res.json(po);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update purchase order" });
+    }
+  });
+
+  app.post("/api/purchase-orders/:id/issue", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const po = await storage.updatePurchaseOrder(id, { status: "Issued" });
+      if (!po) {
+        return res.status(404).json({ error: "Purchase order not found" });
+      }
+      res.json(po);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to issue purchase order" });
+    }
+  });
+
+  app.get("/api/goods-receipts", async (req, res) => {
+    try {
+      const receipts = await storage.getGoodsReceipts();
+      res.json(receipts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch goods receipts" });
+    }
+  });
+
+  app.get("/api/goods-receipts/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const grn = await storage.getGoodsReceipt(id);
+      if (!grn) {
+        return res.status(404).json({ error: "Goods receipt not found" });
+      }
+      res.json(grn);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch goods receipt" });
+    }
+  });
+
+  app.get("/api/goods-receipts/:id/items", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const items = await storage.getGoodsReceiptItems(id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch goods receipt items" });
+    }
+  });
+
+  app.post("/api/goods-receipts", async (req, res) => {
+    try {
+      const { items, ...grnData } = req.body;
+      const grn = insertGoodsReceiptSchema.parse(grnData);
+      const grnItems = z.array(insertGoodsReceiptItemSchema.omit({ grnId: true })).parse(items || []);
+      const itemsWithDummyGrnId = grnItems.map(item => ({ ...item, grnId: 0 }));
+      
+      const createdGrn = await storage.createGoodsReceipt(grn, itemsWithDummyGrnId);
+      
+      if (grn.poId) {
+        const poItems = await storage.getPurchaseOrderItems(grn.poId);
+        const allReceived = poItems.every(item => item.receivedQty >= item.quantity);
+        const someReceived = poItems.some(item => item.receivedQty > 0);
+        
+        if (allReceived) {
+          await storage.updatePurchaseOrder(grn.poId, { status: "Received" });
+        } else if (someReceived) {
+          await storage.updatePurchaseOrder(grn.poId, { status: "PartiallyReceived" });
+        }
+      }
+      
+      res.status(201).json(createdGrn);
+    } catch (error) {
+      console.error("Goods receipt creation error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create goods receipt", details: errorMessage });
     }
   });
 

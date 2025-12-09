@@ -19,6 +19,18 @@ import {
   type InsertCreditPayment,
   type HeldBill,
   type InsertHeldBill,
+  type Supplier,
+  type InsertSupplier,
+  type SupplierRate,
+  type InsertSupplierRate,
+  type PurchaseOrder,
+  type InsertPurchaseOrder,
+  type PurchaseOrderItem,
+  type InsertPurchaseOrderItem,
+  type GoodsReceipt,
+  type InsertGoodsReceipt,
+  type GoodsReceiptItem,
+  type InsertGoodsReceiptItem,
   users,
   medicines,
   customers,
@@ -28,7 +40,13 @@ import {
   locations,
   auditLogs,
   creditPayments,
-  heldBills
+  heldBills,
+  suppliers,
+  supplierRates,
+  purchaseOrders,
+  purchaseOrderItems,
+  goodsReceipts,
+  goodsReceiptItems
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -259,6 +277,30 @@ export interface IStorage {
   getHeldBill(id: number): Promise<HeldBill | undefined>;
   createHeldBill(bill: InsertHeldBill): Promise<HeldBill>;
   deleteHeldBill(id: number): Promise<boolean>;
+  
+  getSuppliers(): Promise<Supplier[]>;
+  getSupplier(id: number): Promise<Supplier | undefined>;
+  createSupplier(supplier: InsertSupplier): Promise<Supplier>;
+  updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined>;
+  deleteSupplier(id: number): Promise<boolean>;
+  
+  getSupplierRates(supplierId?: number): Promise<SupplierRate[]>;
+  getSupplierRate(id: number): Promise<SupplierRate | undefined>;
+  createSupplierRate(rate: InsertSupplierRate): Promise<SupplierRate>;
+  updateSupplierRate(id: number, rate: Partial<InsertSupplierRate>): Promise<SupplierRate | undefined>;
+  deleteSupplierRate(id: number): Promise<boolean>;
+  
+  getPurchaseOrders(): Promise<PurchaseOrder[]>;
+  getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined>;
+  createPurchaseOrder(po: InsertPurchaseOrder, items: InsertPurchaseOrderItem[]): Promise<PurchaseOrder>;
+  updatePurchaseOrder(id: number, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
+  getPurchaseOrderItems(poId: number): Promise<PurchaseOrderItem[]>;
+  updatePurchaseOrderItemReceivedQty(id: number, receivedQty: number): Promise<PurchaseOrderItem | undefined>;
+  
+  getGoodsReceipts(): Promise<GoodsReceipt[]>;
+  getGoodsReceipt(id: number): Promise<GoodsReceipt | undefined>;
+  createGoodsReceipt(grn: InsertGoodsReceipt, items: InsertGoodsReceiptItem[]): Promise<GoodsReceipt>;
+  getGoodsReceiptItems(grnId: number): Promise<GoodsReceiptItem[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -504,6 +546,128 @@ export class DatabaseStorage implements IStorage {
   async deleteHeldBill(id: number): Promise<boolean> {
     const result = await db.delete(heldBills).where(eq(heldBills.id, id)).returning();
     return result.length > 0;
+  }
+
+  async getSuppliers(): Promise<Supplier[]> {
+    return await db.select().from(suppliers).orderBy(suppliers.name);
+  }
+
+  async getSupplier(id: number): Promise<Supplier | undefined> {
+    const result = await db.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
+    const result = await db.insert(suppliers).values(supplier).returning();
+    return result[0];
+  }
+
+  async updateSupplier(id: number, supplier: Partial<InsertSupplier>): Promise<Supplier | undefined> {
+    const result = await db.update(suppliers).set(supplier).where(eq(suppliers.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSupplier(id: number): Promise<boolean> {
+    const result = await db.delete(suppliers).where(eq(suppliers.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getSupplierRates(supplierId?: number): Promise<SupplierRate[]> {
+    if (supplierId) {
+      return await db.select().from(supplierRates).where(eq(supplierRates.supplierId, supplierId)).orderBy(supplierRates.id);
+    }
+    return await db.select().from(supplierRates).orderBy(supplierRates.id);
+  }
+
+  async getSupplierRate(id: number): Promise<SupplierRate | undefined> {
+    const result = await db.select().from(supplierRates).where(eq(supplierRates.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createSupplierRate(rate: InsertSupplierRate): Promise<SupplierRate> {
+    const result = await db.insert(supplierRates).values(rate).returning();
+    return result[0];
+  }
+
+  async updateSupplierRate(id: number, rate: Partial<InsertSupplierRate>): Promise<SupplierRate | undefined> {
+    const result = await db.update(supplierRates).set(rate).where(eq(supplierRates.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSupplierRate(id: number): Promise<boolean> {
+    const result = await db.delete(supplierRates).where(eq(supplierRates.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getPurchaseOrders(): Promise<PurchaseOrder[]> {
+    return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
+  }
+
+  async getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
+    const result = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createPurchaseOrder(po: InsertPurchaseOrder, items: InsertPurchaseOrderItem[]): Promise<PurchaseOrder> {
+    const poResult = await db.insert(purchaseOrders).values(po).returning();
+    const createdPo = poResult[0];
+    
+    if (items.length > 0) {
+      const itemsWithPoId = items.map(item => ({ ...item, poId: createdPo.id }));
+      await db.insert(purchaseOrderItems).values(itemsWithPoId);
+    }
+    
+    return createdPo;
+  }
+
+  async updatePurchaseOrder(id: number, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined> {
+    const result = await db.update(purchaseOrders).set(po).where(eq(purchaseOrders.id, id)).returning();
+    return result[0];
+  }
+
+  async getPurchaseOrderItems(poId: number): Promise<PurchaseOrderItem[]> {
+    return await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.poId, poId));
+  }
+
+  async updatePurchaseOrderItemReceivedQty(id: number, receivedQty: number): Promise<PurchaseOrderItem | undefined> {
+    const result = await db.update(purchaseOrderItems).set({ receivedQty }).where(eq(purchaseOrderItems.id, id)).returning();
+    return result[0];
+  }
+
+  async getGoodsReceipts(): Promise<GoodsReceipt[]> {
+    return await db.select().from(goodsReceipts).orderBy(desc(goodsReceipts.createdAt));
+  }
+
+  async getGoodsReceipt(id: number): Promise<GoodsReceipt | undefined> {
+    const result = await db.select().from(goodsReceipts).where(eq(goodsReceipts.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createGoodsReceipt(grn: InsertGoodsReceipt, items: InsertGoodsReceiptItem[]): Promise<GoodsReceipt> {
+    const grnResult = await db.insert(goodsReceipts).values(grn).returning();
+    const createdGrn = grnResult[0];
+    
+    if (items.length > 0) {
+      const itemsWithGrnId = items.map(item => ({ ...item, grnId: createdGrn.id }));
+      await db.insert(goodsReceiptItems).values(itemsWithGrnId);
+      
+      for (const item of items) {
+        await this.updateMedicineStock(item.medicineId, item.quantity);
+        if (item.poItemId) {
+          const poItem = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.id, item.poItemId)).limit(1);
+          if (poItem[0]) {
+            const newReceivedQty = (poItem[0].receivedQty || 0) + item.quantity;
+            await this.updatePurchaseOrderItemReceivedQty(item.poItemId, newReceivedQty);
+          }
+        }
+      }
+    }
+    
+    return createdGrn;
+  }
+
+  async getGoodsReceiptItems(grnId: number): Promise<GoodsReceiptItem[]> {
+    return await db.select().from(goodsReceiptItems).where(eq(goodsReceiptItems.grnId, grnId));
   }
 }
 

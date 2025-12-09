@@ -15,7 +15,11 @@ import {
   Calculator,
   Crown,
   BarChart3,
-  Stethoscope
+  Stethoscope,
+  Truck,
+  Tags,
+  ClipboardList,
+  PackageCheck
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
@@ -38,6 +42,10 @@ export function Sidebar() {
   const menuItems: MenuItem[] = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/" },
     { icon: Package, label: "Inventory", href: "/inventory" },
+    { icon: Truck, label: "Suppliers", href: "/suppliers" },
+    { icon: Tags, label: "Rate Master", href: "/supplier-rates" },
+    { icon: ClipboardList, label: "Purchase Orders", href: "/purchase-orders" },
+    { icon: PackageCheck, label: "Goods Receipt", href: "/goods-receipts" },
     { icon: ShoppingCart, label: "Point of Sale", href: "/pos" },
     { icon: Users, label: "Customers", href: "/customers" },
     { icon: FileText, label: "Reports", href: "/reports" },
