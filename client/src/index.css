@@ -101,15 +101,15 @@
   --chart-4: 43 74% 66%;
   --chart-5: 27 87% 67%;
 
-  /* Sidebar - Dark Navy for contrast */
-  --sidebar: 222 47% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-primary: 180 76% 35%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 33% 17%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217 33% 17%;
-  --sidebar-ring: 212.7 26.8% 83.9%;
+  /* Sidebar - Royal Blue Theme */
+  --sidebar: 225 73% 35%; /* Royal Blue */
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-primary: 0 0% 100%;
+  --sidebar-primary-foreground: 225 73% 35%;
+  --sidebar-accent: 225 65% 30%; /* Darker shade for hover/active */
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 225 65% 30%;
+  --sidebar-ring: 225 73% 80%;
 }
 
 .dark {
