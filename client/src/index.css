@@ -68,8 +68,8 @@
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
 
-  /* Teal/Medical Blue Primary */
-  --primary: 180 76% 35%; /* Teal 700 */
+  /* Royal Blue Primary */
+  --primary: 225 65% 45%; /* Royal Blue */
   --primary-foreground: 0 0% 100%;
 
   /* Soft Slate Secondary */
@@ -81,8 +81,8 @@
   --muted-foreground: 215 16% 47%;
 
   /* Subtle Accents */
-  --accent: 180 50% 96%;
-  --accent-foreground: 180 76% 35%;
+  --accent: 225 50% 96%;
+  --accent-foreground: 225 65% 45%;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
@@ -90,26 +90,26 @@
   /* Borders */
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
-  --ring: 180 76% 35%;
+  --ring: 225 65% 45%;
 
   --radius: 0.5rem;
 
-  /* Charts */
-  --chart-1: 180 76% 35%;
-  --chart-2: 173 58% 39%;
-  --chart-3: 197 37% 24%;
+  /* Charts - Royal Blue Theme */
+  --chart-1: 225 65% 45%;
+  --chart-2: 225 55% 55%;
+  --chart-3: 225 45% 35%;
   --chart-4: 43 74% 66%;
   --chart-5: 27 87% 67%;
 
-  /* Sidebar - Grey Theme */
-  --sidebar: 220 10% 20%; /* Dark Grey */
+  /* Sidebar - Royal Blue Theme */
+  --sidebar: 225 65% 25%; /* Royal Blue */
   --sidebar-foreground: 0 0% 100%;
   --sidebar-primary: 0 0% 100%;
-  --sidebar-primary-foreground: 220 10% 20%;
-  --sidebar-accent: 220 10% 30%; /* Lighter grey for hover */
+  --sidebar-primary-foreground: 225 65% 25%;
+  --sidebar-accent: 225 65% 35%; /* Lighter royal blue for hover */
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-border: 220 10% 15%;
-  --sidebar-ring: 220 10% 80%;
+  --sidebar-border: 225 65% 20%;
+  --sidebar-ring: 225 65% 80%;
 }
 
 .dark {
@@ -164,4 +164,20 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+}
+
+/* Royal Blue Gradient for Sidebar */
+.sidebar-gradient {
+  background: linear-gradient(180deg, 
+    hsl(225 65% 30%) 0%, 
+    hsl(225 65% 22%) 100%
+  );
+}
+
+/* Royal Blue Gradient for Header */
+.header-gradient {
+  background: linear-gradient(90deg, 
+    hsl(225 65% 35%) 0%, 
+    hsl(225 55% 45%) 100%
+  );
 }
