@@ -10,7 +10,7 @@ import {
   LogOut,
   Plus
 } from "lucide-react";
-import logoImage from '@assets/generated_images/minimalist_medical_tech_logo_for_pharmacy_saas.png';
+import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 
 export function Sidebar() {
   const [location] = useLocation();
