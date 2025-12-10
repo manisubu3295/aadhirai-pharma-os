@@ -50,7 +50,8 @@ import {
   AlertTriangle,
   Pause,
   Play,
-  Clock
+  Clock,
+  Package
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -89,11 +90,13 @@ export default function NewSale() {
   const [receivedAmount, setReceivedAmount] = useState("");
   const [printInvoice, setPrintInvoice] = useState(false);
   const [sendViaEmail, setSendViaEmail] = useState(false);
-  const [billDiscount, setBillDiscount] = useState("0");
+  const [billDiscountPercent, setBillDiscountPercent] = useState("0");
   const [newCustomerDialog, setNewCustomerDialog] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [heldBillsDialogOpen, setHeldBillsDialogOpen] = useState(false);
+  const [newMedicineDialog, setNewMedicineDialog] = useState(false);
+  const [invoiceNumber, setInvoiceNumber] = useState<string>("");
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
@@ -324,7 +327,8 @@ export default function NewSale() {
       totalSgst += gstAmount / 2;
     });
 
-    const discountAmount = Number(billDiscount) || 0;
+    const discountPercent = Number(billDiscountPercent) || 0;
+    const discountAmount = (subtotal * discountPercent) / 100;
     const tax = totalCgst + totalSgst;
     const netAmount = subtotal - discountAmount + tax;
     const roundedNet = Math.round(netAmount);
@@ -337,13 +341,14 @@ export default function NewSale() {
       cgst: totalCgst,
       sgst: totalSgst,
       tax,
+      discountPercent,
       discount: discountAmount,
       netAmount: roundedNet,
       roundOff,
       received,
       change: change > 0 ? change : 0,
     };
-  }, [items, billDiscount, receivedAmount]);
+  }, [items, billDiscountPercent, receivedAmount]);
 
   const resetForm = () => {
     setItems([]);
@@ -354,8 +359,18 @@ export default function NewSale() {
     setReceivedAmount("");
     setPrintInvoice(false);
     setSendViaEmail(false);
-    setBillDiscount("0");
+    setBillDiscountPercent("0");
+    setInvoiceNumber("");
   };
+
+  useEffect(() => {
+    if (items.length > 0 && !invoiceNumber) {
+      const newInvoiceNo = `INV-${Date.now()}`;
+      setInvoiceNumber(newInvoiceNo);
+    } else if (items.length === 0) {
+      setInvoiceNumber("");
+    }
+  }, [items.length]);
 
   const handleGenerateInvoice = () => {
     if (items.length === 0) {
@@ -367,6 +382,7 @@ export default function NewSale() {
     const customerPhone = selectedCustomer?.phone || "";
 
     const saleData = {
+      invoiceNo: invoiceNumber || `INV-${Date.now()}`,
       customerId: selectedCustomer?.id || null,
       customerName,
       customerPhone,
@@ -375,7 +391,7 @@ export default function NewSale() {
       doctorName: selectedDoctor?.name || null,
       subtotal: calculations.subtotal.toFixed(2),
       discount: calculations.discount.toFixed(2),
-      discountPercent: "0",
+      discountPercent: calculations.discountPercent.toFixed(2),
       cgst: calculations.cgst.toFixed(2),
       sgst: calculations.sgst.toFixed(2),
       tax: calculations.tax.toFixed(2),
@@ -425,8 +441,8 @@ export default function NewSale() {
       doctorName: selectedDoctor?.name || null,
       items: JSON.stringify(items),
       subtotal: calculations.subtotal.toFixed(2),
-      discount: billDiscount,
-      discountPercent: "0",
+      discount: calculations.discount.toFixed(2),
+      discountPercent: billDiscountPercent,
       tax: calculations.tax.toFixed(2),
       total: calculations.netAmount.toFixed(2),
       notes: null,
@@ -455,7 +471,7 @@ export default function NewSale() {
       }));
       
       setItems(parsedItems);
-      setBillDiscount(heldBill.discount ? String(heldBill.discount) : "0");
+      setBillDiscountPercent(heldBill.discountPercent ? String(heldBill.discountPercent) : "0");
       
       if (heldBill.customerId) {
         const customer = customers.find(c => c.id === heldBill.customerId);
@@ -481,7 +497,11 @@ export default function NewSale() {
       
       setHeldBillsDialogOpen(false);
       toast({ title: "Bill resumed successfully" });
-      deleteHeldBillMutation.mutate(heldBill.id);
+      deleteHeldBillMutation.mutate(heldBill.id, {
+        onError: () => {
+          console.log("Note: Held bill entry may already be cleared");
+        },
+      });
     } catch (error) {
       console.error("Failed to parse held bill items:", error);
       toast({ title: "Failed to resume bill - invalid data", variant: "destructive" });
@@ -548,6 +568,14 @@ export default function NewSale() {
 
           <Card className="border-0 shadow-sm">
             <CardContent className="p-6 space-y-6">
+              {invoiceNumber && (
+                <div className="flex items-center justify-between bg-muted/50 px-4 py-2 rounded-lg mb-4">
+                  <span className="text-sm text-muted-foreground">Invoice Number:</span>
+                  <span className="font-mono font-semibold text-primary" data-testid="text-invoice-number">
+                    {invoiceNumber}
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <Label className="text-base font-medium">Customer</Label>
@@ -703,14 +731,24 @@ export default function NewSale() {
 
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-base font-medium">Add Medicine</Label>
-                  <Popover open={medicineOpen} onOpenChange={setMedicineOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="gap-2" data-testid="button-add-medicine">
-                        <Search className="h-4 w-4" />
-                        Search Medicine
-                      </Button>
-                    </PopoverTrigger>
+                  <Label className="text-base font-medium">Add/Search Medicine</Label>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setNewMedicineDialog(true)}
+                      data-testid="button-quick-add-medicine"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      New
+                    </Button>
+                    <Popover open={medicineOpen} onOpenChange={setMedicineOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="gap-2" data-testid="button-add-medicine">
+                          <Search className="h-4 w-4" />
+                          Search
+                        </Button>
+                      </PopoverTrigger>
                     <PopoverContent className="w-[450px] p-0" align="end">
                       <Command>
                         <CommandInput
@@ -755,6 +793,7 @@ export default function NewSale() {
                       </Command>
                     </PopoverContent>
                   </Popover>
+                  </div>
                 </div>
 
                 <div className="border rounded-lg overflow-hidden">
@@ -877,19 +916,29 @@ export default function NewSale() {
                   </span>
                 </div>
                 <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">Discount</span>
+                  <span className="text-muted-foreground">Discount (%)</span>
                   <div className="flex items-center gap-2">
-                    <span>₹</span>
                     <Input
                       type="number"
                       min={0}
-                      value={billDiscount}
-                      onChange={(e) => setBillDiscount(e.target.value)}
-                      className="w-20 h-7 text-right text-sm"
-                      data-testid="input-discount"
+                      max={100}
+                      step={0.5}
+                      value={billDiscountPercent}
+                      onChange={(e) => setBillDiscountPercent(e.target.value)}
+                      className="w-16 h-7 text-right text-sm"
+                      data-testid="input-discount-percent"
                     />
+                    <span>%</span>
                   </div>
                 </div>
+                {calculations.discount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Discount Amount</span>
+                    <span className="font-medium text-green-600" data-testid="text-discount-amount">
+                      -₹{calculations.discount.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">CGST</span>
                   <span className="font-medium" data-testid="text-cgst">
@@ -1063,6 +1112,33 @@ export default function NewSale() {
               data-testid="button-save-customer"
             >
               {createCustomerMutation.isPending ? "Saving..." : "Save Customer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newMedicineDialog} onOpenChange={setNewMedicineDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Quick Add Medicine</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-center text-muted-foreground">
+            <p className="mb-4">To add a new medicine, please use the Inventory page where you can add complete medicine details including batch, expiry, and stock information.</p>
+            <Button 
+              variant="outline"
+              onClick={() => {
+                setNewMedicineDialog(false);
+                window.location.href = "/inventory";
+              }}
+              data-testid="button-go-to-inventory"
+            >
+              <Package className="h-4 w-4 mr-2" />
+              Go to Inventory
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewMedicineDialog(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

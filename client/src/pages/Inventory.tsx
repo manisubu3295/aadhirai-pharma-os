@@ -42,8 +42,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer } from "lucide-react";
-import { useState, memo } from "react";
+import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { useState, memo, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Medicine } from "@shared/schema";
@@ -294,6 +294,9 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
   );
 });
 
+type SortField = 'name' | 'category' | 'batchNumber' | 'expiryDate' | 'quantity' | 'price' | 'status';
+type SortDirection = 'asc' | 'desc';
+
 export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -302,6 +305,33 @@ export default function Inventory() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
   const [formData, setFormData] = useState<MedicineFormData>(emptyForm);
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const SortableHeader = ({ field, children, align = 'left' }: { field: SortField; children: React.ReactNode; align?: 'left' | 'right' | 'center' }) => (
+    <TableHead 
+      className={`cursor-pointer hover:bg-muted/50 select-none ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''}`}
+      onClick={() => handleSort(field)}
+    >
+      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
+        {children}
+        {sortField === field ? (
+          sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-30" />
+        )}
+      </div>
+    </TableHead>
+  );
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -392,21 +422,63 @@ export default function Inventory() {
     return new Date(expiryDate) <= new Date();
   };
 
-  const filteredMedicines = medicines.filter((item) => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
-      item.name.toLowerCase().includes(searchLower) ||
-      item.batchNumber.toLowerCase().includes(searchLower) ||
-      item.manufacturer.toLowerCase().includes(searchLower) ||
-      (item.barcode && item.barcode.toLowerCase().includes(searchLower));
-    
-    if (filterStatus === "all") return matchesSearch;
-    if (filterStatus === "low") return matchesSearch && item.status === "Low Stock";
-    if (filterStatus === "out") return matchesSearch && item.status === "Out of Stock";
-    if (filterStatus === "expiring") return matchesSearch && isNearExpiry(item.expiryDate);
-    if (filterStatus === "expired") return matchesSearch && isExpired(item.expiryDate);
-    return matchesSearch;
-  });
+  const filteredMedicines = useMemo(() => {
+    const filtered = medicines.filter((item) => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        item.name.toLowerCase().includes(searchLower) ||
+        item.batchNumber.toLowerCase().includes(searchLower) ||
+        item.manufacturer.toLowerCase().includes(searchLower) ||
+        (item.barcode && item.barcode.toLowerCase().includes(searchLower));
+      
+      if (filterStatus === "all") return matchesSearch;
+      if (filterStatus === "low") return matchesSearch && item.status === "Low Stock";
+      if (filterStatus === "out") return matchesSearch && item.status === "Out of Stock";
+      if (filterStatus === "expiring") return matchesSearch && isNearExpiry(item.expiryDate);
+      if (filterStatus === "expired") return matchesSearch && isExpired(item.expiryDate);
+      return matchesSearch;
+    });
+
+    return [...filtered].sort((a, b) => {
+      let aVal: string | number = '';
+      let bVal: string | number = '';
+      
+      switch (sortField) {
+        case 'name':
+          aVal = a.name.toLowerCase();
+          bVal = b.name.toLowerCase();
+          break;
+        case 'category':
+          aVal = a.category.toLowerCase();
+          bVal = b.category.toLowerCase();
+          break;
+        case 'batchNumber':
+          aVal = a.batchNumber.toLowerCase();
+          bVal = b.batchNumber.toLowerCase();
+          break;
+        case 'expiryDate':
+          aVal = a.expiryDate;
+          bVal = b.expiryDate;
+          break;
+        case 'quantity':
+          aVal = a.quantity;
+          bVal = b.quantity;
+          break;
+        case 'price':
+          aVal = parseFloat(String(a.price));
+          bVal = parseFloat(String(b.price));
+          break;
+        case 'status':
+          aVal = a.status.toLowerCase();
+          bVal = b.status.toLowerCase();
+          break;
+      }
+      
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [medicines, searchTerm, filterStatus, sortField, sortDirection]);
 
   const openEditDialog = (medicine: Medicine) => {
     setSelectedMedicine(medicine);
@@ -553,15 +625,15 @@ export default function Inventory() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[80px]">ID</TableHead>
-                    <TableHead>Medicine Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Batch No.</TableHead>
+                    <SortableHeader field="name">Medicine Name</SortableHeader>
+                    <SortableHeader field="category">Category</SortableHeader>
+                    <SortableHeader field="batchNumber">Batch No.</SortableHeader>
                     {isPro && <TableHead>Barcode</TableHead>}
-                    <TableHead>Expiry</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
+                    <SortableHeader field="expiryDate">Expiry</SortableHeader>
+                    <SortableHeader field="quantity" align="right">Stock</SortableHeader>
+                    <SortableHeader field="price" align="right">Price</SortableHeader>
                     <TableHead className="text-center">GST</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
+                    <SortableHeader field="status">Status</SortableHeader>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
