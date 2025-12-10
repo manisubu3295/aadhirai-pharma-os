@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
-import { DollarSign, ShoppingCart, AlertTriangle, Users, TrendingUp, TrendingDown, ArrowUpRight, Package, Clock, AlertCircle } from "lucide-react";
+import { DollarSign, ShoppingCart, AlertTriangle, Users, TrendingUp, TrendingDown, ArrowUpRight, Package, Clock, AlertCircle, RotateCcw } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
@@ -70,18 +70,18 @@ export default function Dashboard() {
 
   const dashboardStats = [
     {
-      title: "Total Revenue",
-      value: stats ? `₹${parseFloat(stats.totalRevenue).toFixed(2)}` : "₹0.00",
+      title: "Net Revenue",
+      value: stats?.netRevenue ? `₹${parseFloat(stats.netRevenue).toFixed(2)}` : (stats ? `₹${parseFloat(stats.totalRevenue).toFixed(2)}` : "₹0.00"),
       change: "+15%",
       trend: "up",
       icon: DollarSign,
     },
     {
-      title: "Active Orders",
-      value: stats ? stats.activeOrders.toString() : "0",
-      change: "+5%",
-      trend: "up",
-      icon: ShoppingCart,
+      title: "Total Returns",
+      value: stats?.totalReturns ? `₹${parseFloat(stats.totalReturns).toFixed(2)}` : "₹0.00",
+      change: "",
+      trend: "down",
+      icon: RotateCcw,
     },
     {
       title: "Low Stock Items",

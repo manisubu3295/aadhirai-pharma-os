@@ -31,6 +31,10 @@ import {
   type InsertGoodsReceipt,
   type GoodsReceiptItem,
   type InsertGoodsReceiptItem,
+  type SalesReturn,
+  type InsertSalesReturn,
+  type SalesReturnItem,
+  type InsertSalesReturnItem,
   users,
   medicines,
   customers,
@@ -46,7 +50,9 @@ import {
   purchaseOrders,
   purchaseOrderItems,
   goodsReceipts,
-  goodsReceiptItems
+  goodsReceiptItems,
+  salesReturns,
+  salesReturnItems
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -215,6 +221,32 @@ export async function initializeDatabase() {
         user_id VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+      
+      CREATE TABLE IF NOT EXISTS sales_returns (
+        id SERIAL PRIMARY KEY,
+        original_sale_id INTEGER NOT NULL,
+        invoice_no TEXT,
+        return_date TIMESTAMP DEFAULT NOW() NOT NULL,
+        total_refund_amount DECIMAL(10,2) NOT NULL,
+        refund_mode TEXT NOT NULL,
+        reason TEXT,
+        customer_id INTEGER,
+        customer_name TEXT,
+        user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS sales_return_items (
+        id SERIAL PRIMARY KEY,
+        sales_return_id INTEGER NOT NULL,
+        sale_item_id INTEGER NOT NULL,
+        medicine_id INTEGER NOT NULL,
+        medicine_name TEXT NOT NULL,
+        batch_number TEXT NOT NULL,
+        quantity_returned INTEGER NOT NULL,
+        price_per_unit DECIMAL(10,2) NOT NULL,
+        refund_amount DECIMAL(10,2) NOT NULL
+      );
     `);
     console.log("Database tables initialized successfully");
   } catch (error) {
@@ -259,6 +291,8 @@ export interface IStorage {
     activeOrders: number;
     lowStockItems: number;
     customersToday: number;
+    totalReturns?: string;
+    netRevenue?: string;
   }>;
   
   getLocations(): Promise<Location[]>;
@@ -301,6 +335,13 @@ export interface IStorage {
   getGoodsReceipt(id: number): Promise<GoodsReceipt | undefined>;
   createGoodsReceipt(grn: InsertGoodsReceipt, items: InsertGoodsReceiptItem[]): Promise<GoodsReceipt>;
   getGoodsReceiptItems(grnId: number): Promise<GoodsReceiptItem[]>;
+  
+  getSalesReturns(): Promise<SalesReturn[]>;
+  getSalesReturn(id: number): Promise<SalesReturn | undefined>;
+  getSaleWithReturns(saleId: number): Promise<{ sale: Sale; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined>;
+  createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn>;
+  getSalesReturnItems(returnId: number): Promise<SalesReturnItem[]>;
+  getTotalReturnsForPeriod(startDate: Date, endDate: Date): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -448,6 +489,8 @@ export class DatabaseStorage implements IStorage {
     activeOrders: number;
     lowStockItems: number;
     customersToday: number;
+    totalReturns?: string;
+    netRevenue?: string;
   }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -455,6 +498,10 @@ export class DatabaseStorage implements IStorage {
     const revenueResult = await db.select({
       total: sql<string>`COALESCE(SUM(${sales.total}), 0)`
     }).from(sales);
+    
+    const returnsResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${salesReturns.totalRefundAmount}), 0)`
+    }).from(salesReturns);
     
     const pendingOrders = await db.select({ count: sql<number>`count(*)` })
       .from(sales)
@@ -468,11 +515,17 @@ export class DatabaseStorage implements IStorage {
       .from(sales)
       .where(sql`${sales.createdAt} >= ${today.toISOString()}`);
     
+    const totalRevenue = parseFloat(revenueResult[0]?.total || "0");
+    const totalReturns = parseFloat(returnsResult[0]?.total || "0");
+    const netRevenue = totalRevenue - totalReturns;
+    
     return {
-      totalRevenue: revenueResult[0]?.total || "0",
+      totalRevenue: totalRevenue.toFixed(2),
       activeOrders: Number(pendingOrders[0]?.count || 0),
       lowStockItems: Number(lowStock[0]?.count || 0),
       customersToday: Number(todayCustomers[0]?.count || 0),
+      totalReturns: totalReturns.toFixed(2),
+      netRevenue: netRevenue.toFixed(2),
     };
   }
 
@@ -668,6 +721,72 @@ export class DatabaseStorage implements IStorage {
 
   async getGoodsReceiptItems(grnId: number): Promise<GoodsReceiptItem[]> {
     return await db.select().from(goodsReceiptItems).where(eq(goodsReceiptItems.grnId, grnId));
+  }
+
+  async getSalesReturns(): Promise<SalesReturn[]> {
+    return await db.select().from(salesReturns).orderBy(desc(salesReturns.createdAt));
+  }
+
+  async getSalesReturn(id: number): Promise<SalesReturn | undefined> {
+    const result = await db.select().from(salesReturns).where(eq(salesReturns.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getSaleWithReturns(saleId: number): Promise<{ sale: Sale; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined> {
+    const saleResult = await db.select().from(sales).where(eq(sales.id, saleId)).limit(1);
+    if (!saleResult[0]) return undefined;
+    
+    const sale = saleResult[0];
+    const items = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
+    const returns = await db.select().from(salesReturns).where(eq(salesReturns.originalSaleId, saleId)).orderBy(desc(salesReturns.createdAt));
+    
+    const returnItemsResult = await db.select().from(salesReturnItems);
+    const returnItemsBySaleItem: Record<number, number> = {};
+    
+    for (const returnItem of returnItemsResult) {
+      if (!returnItemsBySaleItem[returnItem.saleItemId]) {
+        returnItemsBySaleItem[returnItem.saleItemId] = 0;
+      }
+      returnItemsBySaleItem[returnItem.saleItemId] += returnItem.quantityReturned;
+    }
+    
+    const itemsWithReturned = items.map(item => ({
+      ...item,
+      returnedQty: returnItemsBySaleItem[item.id] || 0
+    }));
+    
+    return { sale, items: itemsWithReturned, returns };
+  }
+
+  async createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn> {
+    const returnResult = await db.insert(salesReturns).values(returnData).returning();
+    const createdReturn = returnResult[0];
+    
+    if (items.length > 0) {
+      const itemsWithReturnId = items.map(item => ({ ...item, salesReturnId: createdReturn.id }));
+      await db.insert(salesReturnItems).values(itemsWithReturnId);
+      
+      for (const item of items) {
+        await this.updateMedicineStock(item.medicineId, item.quantityReturned);
+      }
+    }
+    
+    return createdReturn;
+  }
+
+  async getSalesReturnItems(returnId: number): Promise<SalesReturnItem[]> {
+    return await db.select().from(salesReturnItems).where(eq(salesReturnItems.salesReturnId, returnId));
+  }
+
+  async getTotalReturnsForPeriod(startDate: Date, endDate: Date): Promise<string> {
+    const result = await db.select({
+      total: sql<string>`COALESCE(SUM(${salesReturns.totalRefundAmount}), 0)`
+    }).from(salesReturns)
+      .where(and(
+        gte(salesReturns.returnDate, startDate),
+        lte(salesReturns.returnDate, endDate)
+      ));
+    return result[0]?.total || "0";
   }
 }
 

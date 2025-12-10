@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode, RotateCcw } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
 import { format, startOfMonth, endOfMonth } from "date-fns";
+import { SalesReturnDialog } from "@/components/SalesReturnDialog";
 
 interface Sale {
   id: number;
@@ -27,6 +28,13 @@ export default function Collections() {
   const [dateFrom, setDateFrom] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
   const [dateTo, setDateTo] = useState(format(endOfMonth(today), "yyyy-MM-dd"));
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
+
+  const openReturnDialog = (saleId: number) => {
+    setSelectedSaleId(saleId);
+    setReturnDialogOpen(true);
+  };
 
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -257,6 +265,7 @@ export default function Collections() {
                     <TableHead>Customer</TableHead>
                     <TableHead>Payment Method</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -272,6 +281,17 @@ export default function Collections() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-semibold">₹{parseFloat(sale.total).toFixed(2)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openReturnDialog(sale.id)}
+                          data-testid={`button-return-${sale.id}`}
+                        >
+                          <RotateCcw className="h-4 w-4 mr-1" />
+                          Return
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -280,6 +300,12 @@ export default function Collections() {
           </CardContent>
         </Card>
       </div>
+
+      <SalesReturnDialog
+        saleId={selectedSaleId}
+        open={returnDialogOpen}
+        onOpenChange={setReturnDialogOpen}
+      />
     </AppLayout>
   );
 }

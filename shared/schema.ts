@@ -333,3 +333,38 @@ export type GoodsReceipt = typeof goodsReceipts.$inferSelect;
 
 export type InsertGoodsReceiptItem = z.infer<typeof insertGoodsReceiptItemSchema>;
 export type GoodsReceiptItem = typeof goodsReceiptItems.$inferSelect;
+
+export const salesReturns = pgTable("sales_returns", {
+  id: serial("id").primaryKey(),
+  originalSaleId: integer("original_sale_id").notNull(),
+  invoiceNo: text("invoice_no"),
+  returnDate: timestamp("return_date").defaultNow().notNull(),
+  totalRefundAmount: decimal("total_refund_amount", { precision: 10, scale: 2 }).notNull(),
+  refundMode: text("refund_mode").notNull(),
+  reason: text("reason"),
+  customerId: integer("customer_id"),
+  customerName: text("customer_name"),
+  userId: varchar("user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const salesReturnItems = pgTable("sales_return_items", {
+  id: serial("id").primaryKey(),
+  salesReturnId: integer("sales_return_id").notNull(),
+  saleItemId: integer("sale_item_id").notNull(),
+  medicineId: integer("medicine_id").notNull(),
+  medicineName: text("medicine_name").notNull(),
+  batchNumber: text("batch_number").notNull(),
+  quantityReturned: integer("quantity_returned").notNull(),
+  pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }).notNull(),
+  refundAmount: decimal("refund_amount", { precision: 10, scale: 2 }).notNull(),
+});
+
+export const insertSalesReturnSchema = createInsertSchema(salesReturns).omit({ id: true, createdAt: true });
+export const insertSalesReturnItemSchema = createInsertSchema(salesReturnItems).omit({ id: true });
+
+export type InsertSalesReturn = z.infer<typeof insertSalesReturnSchema>;
+export type SalesReturn = typeof salesReturns.$inferSelect;
+
+export type InsertSalesReturnItem = z.infer<typeof insertSalesReturnItemSchema>;
+export type SalesReturnItem = typeof salesReturnItems.$inferSelect;

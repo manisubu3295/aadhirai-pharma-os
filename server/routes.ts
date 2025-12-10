@@ -16,7 +16,9 @@ import {
   insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema,
   insertGoodsReceiptSchema,
-  insertGoodsReceiptItemSchema
+  insertGoodsReceiptItemSchema,
+  insertSalesReturnSchema,
+  insertSalesReturnItemSchema
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
@@ -887,6 +889,109 @@ export async function registerRoutes(
       }
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({ error: "Failed to create goods receipt", details: errorMessage });
+    }
+  });
+
+  app.get("/api/sales-returns", async (req, res) => {
+    try {
+      const returns = await storage.getSalesReturns();
+      res.json(returns);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sales returns" });
+    }
+  });
+
+  app.get("/api/sales-returns/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const salesReturn = await storage.getSalesReturn(id);
+      if (!salesReturn) {
+        return res.status(404).json({ error: "Sales return not found" });
+      }
+      res.json(salesReturn);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sales return" });
+    }
+  });
+
+  app.get("/api/sales-returns/:id/items", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const items = await storage.getSalesReturnItems(id);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sales return items" });
+    }
+  });
+
+  app.get("/api/sales/:id/with-returns", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await storage.getSaleWithReturns(id);
+      if (!result) {
+        return res.status(404).json({ error: "Sale not found" });
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sale with returns" });
+    }
+  });
+
+  app.post("/api/sales-returns", async (req, res) => {
+    try {
+      const { items, ...returnData } = req.body;
+      
+      if (!returnData.originalSaleId) {
+        return res.status(400).json({ error: "Original sale ID is required" });
+      }
+      
+      const saleWithReturns = await storage.getSaleWithReturns(returnData.originalSaleId);
+      if (!saleWithReturns) {
+        return res.status(404).json({ error: "Original sale not found" });
+      }
+      
+      const returnItems = items || [];
+      let totalRefundAmount = 0;
+      
+      for (const returnItem of returnItems) {
+        const saleItem = saleWithReturns.items.find(item => item.id === returnItem.saleItemId);
+        if (!saleItem) {
+          return res.status(400).json({ error: `Sale item ${returnItem.saleItemId} not found` });
+        }
+        
+        const maxReturnable = saleItem.quantity - saleItem.returnedQty;
+        if (returnItem.quantityReturned > maxReturnable) {
+          return res.status(400).json({ 
+            error: `Cannot return ${returnItem.quantityReturned} of ${saleItem.medicineName}. Maximum returnable: ${maxReturnable}` 
+          });
+        }
+        
+        const pricePerUnit = parseFloat(String(saleItem.price));
+        returnItem.pricePerUnit = pricePerUnit;
+        returnItem.refundAmount = pricePerUnit * returnItem.quantityReturned;
+        returnItem.medicineName = saleItem.medicineName;
+        returnItem.batchNumber = saleItem.batchNumber;
+        totalRefundAmount += returnItem.refundAmount;
+      }
+      
+      const returnNo = `RET-${Date.now()}`;
+      const parsedReturnData = insertSalesReturnSchema.parse({
+        ...returnData,
+        invoiceNo: returnNo,
+        totalRefundAmount: totalRefundAmount.toFixed(2),
+        customerName: saleWithReturns.sale.customerName,
+        customerId: saleWithReturns.sale.customerId
+      });
+      
+      const createdReturn = await storage.createSalesReturn(parsedReturnData, returnItems);
+      res.status(201).json(createdReturn);
+    } catch (error) {
+      console.error("Sales return creation error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to create sales return", details: errorMessage });
     }
   });
 
