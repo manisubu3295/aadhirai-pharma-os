@@ -390,7 +390,7 @@ export default function GoodsReceipts() {
                 <Label>Select PO (Optional)</Label>
                 <div className="flex gap-2">
                   <Select value={selectedPOId} onValueChange={setSelectedPOId}>
-                    <SelectTrigger data-testid="select-grn-po">
+                    <SelectTrigger className="flex-1 min-w-0" data-testid="select-grn-po">
                       <SelectValue placeholder="Select PO" />
                     </SelectTrigger>
                     <SelectContent>
@@ -401,7 +401,7 @@ export default function GoodsReceipts() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button variant="outline" onClick={loadFromPO} disabled={!selectedPOId} data-testid="button-load-po">
+                  <Button variant="outline" onClick={loadFromPO} disabled={!selectedPOId} className="shrink-0" data-testid="button-load-po">
                     Load
                   </Button>
                 </div>
