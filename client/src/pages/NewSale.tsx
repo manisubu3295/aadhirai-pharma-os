@@ -576,12 +576,14 @@ export default function NewSale() {
                           variant="outline"
                           role="combobox"
                           aria-expanded={customerOpen}
-                          className="flex-1 justify-between font-normal"
+                          className="flex-1 justify-between font-normal overflow-hidden"
                           data-testid="select-customer"
                         >
-                          {selectedCustomer
-                            ? `${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ""}`
-                            : "Search customer..."}
+                          <span className="truncate">
+                            {selectedCustomer
+                              ? `${selectedCustomer.name}${selectedCustomer.phone ? ` (${selectedCustomer.phone})` : ""}`
+                              : "Search customer..."}
+                          </span>
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
