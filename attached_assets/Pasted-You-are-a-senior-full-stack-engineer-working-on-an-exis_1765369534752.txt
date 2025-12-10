@@ -1,0 +1,48 @@
+You are a senior full stack engineer working on an existing Pharmacy Management app (Node/Express backend, Angular + Angular Material frontend). Do NOT rewrite architecture or remove any existing features. Only extend the current New Sale (Billing) page and related APIs safely.
+
+Goal: Improve the New Sale page with richer totals, owner price override, and a recent transactions table.
+
+Please implement the following changes in small, non-breaking steps:
+
+1) New Sale totals: show detailed breakdown
+- On the Billing / New Sale page, in the summary section where the net amount is shown, add these additional computed values:
+  - Total MRP: sum of (MRP * quantity) for all line items.
+  - Total discount: total discount amount applied across all items (based on the existing discount logic – do not change how discount is calculated, just show the total).
+  - Total SGST and CGST: if GST is currently handled as a single GST amount, split it into SGST and CGST (50/50) for display purposes only, or reuse existing SGST/CGST fields if they already exist.
+- Make sure these values are:
+  - Updated live when quantities, discounts, or prices change.
+  - Correctly aligned and formatted in the UI (e.g., inside the existing summary card on the right).
+
+2) Allow owner (ADMIN) to edit line item price
+- On the New Sale line items grid, make the unit price editable ONLY for users with role = ADMIN/Owner.
+  - For ADMIN:
+    - Unit price column should be an editable input (e.g., mat-input) so the owner can override the default sale price per line.
+  - For STAFF:
+    - Unit price should remain read-only as it is now.
+- When the price is edited:
+  - Recalculate line total, discount, GST, and overall totals on the fly.
+  - Ensure the updated price is sent to the backend in the invoice payload and stored correctly.
+- Do not remove or break the existing default pricing logic; just allow ADMIN to override at the UI & payload level.
+
+3) Show “Recent Past Transactions” after a sale is generated
+- After a new sale/invoice is successfully created:
+  - Keep the existing success flow as-is (snackbar, clearing form, etc.).
+  - Below or beside the New Sale area, show a “Recent Sales” table.
+- Implement a small Angular Material table that shows the last N invoices (e.g., last 10), using the existing invoices API (do NOT create redundant endpoints if /api/invoices or similar already exists).
+  - Columns: Invoice Number, Date/Time, Customer Name (if available), Total Amount, Payment Mode.
+  - Sort by newest first.
+- Refresh this “Recent Sales” table after each successful sale so the latest invoice appears at the top.
+- Ensure this table does not interfere with the current New Sale flow and is responsive.
+
+4) General constraints
+- Reuse existing services and models (invoice service, auth/user service, etc.) instead of creating duplicates.
+- Do not rename existing fields in the API or DB; only add new computed fields on the front-end or extend responses carefully.
+- Make sure all changes are backward-compatible and that:
+  - Existing billing still works exactly as before.
+  - Reports, stock updates, and discount logic are not broken by these UI changes.
+- After implementing, run the app and manually test:
+  - A normal sale with default prices.
+  - A sale where an ADMIN overrides a price.
+  - The Recent Sales table updates and shows the correct totals and invoice details.
+
+Implement these changes now, editing only the relevant backend endpoints and Angular components/services for the New Sale / Billing page and invoice listing.

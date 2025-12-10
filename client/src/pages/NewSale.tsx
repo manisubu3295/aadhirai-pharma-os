@@ -57,7 +57,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import type { Customer, Doctor, Medicine, HeldBill } from "@shared/schema";
+import { useAuth } from "@/lib/auth";
+import type { Customer, Doctor, Medicine, HeldBill, Sale } from "@shared/schema";
 
 interface SaleItem {
   id: string;
@@ -77,6 +78,8 @@ interface SaleItem {
 export default function NewSale() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
 
   const [items, setItems] = useState<SaleItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -131,6 +134,15 @@ export default function NewSale() {
     queryFn: async () => {
       const res = await fetch("/api/held-bills");
       if (!res.ok) throw new Error("Failed to fetch held bills");
+      return res.json();
+    },
+  });
+
+  const { data: recentSales = [] } = useQuery<Sale[]>({
+    queryKey: ["/api/sales", { limit: 10 }],
+    queryFn: async () => {
+      const res = await fetch("/api/sales?limit=10");
+      if (!res.ok) throw new Error("Failed to fetch recent sales");
       return res.json();
     },
   });
@@ -294,6 +306,17 @@ export default function NewSale() {
     );
   };
 
+  const updateItemPrice = (itemId: string, price: number) => {
+    setItems(
+      items.map((item) => {
+        if (item.id === itemId) {
+          return { ...item, price: Math.max(0, price) };
+        }
+        return item;
+      })
+    );
+  };
+
   const removeItem = (itemId: string) => {
     setItems(items.filter((item) => item.id !== itemId));
   };
@@ -316,8 +339,13 @@ export default function NewSale() {
     let subtotal = 0;
     let totalCgst = 0;
     let totalSgst = 0;
+    let totalMRP = 0;
+    let totalItemDiscount = 0;
 
     items.forEach((item) => {
+      const mrpValue = item.mrp || item.price;
+      totalMRP += mrpValue * item.quantity;
+      totalItemDiscount += item.discount;
       const itemTotal = item.price * item.quantity - item.discount;
       subtotal += itemTotal;
       const gstAmount = (itemTotal * item.gstRate) / 100;
@@ -345,6 +373,8 @@ export default function NewSale() {
       roundOff,
       received,
       change: change > 0 ? change : 0,
+      totalMRP,
+      totalItemDiscount,
     };
   }, [items, billDiscountPercent, receivedAmount]);
 
@@ -837,7 +867,21 @@ export default function NewSale() {
                                 )}
                               </TableCell>
                               <TableCell className="text-right py-3">
-                                ₹{item.price.toFixed(2)}
+                                {isOwnerOrAdmin ? (
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    value={item.price}
+                                    onChange={(e) =>
+                                      updateItemPrice(item.id, parseFloat(e.target.value) || 0)
+                                    }
+                                    className="w-20 text-right h-8"
+                                    data-testid={`input-price-${item.id}`}
+                                  />
+                                ) : (
+                                  <span>₹{item.price.toFixed(2)}</span>
+                                )}
                               </TableCell>
                               <TableCell className="py-3">
                                 <Input
@@ -902,13 +946,27 @@ export default function NewSale() {
 
               <div className="space-y-4 mb-6 pb-6 border-b border-dashed">
                 <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total MRP</span>
+                  <span className="font-medium" data-testid="text-total-mrp">
+                    ₹{calculations.totalMRP.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-medium" data-testid="text-summary-subtotal">
                     ₹{calculations.subtotal.toFixed(2)}
                   </span>
                 </div>
+                {calculations.totalItemDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Item Discount</span>
+                    <span className="font-medium text-green-600" data-testid="text-item-discount">
+                      -₹{calculations.totalItemDiscount.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">Discount (%)</span>
+                  <span className="text-muted-foreground">Bill Discount (%)</span>
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
@@ -925,7 +983,7 @@ export default function NewSale() {
                 </div>
                 {calculations.discount > 0 && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Discount Amount</span>
+                    <span className="text-muted-foreground">Bill Discount Amount</span>
                     <span className="font-medium text-green-600" data-testid="text-discount-amount">
                       -₹{calculations.discount.toFixed(2)}
                     </span>
@@ -1057,6 +1115,54 @@ export default function NewSale() {
           </Card>
         </div>
       </div>
+
+      {recentSales.length > 0 && (
+        <Card className="border-0 shadow-sm mt-6">
+          <CardContent className="p-6">
+            <h3 className="text-lg font-semibold mb-4">Recent Sales</h3>
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
+                    <TableHead>Invoice No</TableHead>
+                    <TableHead>Date/Time</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Payment</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentSales.slice(0, 10).map((sale) => (
+                    <TableRow key={sale.id} data-testid={`recent-sale-${sale.id}`}>
+                      <TableCell className="font-medium">
+                        {sale.invoiceNo}
+                      </TableCell>
+                      <TableCell>
+                        {new Date(sale.createdAt).toLocaleString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </TableCell>
+                      <TableCell className="max-w-[150px] truncate">
+                        {sale.customerName || 'Walk-in Customer'}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        ₹{Number(sale.total).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="capitalize">
+                        {sale.paymentMethod}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={newCustomerDialog} onOpenChange={setNewCustomerDialog}>
         <DialogContent>
