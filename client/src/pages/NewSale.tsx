@@ -96,7 +96,8 @@ export default function NewSale() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [heldBillsDialogOpen, setHeldBillsDialogOpen] = useState(false);
   const [newMedicineDialog, setNewMedicineDialog] = useState(false);
-  const [invoiceNumber, setInvoiceNumber] = useState<string>("");
+  const generateInvoiceNumber = () => `INV-${Date.now()}`;
+  const [invoiceNumber, setInvoiceNumber] = useState<string>(generateInvoiceNumber());
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
@@ -360,17 +361,8 @@ export default function NewSale() {
     setPrintInvoice(false);
     setSendViaEmail(false);
     setBillDiscountPercent("0");
-    setInvoiceNumber("");
+    setInvoiceNumber(generateInvoiceNumber());
   };
-
-  useEffect(() => {
-    if (items.length > 0 && !invoiceNumber) {
-      const newInvoiceNo = `INV-${Date.now()}`;
-      setInvoiceNumber(newInvoiceNo);
-    } else if (items.length === 0) {
-      setInvoiceNumber("");
-    }
-  }, [items.length]);
 
   const handleGenerateInvoice = () => {
     if (items.length === 0) {
@@ -568,14 +560,12 @@ export default function NewSale() {
 
           <Card className="border-0 shadow-sm">
             <CardContent className="p-6 space-y-6">
-              {invoiceNumber && (
-                <div className="flex items-center justify-between bg-muted/50 px-4 py-2 rounded-lg mb-4">
-                  <span className="text-sm text-muted-foreground">Invoice Number:</span>
-                  <span className="font-mono font-semibold text-primary" data-testid="text-invoice-number">
-                    {invoiceNumber}
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center justify-between bg-muted/50 px-4 py-2 rounded-lg mb-4">
+                <span className="text-sm text-muted-foreground">Invoice Number:</span>
+                <span className="font-mono font-semibold text-primary" data-testid="text-invoice-number">
+                  {invoiceNumber}
+                </span>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <Label className="text-base font-medium">Customer</Label>
@@ -624,32 +614,35 @@ export default function NewSale() {
                               {filteredCustomers.map((customer) => (
                                 <CommandItem
                                   key={customer.id}
-                                  value={`${customer.name} ${customer.phone}`}
+                                  value={customer.id.toString()}
+                                  keywords={[customer.name, customer.phone || '']}
                                   onSelect={() => {
                                     setSelectedCustomer(customer);
+                                    setCustomerSearch("");
                                     setCustomerOpen(false);
                                   }}
+                                  className="flex items-start gap-2 py-2"
                                   data-testid={`customer-option-${customer.id}`}
                                 >
                                   <Check
                                     className={cn(
-                                      "mr-2 h-4 w-4",
+                                      "mt-0.5 h-4 w-4 shrink-0",
                                       selectedCustomer?.id === customer.id
                                         ? "opacity-100"
                                         : "opacity-0"
                                     )}
                                   />
-                                  <div>
-                                    <div className="font-medium">{customer.name}</div>
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{customer.name}</span>
                                     {customer.phone && (
-                                      <div className="text-xs text-muted-foreground">
+                                      <span className="text-xs text-muted-foreground">
                                         {customer.phone}
                                         {Number(customer.outstandingBalance) > 0 && (
                                           <span className="ml-2 text-orange-600">
                                             Due: ₹{Number(customer.outstandingBalance).toFixed(2)}
                                           </span>
                                         )}
-                                      </div>
+                                      </span>
                                     )}
                                   </div>
                                 </CommandItem>
