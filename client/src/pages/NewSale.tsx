@@ -204,14 +204,11 @@ export default function NewSale() {
       const res = await fetch(`/api/held-bills/${id}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("Failed to delete held bill");
-      return res.json();
+      if (!res.ok && res.status !== 404) throw new Error("Failed to delete held bill");
+      return { success: true };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/held-bills"] });
-    },
-    onError: () => {
-      toast({ title: "Failed to delete held bill", variant: "destructive" });
     },
   });
 
