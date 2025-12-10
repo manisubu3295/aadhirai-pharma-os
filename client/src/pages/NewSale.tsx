@@ -974,7 +974,10 @@ export default function NewSale() {
                       max={100}
                       step={0.5}
                       value={billDiscountPercent}
-                      onChange={(e) => setBillDiscountPercent(e.target.value)}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setBillDiscountPercent(Math.min(100, Math.max(0, val)).toString());
+                      }}
                       className="w-16 h-7 text-right text-sm"
                       data-testid="input-discount-percent"
                     />
