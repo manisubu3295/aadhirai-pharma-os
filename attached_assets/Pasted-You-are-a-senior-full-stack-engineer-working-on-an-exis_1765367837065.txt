@@ -1,0 +1,59 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app (Node/Express backend, Angular + Angular Material frontend). DO NOT change or remove any existing billing functionality. Only extend it safely.
+
+Goal: Add a “Medicine Return / Sales Return” feature that:
+- Lets staff return items from an existing invoice.
+- Correctly adjusts medicine stock back into inventory.
+- Correctly adjusts reports (net sales) without changing the original invoice.
+- Works safely with existing data.
+
+Please implement this in small, non-breaking steps:
+
+1) Data model (backend)
+- Create two new tables or models, without modifying existing invoice tables:
+  - `sales_returns`:
+    - id, pharmacy_id, original_invoice_id (FK to invoices), return_date, total_refund_amount,
+      refund_mode (CASH | UPI | CARD | ADJUSTMENT), reason (optional), created_by_user_id,
+      created_at, updated_at.
+  - `sales_return_items`:
+    - id, sales_return_id (FK), invoice_item_id (FK to invoice_items), product_id, batch_id,
+      quantity_returned, refund_amount.
+- Ensure multiple returns are possible for the same invoice, and partial returns per item.
+- Add helper logic to compute already returned quantity per invoice_item so we cannot return more than originally sold.
+
+2) Backend API
+- Add endpoint: GET `/api/invoices/:id/with-items-and-returns`
+  - Returns invoice, its items, and how many units of each item have already been returned.
+- Add endpoint: POST `/api/sales-returns`
+  - Input: original_invoice_id, refund_mode, reason, list of items with invoice_item_id and quantity_returned.
+  - Validation: for each invoice_item, total returned quantity (existing + new) must not exceed invoice_item.quantity.
+  - On success:
+    - Insert into `sales_returns` and `sales_return_items`.
+    - For each return item, increase the corresponding batch stock in the batches table by quantity_returned.
+    - Calculate total_refund_amount from the original invoice_item pricing and store it.
+
+3) Reports adjustment (backend)
+- Update the daily sales report endpoint to return NET sales:
+  - net_sales = sum(invoices.total_amount for the day) - sum(sales_returns.total_refund_amount for the same day).
+- Do NOT modify existing invoice data; just subtract returns at report/query level.
+- Ensure existing report fields remain compatible so the frontend does not break.
+
+4) Frontend – Invoice list and return UI (Angular)
+- In the existing “Sales / Invoice list” page, add an action button/icon in each row: “Return / Replace”.
+- Clicking it opens a new Angular Material dialog or routed page:
+  - It calls GET `/api/invoices/:id/with-items-and-returns`.
+  - Shows a table of invoice items with columns: Product, Batch, Sold Qty, Already Returned Qty, Return Qty (editable), Line Total.
+  - Validate in the UI that Return Qty cannot exceed (Sold Qty - Already Returned Qty).
+  - Add fields for Reason and Refund mode (CASH / UPI / CARD / ADJUSTMENT).
+- On submit:
+  - Call POST `/api/sales-returns` with the selected items and quantities.
+  - On success, show a snack bar: “Return saved, stock updated” and close the dialog.
+  - Optionally refresh the invoice list.
+
+5) Safety and non-breaking changes
+- Reuse existing models/services for invoices, products, batches; do not rename or remove any fields.
+- Keep all existing billing flows working as they are.
+- Make all new fields and tables backward-compatible with existing data (no destructive migrations).
+- After changes, run the app and manually verify:
+  - Normal billing still works.
+  - New return flow correctly increases batch stock.
+  - Daily sales report shows net sales after returns.
