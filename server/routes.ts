@@ -603,6 +603,63 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/credit-billing/payment", async (req, res) => {
+    try {
+      const { customerId, amount, paymentMethod, reference } = req.body;
+      
+      if (!customerId || amount === undefined || !paymentMethod) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const paymentAmount = typeof amount === 'number' ? amount : parseFloat(amount);
+      
+      if (isNaN(paymentAmount) || paymentAmount <= 0) {
+        return res.status(400).json({ error: "Payment amount must be greater than zero" });
+      }
+
+      const customer = await storage.getCustomer(customerId);
+      if (!customer) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+
+      const currentBalance = parseFloat(customer.outstandingBalance || "0");
+
+      if (paymentAmount > currentBalance + 0.01) {
+        return res.status(400).json({ error: "Payment cannot exceed outstanding balance" });
+      }
+
+      const sales = await storage.getSales();
+      const customerCreditSales = sales
+        .filter(s => s.customerId === customerId && s.paymentMethod === "Credit")
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      const saleId = customerCreditSales.length > 0 ? customerCreditSales[0].id : 1;
+
+      const newBalance = Math.max(0, currentBalance - paymentAmount);
+      
+      await storage.updateCustomer(customerId, {
+        outstandingBalance: newBalance.toFixed(2),
+      });
+
+      const payment = await storage.createCreditPayment({
+        saleId,
+        customerId,
+        amount: paymentAmount.toFixed(2),
+        paymentMethod,
+        notes: reference || null,
+      });
+
+      res.status(201).json({ 
+        payment, 
+        newBalance: newBalance.toFixed(2),
+        message: "Payment recorded successfully" 
+      });
+    } catch (error) {
+      console.error("Credit billing payment error:", error);
+      res.status(500).json({ error: "Failed to record payment" });
+    }
+  });
+
   app.get("/api/held-bills", async (req, res) => {
     try {
       const bills = await storage.getHeldBills();

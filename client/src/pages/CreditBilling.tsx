@@ -49,7 +49,7 @@ interface CreditPayment {
   customerId: number;
   amount: string;
   paymentMethod: string;
-  reference: string | null;
+  notes: string | null;
   createdAt: string;
 }
 
@@ -80,34 +80,20 @@ export default function CreditBilling() {
 
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { customerId: number; amount: string; paymentMethod: string; reference: string }) => {
-      const customerSales = sales.filter(
-        s => s.customerId === data.customerId && s.paymentMethod === "Credit"
-      );
-      const latestSale = customerSales[0];
-      
-      const res = await fetch("/api/credit-payments", {
+      const res = await fetch("/api/credit-billing/payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          saleId: latestSale?.id || 0,
           customerId: data.customerId,
           amount: data.amount,
           paymentMethod: data.paymentMethod,
           reference: data.reference || null,
         }),
       });
-      if (!res.ok) throw new Error("Failed to record payment");
-      
-      const customer = customers.find(c => c.id === data.customerId);
-      if (customer) {
-        const newBalance = parseFloat(customer.outstandingBalance) - parseFloat(data.amount);
-        await fetch(`/api/customers/${data.customerId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ outstandingBalance: newBalance.toFixed(2) }),
-        });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to record payment");
       }
-      
       return res.json();
     },
     onSuccess: () => {
@@ -559,7 +545,7 @@ export default function CreditBilling() {
                               +₹{parseFloat(payment.amount).toLocaleString("en-IN")}
                             </TableCell>
                             <TableCell>{payment.paymentMethod}</TableCell>
-                            <TableCell>{payment.reference || "-"}</TableCell>
+                            <TableCell>{payment.notes || "-"}</TableCell>
                           </TableRow>
                         ))
                       )}
