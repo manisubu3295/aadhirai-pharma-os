@@ -76,6 +76,41 @@ interface SaleItem {
   availableQty: number;
 }
 
+function QuantityInput({ value, max, onChange, testId }: { value: number; max: number; onChange: (qty: number) => void; testId: string }) {
+  const [inputValue, setInputValue] = useState(String(value));
+  
+  useEffect(() => {
+    setInputValue(String(value));
+  }, [value]);
+  
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      value={inputValue}
+      onChange={(e) => {
+        const val = e.target.value;
+        if (val === '' || /^\d*$/.test(val)) {
+          setInputValue(val);
+        }
+      }}
+      onBlur={() => {
+        const qty = parseInt(inputValue) || 1;
+        const clampedQty = Math.max(1, Math.min(qty, max));
+        setInputValue(String(clampedQty));
+        onChange(clampedQty);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-16 text-center h-8"
+      data-testid={testId}
+    />
+  );
+}
+
 export default function NewSale() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -880,23 +915,11 @@ export default function NewSale() {
                                 )}
                               </TableCell>
                               <TableCell className="py-3">
-                                <Input
-                                  type="text"
-                                  inputMode="numeric"
+                                <QuantityInput
                                   value={item.quantity}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === '' || /^\d+$/.test(val)) {
-                                      const qty = val === '' ? 0 : parseInt(val);
-                                      updateItemQuantity(item.id, Math.min(Math.max(qty, 0), item.availableQty));
-                                    }
-                                  }}
-                                  onBlur={(e) => {
-                                    const qty = parseInt(e.target.value) || 1;
-                                    updateItemQuantity(item.id, Math.min(Math.max(qty, 1), item.availableQty));
-                                  }}
-                                  className="w-16 text-center h-8"
-                                  data-testid={`input-qty-${item.id}`}
+                                  max={item.availableQty}
+                                  onChange={(qty) => updateItemQuantity(item.id, qty)}
+                                  testId={`input-qty-${item.id}`}
                                 />
                               </TableCell>
                               <TableCell className="text-right py-3 font-medium">
