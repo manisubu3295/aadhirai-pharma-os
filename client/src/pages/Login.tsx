@@ -29,6 +29,7 @@ export default function Login() {
     const result = await login(username, password);
     
     if (result.success) {
+      sessionStorage.removeItem("nav-scroll-position");
       setLocation("/");
     } else {
       setError(result.error || "Login failed");
@@ -63,11 +64,22 @@ export default function Login() {
           <p className="text-slate-400 text-lg max-w-md">
             Complete ERP solution for inventory management, billing, and business analytics.
           </p>
+          <div className="flex gap-8 pt-4">
+            <div className="text-center">
+              <p className="text-3xl font-bold text-white">99.9%</p>
+              <p className="text-sm text-slate-500">Uptime</p>
+            </div>
+            <div className="text-center">
+              <p className="text-3xl font-bold text-white">100%</p>
+              <p className="text-sm text-slate-500">Accuracy</p>
+            </div>
+          </div>
         </div>
 
-        <p className="text-slate-600 text-sm">
-          Aadhirai Innovations
-        </p>
+        <div className="text-sm">
+          <p className="text-slate-400">Aadhirai Innovations</p>
+          <p className="text-slate-500">www.aadhiraiinnovations.com</p>
+        </div>
       </div>
 
       {/* Right Panel - Login Form */}
