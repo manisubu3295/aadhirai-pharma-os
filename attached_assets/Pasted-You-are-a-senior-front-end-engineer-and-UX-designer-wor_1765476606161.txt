@@ -1,0 +1,118 @@
+You are a senior front-end engineer and UX designer working on an existing Pharmacy Management SaaS (Angular + Angular Material). Your task is to redesign ONLY the navigation menu (sidebar / main app shell) to look clean, premium, and enterprise-grade — something that could reasonably sell as a $5000+ product.
+
+IMPORTANT:
+- Do NOT change routes, route names, or business logic.
+- Do NOT remove any existing features or break existing navigation.
+- Only modify the layout, grouping, and styling of the menu and its related components.
+- Keep the app responsive for both desktop and tablet.
+
+Goals:
+1) Make the sidebar navigation visually clean, modern, and easy to scan.
+2) Group menu items logically into sections so a non-tech pharmacy owner can instantly understand where to go.
+3) Use Angular Material components properly (mat-sidenav, mat-nav-list, mat-list-item, mat-expansion-panel, mat-icon).
+4) Clearly highlight the active menu item and section.
+
+Please implement the following:
+
+1) Define a clear, grouped menu structure
+- Use a config-driven approach in TypeScript, e.g. an array of sections and items like:
+  - Operations
+    - Dashboard
+    - New Sale (POS)
+    - Hold / Resume Bills
+  - Inventory & Purchase
+    - Medicines / Products
+    - Stock & Batches
+    - Purchase Entry (GRN)
+    - Expiry & Near-Expiry
+  - Customers & Credit
+    - Customers / Credit Accounts
+    - Credit Bills Summary
+    - Collections
+  - Reports & Analytics
+    - Sales Reports
+    - Stock Reports
+    - GST / Tax Reports
+    - Profitability (Pro)
+  - Configuration
+    - Masters (Suppliers, Categories, Units)
+    - User Management
+    - Pharmacy Profile / Branding
+- Use such a structure in a config file or constant so we can easily add/remove items later without editing the template everywhere.
+- Map this config to existing routes (do not change router paths, just wire items to existing routerLinks).
+
+2) Angular Material layout for the sidebar
+- Use `mat-sidenav-container` + `mat-sidenav` + `mat-sidenav-content` for the main shell if not already done.
+- Inside `mat-sidenav`, create a layout like:
+  - Top area: product brand
+    - Small logo or initials (e.g. “AI” in a circle) + text “Aadhirai Pharmacy OS”.
+  - Scrollable middle area: grouped menu.
+  - Bottom area: user account / settings quick links (Profile, Logout).
+- Ensure the sidebar has:
+  - A fixed width on desktop (e.g. 260–280px).
+  - Collapsible behaviour on smaller screens (icon-only mode or temporary sidenav).
+
+3) Grouping and visual hierarchy
+- For grouping, use either:
+  - `mat-expansion-panel` for each section (Operations, Inventory & Purchase, etc.), or
+  - Section headers using `mat-subheader` with a subtle uppercase label and less prominent colour.
+- Example design:
+  - Section title with smaller uppercase text, e.g. “OPERATIONS”.
+  - Under it, `mat-nav-list` with `mat-list-item` for Dashboard, New Sale, etc.
+- Make sure there is enough spacing between sections so it feels clean, not cluttered.
+
+4) Icons and labels
+- Use `mat-icon` with clear, intuitive icons for each item:
+  - Dashboard: `dashboard`
+  - New Sale (POS): `point_of_sale` or `shopping_cart`
+  - Medicines / Products: `medication` or `inventory_2`
+  - Purchase: `receipt_long`
+  - Stock: `inventory`
+  - Reports: `bar_chart`
+  - Settings: `settings`
+- Place icons to the left of labels with consistent alignment.
+- Labels should be short, business-friendly, and easy to understand.
+  - Example: use “New Sale (POS)” instead of just “POS”, “Purchase Entry” instead of just “Purchase”.
+
+5) Active state, hover, and focus styles
+- Ensure the active route is clearly highlighted:
+  - Use `routerLinkActive` for list items.
+  - Style active item with:
+    - Slightly different background colour (e.g. primary colour at low opacity).
+    - Left border accent (2–3px in primary colour).
+    - Bold or slightly heavier font.
+- Add a smooth hover state:
+  - Slight background hover colour.
+  - Cursor pointer.
+- Use consistent padding and line-height so items don’t feel cramped.
+
+6) Theming: premium look and feel
+- Apply a clean colour palette:
+  - Primary: deep blue / indigo.
+  - Accent: teal/cyan.
+  - Background: very light grey / white.
+- Ensure the sidenav background is slightly contrasting with the main content (e.g. light grey) and text is high contrast.
+- Avoid overly bright or “neon” colours; keep it subdued and enterprise-style.
+
+7) Mobile / small screen behavior
+- On tablet/mobile width:
+  - Use a `mat-sidenav` in "over" or "push" mode toggled by a button in the top toolbar (hamburger menu).
+  - Hide section headers if needed or keep them but ensure they are touch-friendly with enough spacing.
+- Make sure the menu remains scrollable on small screens without layout breaking.
+
+8) Minor UX improvements
+- Add a small user section at the bottom of the nav:
+  - Show logged-in user name and role (e.g. “Owner / Staff”).
+  - Buttons for “Profile” and “Logout”.
+- Optionally add a very subtle divider between business navigation and this account section.
+
+9) Implementation notes
+- Refactor the nav into a dedicated component (e.g. `MainSidebarComponent`) if not already done.
+- Drive the menu from a TypeScript config object (sections + items) and render via `*ngFor` to avoid hardcoding menu items in HTML.
+- Do not change route names or paths; only map this new structure onto existing routes.
+- After changes, verify:
+  - All previous routes still work.
+  - Active highlight follows navigation correctly.
+  - On scroll, the menu behaves nicely and does not jump unnecessarily.
+
+Make the overall visual quality of the menu feel like a polished, commercial SaaS sidebar that could belong to a $5000+ pharmacy product.

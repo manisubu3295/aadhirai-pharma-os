@@ -20,7 +20,10 @@ import {
   ClipboardList,
   PackageCheck,
   Receipt,
-  RotateCcw
+  RotateCcw,
+  LogOut,
+  User,
+  ChevronRight
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
@@ -38,9 +41,14 @@ interface MenuItem {
   ownerOnly?: boolean;
 }
 
+interface MenuSection {
+  title: string;
+  items: MenuItem[];
+}
+
 export function Sidebar() {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { isPro } = usePlan();
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNavigatingRef = useRef(false);
@@ -83,98 +91,191 @@ export function Sidebar() {
     }, 100);
   }, [saveScrollPosition]);
 
-  const menuItems: MenuItem[] = [
-    { icon: LayoutDashboard, label: "Dashboard", href: "/" },
-    { icon: Package, label: "Inventory", href: "/inventory" },
-    { icon: Truck, label: "Suppliers", href: "/suppliers" },
-    { icon: Tags, label: "Rate Master", href: "/supplier-rates" },
-    { icon: ClipboardList, label: "Purchase Orders", href: "/purchase-orders" },
-    { icon: PackageCheck, label: "Goods Receipt", href: "/goods-receipts" },
-    { icon: ShoppingCart, label: "Point of Sale", href: "/pos" },
-    { icon: Receipt, label: "Credit Billing", href: "/credit-billing" },
-    { icon: RotateCcw, label: "Medicine Refund", href: "/medicine-refund" },
-    { icon: Users, label: "Customers", href: "/customers" },
-    { icon: FileText, label: "Reports", href: "/reports" },
-    { icon: Stethoscope, label: "Doctors", href: "/doctors", proOnly: true },
-    { icon: CreditCard, label: "Collections", href: "/collections", proOnly: true },
-    { icon: MapPin, label: "Locations", href: "/locations", proOnly: true },
-    { icon: Shield, label: "Audit Log", href: "/audit-log", proOnly: true, ownerOnly: true },
-    { icon: Calculator, label: "Tally Export", href: "/tally-export", proOnly: true, ownerOnly: true },
-    { icon: BarChart3, label: "Owner Analytics", href: "/owner-dashboard", proOnly: true, ownerOnly: true },
-    { icon: Settings, label: "Settings", href: "/settings", ownerOnly: true },
+  const menuSections: MenuSection[] = [
+    {
+      title: "OPERATIONS",
+      items: [
+        { icon: LayoutDashboard, label: "Dashboard", href: "/" },
+        { icon: Plus, label: "New Sale (POS)", href: "/new-sale" },
+        { icon: ShoppingCart, label: "Point of Sale", href: "/pos" },
+        { icon: Receipt, label: "Credit Billing", href: "/credit-billing" },
+        { icon: RotateCcw, label: "Medicine Refund", href: "/medicine-refund" },
+      ]
+    },
+    {
+      title: "INVENTORY & PURCHASE",
+      items: [
+        { icon: Package, label: "Medicines / Products", href: "/inventory" },
+        { icon: Truck, label: "Suppliers", href: "/suppliers" },
+        { icon: Tags, label: "Rate Master", href: "/supplier-rates" },
+        { icon: ClipboardList, label: "Purchase Orders", href: "/purchase-orders" },
+        { icon: PackageCheck, label: "Goods Receipt (GRN)", href: "/goods-receipts" },
+      ]
+    },
+    {
+      title: "CUSTOMERS & CREDIT",
+      items: [
+        { icon: Users, label: "Customer Accounts", href: "/customers" },
+        { icon: Stethoscope, label: "Doctors", href: "/doctors", proOnly: true },
+        { icon: CreditCard, label: "Collections", href: "/collections", proOnly: true },
+      ]
+    },
+    {
+      title: "REPORTS & ANALYTICS",
+      items: [
+        { icon: FileText, label: "Sales Reports", href: "/reports" },
+        { icon: BarChart3, label: "Owner Analytics", href: "/owner-dashboard", proOnly: true, ownerOnly: true },
+        { icon: Shield, label: "Audit Log", href: "/audit-log", proOnly: true, ownerOnly: true },
+        { icon: Calculator, label: "Tally Export", href: "/tally-export", proOnly: true, ownerOnly: true },
+      ]
+    },
+    {
+      title: "CONFIGURATION",
+      items: [
+        { icon: MapPin, label: "Storage Locations", href: "/locations", proOnly: true },
+        { icon: Settings, label: "Settings", href: "/settings", ownerOnly: true },
+      ]
+    }
   ];
 
   const isOwner = user?.role === "owner";
 
+  const handleLogout = () => {
+    logout();
+  };
+
   return (
-    <aside className="w-64 h-screen sidebar-gradient text-sidebar-foreground border-r border-sidebar-border flex flex-col shrink-0 fixed left-0 top-0 z-40">
-      <div className="p-6 flex items-center gap-3 border-b border-sidebar-border/50">
-        <div className="w-8 h-8 rounded bg-white/20 flex items-center justify-center p-1">
-             <img src={logoImage} alt="Aadhirai Innovations" className="w-full h-full object-contain" />
+    <aside className="w-72 h-screen bg-slate-900 text-slate-100 border-r border-slate-800 flex flex-col shrink-0 fixed left-0 top-0 z-40">
+      {/* Brand Header */}
+      <div className="p-5 border-b border-slate-800/80">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center p-1.5 shadow-lg shadow-indigo-500/20">
+            <img src={logoImage} alt="Aadhirai" className="w-full h-full object-contain" />
+          </div>
+          <div>
+            <h1 className="font-bold text-base text-white tracking-tight">Aadhirai</h1>
+            <p className="text-[11px] text-slate-400 font-medium">Pharmacy Management</p>
+          </div>
         </div>
-        <div>
-          <h1 className="font-bold text-sm tracking-tight">Aadhirai</h1>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Innovations</p>
-        </div>
+        {isPro && (
+          <div className="mt-3 flex items-center gap-1.5 px-2 py-1 bg-gradient-to-r from-amber-500/20 to-amber-600/10 rounded-md border border-amber-500/30 w-fit">
+            <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-[11px] font-semibold text-amber-400">PRO EDITION</span>
+          </div>
+        )}
       </div>
 
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
-        <div className="px-3 mb-2">
-           <Link href="/new-sale" onClick={handleMenuClick}>
-             <button className="w-full bg-white text-primary hover:bg-white/90 transition-colors h-10 rounded-md flex items-center justify-center gap-2 text-sm font-medium shadow-sm">
-               <Plus className="w-4 h-4" /> New Sale
-             </button>
-           </Link>
-        </div>
-        
-        <div className="h-4"></div>
+      {/* Scrollable Menu Area */}
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 py-4 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+        {menuSections.map((section, sectionIndex) => {
+          const visibleItems = section.items.filter(item => {
+            if (item.ownerOnly && !isOwner) return false;
+            return true;
+          });
+          
+          if (visibleItems.length === 0) return null;
 
-        {menuItems.map((item) => {
-          if (item.ownerOnly && !isOwner) return null;
-          
-          const isActive = location === item.href;
-          const isDisabled = item.proOnly && !isPro;
-          
-          if (isDisabled) {
-            return (
-              <div
-                key={item.href}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground/50 cursor-not-allowed"
-                data-testid={`menu-${item.label.toLowerCase().replace(/\s/g, "-")}-disabled`}
-              >
-                <item.icon className="w-4 h-4" />
-                {item.label}
-                <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0 bg-amber-500/20 text-amber-400 border-amber-500/30">
-                  <Crown className="w-2.5 h-2.5 mr-0.5" />
-                  PRO
-                </Badge>
-              </div>
-            );
-          }
-          
           return (
-            <Link key={item.href} href={item.href} onClick={handleMenuClick}>
-              <div className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 group cursor-pointer",
-                isActive 
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" 
-                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              )}>
-                <item.icon className={cn(
-                  "w-4 h-4",
-                  isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary transition-colors"
-                )} />
-                {item.label}
-                {item.proOnly && isPro && (
-                  <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0 bg-amber-500/20 text-amber-400 border-amber-500/30">
-                    <Crown className="w-2.5 h-2.5 mr-0.5" />
-                    PRO
-                  </Badge>
-                )}
+            <div key={section.title} className={cn("mb-2", sectionIndex > 0 && "mt-4")}>
+              {/* Section Header */}
+              <div className="px-5 mb-2">
+                <span className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">
+                  {section.title}
+                </span>
               </div>
-            </Link>
+
+              {/* Section Items */}
+              <div className="px-3 space-y-0.5">
+                {visibleItems.map((item) => {
+                  const isActive = location === item.href;
+                  const isDisabled = item.proOnly && !isPro;
+                  
+                  if (isDisabled) {
+                    return (
+                      <div
+                        key={item.href}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 cursor-not-allowed group"
+                        data-testid={`menu-${item.label.toLowerCase().replace(/\s/g, "-")}-disabled`}
+                      >
+                        <item.icon className="w-[18px] h-[18px]" />
+                        <span className="flex-1">{item.label}</span>
+                        <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] px-1.5 py-0 font-semibold">
+                          <Crown className="w-2.5 h-2.5 mr-0.5" />
+                          PRO
+                        </Badge>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <Link key={item.href} href={item.href} onClick={handleMenuClick}>
+                      <div className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group cursor-pointer relative",
+                        isActive 
+                          ? "bg-gradient-to-r from-indigo-600/30 to-indigo-600/10 text-white border-l-[3px] border-indigo-400 ml-0" 
+                          : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 border-l-[3px] border-transparent"
+                      )}>
+                        <item.icon className={cn(
+                          "w-[18px] h-[18px] transition-colors",
+                          isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-indigo-400"
+                        )} />
+                        <span className="flex-1">{item.label}</span>
+                        {isActive && (
+                          <ChevronRight className="w-4 h-4 text-indigo-400" />
+                        )}
+                        {item.proOnly && isPro && (
+                          <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] px-1.5 py-0 font-semibold">
+                            PRO
+                          </Badge>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
+      </div>
+
+      {/* User Section at Bottom */}
+      <div className="border-t border-slate-800/80 p-4">
+        {user && (
+          <>
+            <div className="flex items-center gap-3 mb-3 px-2">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                {user.name?.charAt(0)?.toUpperCase() || user.username?.charAt(0)?.toUpperCase() || "U"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{user.name || user.username}</p>
+                <p className="text-[11px] text-slate-400 capitalize">{user.role}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Link href="/settings" onClick={handleMenuClick} className="flex-1">
+                <button className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium transition-colors">
+                  <User className="w-3.5 h-3.5" />
+                  Profile
+                </button>
+              </Link>
+              <button 
+                onClick={handleLogout}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 hover:bg-red-500/20 text-slate-400 hover:text-red-400 text-xs font-medium transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Logout
+              </button>
+            </div>
+          </>
+        )}
+        {!user && (
+          <Link href="/auth" onClick={handleMenuClick}>
+            <button className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
+              <User className="w-4 h-4" />
+              Sign In
+            </button>
+          </Link>
+        )}
       </div>
     </aside>
   );
