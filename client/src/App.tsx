@@ -25,6 +25,7 @@ import SupplierRates from "@/pages/SupplierRates";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import GoodsReceipts from "@/pages/GoodsReceipts";
 import Profile from "@/pages/Profile";
+import CreditBilling from "@/pages/CreditBilling";
 
 function Router() {
   return (
@@ -118,6 +119,11 @@ function Router() {
       <Route path="/profile">
         <ProtectedRoute>
           <Profile />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/credit-billing">
+        <ProtectedRoute>
+          <CreditBilling />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />

@@ -7,7 +7,6 @@ import {
   Users, 
   FileText, 
   Settings, 
-  LogOut,
   Plus,
   CreditCard,
   MapPin,
@@ -19,7 +18,8 @@ import {
   Truck,
   Tags,
   ClipboardList,
-  PackageCheck
+  PackageCheck,
+  Receipt
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
@@ -37,7 +37,7 @@ interface MenuItem {
 
 export function Sidebar() {
   const [location] = useLocation();
-  const { logout, user } = useAuth();
+  const { user } = useAuth();
   const { isPro } = usePlan();
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPositionRef = useRef(0);
@@ -63,6 +63,7 @@ export function Sidebar() {
     { icon: ClipboardList, label: "Purchase Orders", href: "/purchase-orders" },
     { icon: PackageCheck, label: "Goods Receipt", href: "/goods-receipts" },
     { icon: ShoppingCart, label: "Point of Sale", href: "/pos" },
+    { icon: Receipt, label: "Credit Billing", href: "/credit-billing" },
     { icon: Users, label: "Customers", href: "/customers" },
     { icon: FileText, label: "Reports", href: "/reports" },
     { icon: Stethoscope, label: "Doctors", href: "/doctors", proOnly: true },
@@ -145,17 +146,6 @@ export function Sidebar() {
             </Link>
           );
         })}
-      </div>
-
-      <div className="p-4 border-t border-sidebar-border/50">
-        <button 
-          onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-          data-testid="button-sidebar-logout"
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
-        </button>
       </div>
     </aside>
   );
