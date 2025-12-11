@@ -804,9 +804,6 @@ export default function NewSale() {
                                 </div>
                                 <div className="text-right">
                                   <div className="font-medium">₹{Number(medicine.price).toFixed(2)}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    GST: {medicine.gstRate}%
-                                  </div>
                                 </div>
                               </CommandItem>
                             ))}
@@ -827,7 +824,6 @@ export default function NewSale() {
                         <TableHead>Expiry</TableHead>
                         <TableHead className="text-right">Price</TableHead>
                         <TableHead className="w-[80px] text-center">Qty</TableHead>
-                        <TableHead className="text-right">GST%</TableHead>
                         <TableHead className="text-right">Total</TableHead>
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
@@ -835,15 +831,13 @@ export default function NewSale() {
                     <TableBody>
                       {items.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                             No items added. Search and add medicines above.
                           </TableCell>
                         </TableRow>
                       ) : (
                         items.map((item) => {
                           const itemTotal = item.price * item.quantity - item.discount;
-                          const gstAmount = (itemTotal * item.gstRate) / 100;
-                          const lineTotal = itemTotal + gstAmount;
 
                           return (
                             <TableRow key={item.id} data-testid={`sale-item-${item.id}`}>
@@ -896,11 +890,8 @@ export default function NewSale() {
                                   data-testid={`input-qty-${item.id}`}
                                 />
                               </TableCell>
-                              <TableCell className="text-right py-3">
-                                {item.gstRate}%
-                              </TableCell>
                               <TableCell className="text-right py-3 font-medium">
-                                ₹{lineTotal.toFixed(2)}
+                                ₹{itemTotal.toFixed(2)}
                               </TableCell>
                               <TableCell className="py-3">
                                 <Button
