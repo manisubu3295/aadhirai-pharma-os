@@ -10,6 +10,7 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -473,20 +474,20 @@ export default function GoodsReceipts() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => updateItem(index, "quantity", parseInt(e.target.value) || 1)}
-                            className="w-20"
+                          <NumericInput
+                            min={1}
                             max={item.pendingQty}
+                            value={item.quantity}
+                            onChange={(value) => updateItem(index, "quantity", value)}
+                            className="w-20"
                           />
                         </TableCell>
                         <TableCell>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={item.rate}
-                            onChange={(e) => updateItem(index, "rate", e.target.value)}
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.rate) || 0}
+                            onChange={(value) => updateItem(index, "rate", String(value))}
                             className="w-24"
                           />
                         </TableCell>

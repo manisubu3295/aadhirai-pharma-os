@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { 
   Select, 
@@ -899,13 +900,12 @@ export default function NewSale() {
                               </TableCell>
                               <TableCell className="text-right py-3">
                                 {isOwnerOrAdmin ? (
-                                  <Input
-                                    type="number"
+                                  <NumericInput
                                     min={0}
-                                    step={0.01}
+                                    allowDecimal={true}
                                     value={item.price}
-                                    onChange={(e) =>
-                                      updateItemPrice(item.id, parseFloat(e.target.value) || 0)
+                                    onChange={(value) =>
+                                      updateItemPrice(item.id, value)
                                     }
                                     className="w-20 text-right h-8"
                                     data-testid={`input-price-${item.id}`}
@@ -991,16 +991,12 @@ export default function NewSale() {
                 <div className="flex justify-between text-sm items-center">
                   <span className="text-muted-foreground">Bill Discount (%)</span>
                   <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
+                    <NumericInput
                       min={0}
                       max={100}
-                      step={0.5}
-                      value={billDiscountPercent}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        setBillDiscountPercent(Math.min(100, Math.max(0, val)).toString());
-                      }}
+                      allowDecimal={true}
+                      value={parseFloat(billDiscountPercent) || 0}
+                      onChange={(value) => setBillDiscountPercent(String(value))}
                       className="w-16 h-7 text-right text-sm"
                       data-testid="input-discount-percent"
                     />
@@ -1083,11 +1079,11 @@ export default function NewSale() {
                   <Label className="font-medium">Received Amount</Label>
                   <div className="flex items-center gap-1">
                     <span>₹</span>
-                    <Input
-                      type="number"
+                    <NumericInput
                       min={0}
-                      value={receivedAmount}
-                      onChange={(e) => setReceivedAmount(e.target.value)}
+                      allowDecimal={true}
+                      value={parseFloat(receivedAmount) || 0}
+                      onChange={(value) => setReceivedAmount(String(value))}
                       placeholder="0"
                       className="w-24 text-right"
                       data-testid="input-received"

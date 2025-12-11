@@ -10,6 +10,7 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -122,11 +123,11 @@ const SupplierFormFields = memo(function SupplierFormFields({ formData, setFormD
       </div>
       <div>
         <Label htmlFor="paymentTermsDays">Payment Terms (Days)</Label>
-        <Input
-          id="paymentTermsDays"
-          type="number"
+        <NumericInput
+          min={0}
           value={formData.paymentTermsDays}
-          onChange={(e) => setFormData(prev => ({ ...prev, paymentTermsDays: parseInt(e.target.value) || 30 }))}
+          onChange={(value) => setFormData(prev => ({ ...prev, paymentTermsDays: value }))}
+          defaultValue={30}
           data-testid="input-supplier-payment-terms"
         />
       </div>

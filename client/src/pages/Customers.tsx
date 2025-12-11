@@ -10,6 +10,7 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -123,12 +124,11 @@ const CustomerFormFields = memo(function CustomerFormFields({ formData, setFormD
         </div>
         <div>
           <Label htmlFor="creditLimit">Credit Limit (₹)</Label>
-          <Input
-            id="creditLimit"
-            type="number"
+          <NumericInput
             min={0}
-            value={formData.creditLimit}
-            onChange={(e) => setFormData(prev => ({ ...prev, creditLimit: e.target.value }))}
+            allowDecimal={true}
+            value={parseFloat(formData.creditLimit) || 0}
+            onChange={(value) => setFormData(prev => ({ ...prev, creditLimit: String(value) }))}
             placeholder="0"
             className="mt-1.5"
             data-testid="input-credit-limit"
@@ -143,12 +143,11 @@ const CustomerFormFields = memo(function CustomerFormFields({ formData, setFormD
           </div>
           <div>
             <Label htmlFor="creditPeriodDays">Credit Period (Days)</Label>
-            <Input
-              id="creditPeriodDays"
-              type="number"
+            <NumericInput
               min={0}
               value={formData.creditPeriodDays}
-              onChange={(e) => setFormData(prev => ({ ...prev, creditPeriodDays: parseInt(e.target.value) || 30 }))}
+              onChange={(value) => setFormData(prev => ({ ...prev, creditPeriodDays: value }))}
+              defaultValue={30}
               placeholder="30"
               className="mt-1.5"
               data-testid="input-credit-period"

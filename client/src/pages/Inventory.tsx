@@ -10,6 +10,7 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -157,37 +158,31 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
       </div>
       <div>
         <Label htmlFor="quantity">Quantity</Label>
-        <Input
-          id="quantity"
-          type="number"
+        <NumericInput
           min={0}
           value={formData.quantity}
-          onChange={(e) => setFormData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+          onChange={(value) => setFormData(prev => ({ ...prev, quantity: value }))}
           className="mt-1.5"
           data-testid="input-quantity"
         />
       </div>
       <div>
         <Label htmlFor="reorderLevel">Reorder Level</Label>
-        <Input
-          id="reorderLevel"
-          type="number"
+        <NumericInput
           min={0}
           value={formData.reorderLevel}
-          onChange={(e) => setFormData(prev => ({ ...prev, reorderLevel: parseInt(e.target.value) || 0 }))}
+          onChange={(value) => setFormData(prev => ({ ...prev, reorderLevel: value }))}
           className="mt-1.5"
           data-testid="input-reorder-level"
         />
       </div>
       <div>
         <Label htmlFor="costPrice">Cost Price (₹)</Label>
-        <Input
-          id="costPrice"
-          type="number"
-          step="0.01"
+        <NumericInput
           min={0}
-          value={formData.costPrice}
-          onChange={(e) => setFormData(prev => ({ ...prev, costPrice: e.target.value }))}
+          allowDecimal={true}
+          value={parseFloat(formData.costPrice) || 0}
+          onChange={(value) => setFormData(prev => ({ ...prev, costPrice: String(value) }))}
           placeholder="0.00"
           className="mt-1.5"
           data-testid="input-cost-price"
@@ -195,13 +190,11 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
       </div>
       <div>
         <Label htmlFor="price">Selling Price (₹) *</Label>
-        <Input
-          id="price"
-          type="number"
-          step="0.01"
+        <NumericInput
           min={0}
-          value={formData.price}
-          onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
+          allowDecimal={true}
+          value={parseFloat(formData.price) || 0}
+          onChange={(value) => setFormData(prev => ({ ...prev, price: String(value) }))}
           placeholder="0.00"
           className="mt-1.5"
           data-testid="input-price"
@@ -209,13 +202,11 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
       </div>
       <div>
         <Label htmlFor="mrp">MRP (₹)</Label>
-        <Input
-          id="mrp"
-          type="number"
-          step="0.01"
+        <NumericInput
           min={0}
-          value={formData.mrp}
-          onChange={(e) => setFormData(prev => ({ ...prev, mrp: e.target.value }))}
+          allowDecimal={true}
+          value={parseFloat(formData.mrp) || 0}
+          onChange={(value) => setFormData(prev => ({ ...prev, mrp: String(value) }))}
           placeholder="0.00"
           className="mt-1.5"
           data-testid="input-mrp"
@@ -266,24 +257,20 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           </div>
           <div>
             <Label htmlFor="minStock">Min Stock Level</Label>
-            <Input
-              id="minStock"
-              type="number"
+            <NumericInput
               min={0}
               value={formData.minStock}
-              onChange={(e) => setFormData(prev => ({ ...prev, minStock: parseInt(e.target.value) || 0 }))}
+              onChange={(value) => setFormData(prev => ({ ...prev, minStock: value }))}
               className="mt-1.5"
               data-testid="input-min-stock"
             />
           </div>
           <div>
             <Label htmlFor="maxStock">Max Stock Level</Label>
-            <Input
-              id="maxStock"
-              type="number"
+            <NumericInput
               min={0}
               value={formData.maxStock}
-              onChange={(e) => setFormData(prev => ({ ...prev, maxStock: parseInt(e.target.value) || 0 }))}
+              onChange={(value) => setFormData(prev => ({ ...prev, maxStock: value }))}
               className="mt-1.5"
               data-testid="input-max-stock"
             />

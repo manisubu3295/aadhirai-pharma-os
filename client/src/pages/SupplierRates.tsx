@@ -10,6 +10,7 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -111,36 +112,33 @@ const RateFormFields = memo(function RateFormFields({ formData, setFormData, sup
       </div>
       <div>
         <Label htmlFor="rate">Purchase Rate *</Label>
-        <Input
-          id="rate"
-          type="number"
-          step="0.01"
-          value={formData.rate}
-          onChange={(e) => setFormData(prev => ({ ...prev, rate: e.target.value }))}
+        <NumericInput
+          min={0}
+          allowDecimal={true}
+          value={parseFloat(formData.rate) || 0}
+          onChange={(value) => setFormData(prev => ({ ...prev, rate: String(value) }))}
           placeholder="0.00"
           data-testid="input-rate-price"
         />
       </div>
       <div>
         <Label htmlFor="mrp">MRP</Label>
-        <Input
-          id="mrp"
-          type="number"
-          step="0.01"
-          value={formData.mrp}
-          onChange={(e) => setFormData(prev => ({ ...prev, mrp: e.target.value }))}
+        <NumericInput
+          min={0}
+          allowDecimal={true}
+          value={parseFloat(formData.mrp) || 0}
+          onChange={(value) => setFormData(prev => ({ ...prev, mrp: String(value) }))}
           placeholder="0.00"
           data-testid="input-rate-mrp"
         />
       </div>
       <div>
         <Label htmlFor="discountPercent">Discount %</Label>
-        <Input
-          id="discountPercent"
-          type="number"
-          step="0.01"
-          value={formData.discountPercent}
-          onChange={(e) => setFormData(prev => ({ ...prev, discountPercent: e.target.value }))}
+        <NumericInput
+          min={0}
+          allowDecimal={true}
+          value={parseFloat(formData.discountPercent) || 0}
+          onChange={(value) => setFormData(prev => ({ ...prev, discountPercent: String(value) }))}
           placeholder="0"
           data-testid="input-rate-discount"
         />
@@ -165,21 +163,21 @@ const RateFormFields = memo(function RateFormFields({ formData, setFormData, sup
       </div>
       <div>
         <Label htmlFor="minOrderQty">Min Order Qty</Label>
-        <Input
-          id="minOrderQty"
-          type="number"
+        <NumericInput
+          min={1}
           value={formData.minOrderQty}
-          onChange={(e) => setFormData(prev => ({ ...prev, minOrderQty: parseInt(e.target.value) || 1 }))}
+          onChange={(value) => setFormData(prev => ({ ...prev, minOrderQty: value }))}
+          defaultValue={1}
           data-testid="input-rate-min-qty"
         />
       </div>
       <div>
         <Label htmlFor="leadTimeDays">Lead Time (Days)</Label>
-        <Input
-          id="leadTimeDays"
-          type="number"
+        <NumericInput
+          min={0}
           value={formData.leadTimeDays}
-          onChange={(e) => setFormData(prev => ({ ...prev, leadTimeDays: parseInt(e.target.value) || 3 }))}
+          onChange={(value) => setFormData(prev => ({ ...prev, leadTimeDays: value }))}
+          defaultValue={3}
           data-testid="input-rate-lead-time"
         />
       </div>
