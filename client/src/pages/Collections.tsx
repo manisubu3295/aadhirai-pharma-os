@@ -34,7 +34,7 @@ interface Sale {
   receivedAmount: string;
   changeAmount: string;
   createdAt: string;
-  userId: number | null;
+  userId: string | null;
 }
 
 interface SalesReturn {
@@ -49,10 +49,16 @@ interface SalesReturn {
 }
 
 interface User {
-  id: number;
+  id: string;
   username: string;
   name: string;
   role: string;
+}
+
+interface ItemCollection {
+  name: string;
+  qty: number;
+  total: number;
 }
 
 interface MonthlyData {
@@ -270,36 +276,19 @@ export default function Collections() {
     !searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const [itemCollections, setItemCollections] = useState<Record<string, { name: string; qty: number; total: number }>>({});
+  const { data: itemCollections = [], isLoading: itemsLoading, refetch: refetchItems } = useQuery<ItemCollection[]>({
+    queryKey: ["/api/reports/collections/by-item", dateFrom, dateTo],
+    queryFn: async () => {
+      const res = await fetch(`/api/reports/collections/by-item?from=${dateFrom}&to=${dateTo}`);
+      if (!res.ok) throw new Error("Failed to fetch item collections");
+      return res.json();
+    },
+    enabled: activeTab === "by-item",
+  });
 
-  const fetchItemCollections = async () => {
-    const itemData: Record<string, { name: string; qty: number; total: number }> = {};
-    
-    for (const sale of filteredSales) {
-      try {
-        const res = await fetch(`/api/sales/${sale.id}/items`);
-        if (res.ok) {
-          const items = await res.json();
-          items.forEach((item: any) => {
-            const key = item.medicineName || `Item-${item.medicineId}`;
-            if (!itemData[key]) {
-              itemData[key] = { name: key, qty: 0, total: 0 };
-            }
-            itemData[key].qty += item.quantity || 0;
-            itemData[key].total += parseFloat(item.total || "0");
-          });
-        }
-      } catch (e) {
-        console.error("Failed to fetch items for sale", sale.id);
-      }
-    }
-    
-    setItemCollections(itemData);
-  };
-
-  const itemCollectionsList = Object.values(itemCollections).filter(i => 
+  const itemCollectionsList = itemCollections.filter(i => 
     !searchTerm || i.name.toLowerCase().includes(searchTerm.toLowerCase())
-  ).sort((a, b) => b.total - a.total);
+  );
 
   const exportToCSV = (filename: string, headers: string[], rows: string[][]) => {
     const csvContent = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
@@ -432,7 +421,7 @@ export default function Collections() {
               <Users className="w-4 h-4 mr-1" />
               By Staff
             </TabsTrigger>
-            <TabsTrigger value="by-item" data-testid="tab-by-item" onClick={fetchItemCollections}>
+            <TabsTrigger value="by-item" data-testid="tab-by-item">
               <Package className="w-4 h-4 mr-1" />
               By Item
             </TabsTrigger>
@@ -731,7 +720,7 @@ export default function Collections() {
                     Collection by Item
                   </span>
                   <div className="flex gap-2">
-                    <Button onClick={fetchItemCollections} variant="outline" size="sm" data-testid="button-refresh-items">
+                    <Button onClick={() => refetchItems()} variant="outline" size="sm" data-testid="button-refresh-items">
                       Refresh
                     </Button>
                     <Button 
@@ -764,8 +753,10 @@ export default function Collections() {
               <CardContent>
                 <DateFilters showPayment={false} />
                 
-                {itemCollectionsList.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">Click "Refresh" to load item collections data</p>
+                {itemsLoading ? (
+                  <p className="text-center py-8">Loading items...</p>
+                ) : itemCollectionsList.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">No items sold in the selected date range</p>
                 ) : (
                   <Table>
                     <TableHeader>

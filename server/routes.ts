@@ -633,6 +633,43 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/reports/collections/by-item", async (req, res) => {
+    try {
+      const { from, to } = req.query;
+      const allSales = await storage.getSales(10000);
+      
+      const fromDate = from ? new Date(from as string) : new Date();
+      const toDate = to ? new Date(to as string) : new Date();
+      fromDate.setHours(0, 0, 0, 0);
+      toDate.setHours(23, 59, 59, 999);
+      
+      const filteredSales = allSales.filter(sale => {
+        const saleDate = new Date(sale.createdAt);
+        return saleDate >= fromDate && saleDate <= toDate;
+      });
+      
+      const itemData: Record<string, { name: string; qty: number; total: number }> = {};
+      
+      for (const sale of filteredSales) {
+        const items = await storage.getSaleItems(sale.id);
+        items.forEach((item: any) => {
+          const key = item.medicineName || `Item-${item.medicineId}`;
+          if (!itemData[key]) {
+            itemData[key] = { name: key, qty: 0, total: 0 };
+          }
+          itemData[key].qty += item.quantity || 0;
+          itemData[key].total += parseFloat(String(item.total || "0"));
+        });
+      }
+      
+      const result = Object.values(itemData).sort((a, b) => b.total - a.total);
+      res.json(result);
+    } catch (error) {
+      console.error("Item collections error:", error);
+      res.status(500).json({ error: "Failed to fetch item collections" });
+    }
+  });
+
   app.get("/api/locations", async (req, res) => {
     try {
       const locations = await storage.getLocations();
