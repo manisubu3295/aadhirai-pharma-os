@@ -114,6 +114,42 @@ export async function registerRoutes(
     });
   });
 
+  app.post("/api/change-password", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const { currentPassword, newPassword } = req.body;
+      
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current and new password are required" });
+      }
+      
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters" });
+      }
+      
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const validPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validPassword) {
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+      
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(user.id, { password: hashedPassword });
+      
+      res.json({ message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
   app.get("/api/auth/me", async (req, res) => {
     if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });

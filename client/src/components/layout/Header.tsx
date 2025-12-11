@@ -1,4 +1,5 @@
-import { Search, Bell, HelpCircle, Crown } from "lucide-react";
+import { Bell, HelpCircle, Crown, User, Settings, LogOut } from "lucide-react";
+import { Link } from "wouter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -50,16 +51,6 @@ export function Header({ title }: { title: string }) {
           </span>
         </div>
 
-        <div className="relative w-64 hidden md:block">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-white/60" />
-          <input
-            type="text"
-            placeholder="Search inventory, orders..."
-            className="w-full h-9 pl-9 pr-4 rounded-md border border-white/20 bg-white/10 text-white placeholder:text-white/50 text-sm focus:outline-none focus:ring-1 focus:ring-white/30 transition-all"
-            data-testid="input-search"
-          />
-        </div>
-
         <button className="w-9 h-9 rounded-full flex items-center justify-center text-white/80 hover:bg-white/10 hover:text-white transition-colors relative" data-testid="button-notifications">
           <Bell className="w-4 h-4" />
           <span className="absolute top-2 right-2.5 w-1.5 h-1.5 bg-red-400 rounded-full border border-white/20"></span>
@@ -92,14 +83,25 @@ export function Header({ title }: { title: string }) {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
+            <Link href="/profile">
+              <DropdownMenuItem className="cursor-pointer" data-testid="menu-profile">
+                <User className="w-4 h-4 mr-2" />
+                Profile
+              </DropdownMenuItem>
+            </Link>
+            <Link href="/profile#password">
+              <DropdownMenuItem className="cursor-pointer" data-testid="menu-settings">
+                <Settings className="w-4 h-4 mr-2" />
+                Change Password
+              </DropdownMenuItem>
+            </Link>
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               className="text-destructive cursor-pointer" 
               onClick={logout}
               data-testid="button-logout"
             >
+              <LogOut className="w-4 h-4 mr-2" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

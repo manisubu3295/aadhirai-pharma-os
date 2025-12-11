@@ -24,6 +24,7 @@ import Suppliers from "@/pages/Suppliers";
 import SupplierRates from "@/pages/SupplierRates";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import GoodsReceipts from "@/pages/GoodsReceipts";
+import Profile from "@/pages/Profile";
 
 function Router() {
   return (
@@ -112,6 +113,11 @@ function Router() {
       <Route path="/goods-receipts">
         <ProtectedRoute>
           <GoodsReceipts />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/profile">
+        <ProtectedRoute>
+          <Profile />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />
