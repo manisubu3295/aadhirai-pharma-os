@@ -39,8 +39,8 @@ interface Sale {
 export default function Collections() {
   const { isPro } = usePlan();
   const today = new Date();
-  const [dateFrom, setDateFrom] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
-  const [dateTo, setDateTo] = useState(format(endOfMonth(today), "yyyy-MM-dd"));
+  const [dateFrom, setDateFrom] = useState(format(today, "yyyy-MM-dd"));
+  const [dateTo, setDateTo] = useState(format(today, "yyyy-MM-dd"));
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);

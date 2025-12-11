@@ -60,7 +60,7 @@ export default function GoodsReceipts() {
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
   const [items, setItems] = useState<GRNItem[]>([]);
   
-  const [fromDate, setFromDate] = useState<string>(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+  const [fromDate, setFromDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [toDate, setToDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
