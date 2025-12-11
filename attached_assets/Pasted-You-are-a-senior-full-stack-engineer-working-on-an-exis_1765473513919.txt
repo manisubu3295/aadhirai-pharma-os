@@ -1,0 +1,85 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app (Node/Express backend, Angular + Angular Material frontend). The app already has products/medicines, batches, purchases, billing (New Sale / POS), and stock management.
+
+IMPORTANT RULES:
+- Do NOT break or remove any existing logic.
+- Do NOT rename existing fields or APIs.
+- Only extend the current models, services, and UI safely.
+- Default behaviour for existing data must remain exactly as it is today.
+
+Goal:
+Add support for selling tablets both as:
+- full strip (pack)
+- single tablet
+while keeping inventory consistent and correct. Internally, stock should be managed in a single base unit (tablet), but the UI should allow staff to work with either strips or tablets.
+
+Implement the following changes step by step:
+
+1) Data model: base unit + pack size
+- In the existing Product/Medicine model (in DB and backend types), ADD non-breaking fields:
+  - base_unit (string) – e.g. "TAB" for tablet products. Default to "UNIT" or similar for existing data.
+  - pack_size (integer) – how many base units per strip/pack (e.g. 10 tablets per strip). Default = 1 for existing products so behaviour stays unchanged.
+  - Optional: price_per_strip and price_per_tab if needed. If not, use existing selling price as the strip price and derive tab price from it.
+- Do NOT remove or change existing price fields; just add these new fields and keep defaults that preserve current behaviour.
+
+2) Batches & stock: store stock in base units
+- In the batch/stock model, ensure there is a single “stock quantity in base units”:
+  - For example: stock_qty_base or reuse an existing quantity field with the understanding that it represents base units.
+- When a purchase is recorded:
+  - If pack_size > 1 and user enters quantity in STRIPS, convert to base units:
+      base_qty = qty_strips * pack_size
+    and store base_qty as stock quantity.
+  - For existing purchase flows, keep them working as-is (assume pack_size=1 when missing).
+- For stock summary and reports, always use base_qty internally, but allow UI to display:
+  - strips = floor(stock_qty_base / pack_size)
+  - loose = stock_qty_base % pack_size
+  so users can see something like “23 strips + 4 loose”.
+
+3) Purchase screen: allow quantity in strips
+- On the Purchase / GRN screen, for tablet-type products:
+  - Allow the user to enter quantity in STRIPS (e.g. 20 strips).
+  - Use the product.pack_size to convert to base units before sending to the backend.
+- For non-tablet or existing products without pack_size set, default behaviour must remain unchanged (treat quantity as base units = 1:1).
+
+4) New Sale / Billing screen: sell by strip or tablet
+- On the New Sale page:
+  - For each line item, ADD a unit selector with options:
+    - “Strip” (or “Pack”) – uses pack_size
+    - “Tablet” – uses base unit
+  - When user selects “Strip” and enters Qty = N:
+    - base_qty = N * pack_size
+    - line total = N * price_per_strip (or existing selling price if that is the strip price).
+  - When user selects “Tablet” and enters Qty = M:
+    - base_qty = M
+    - line total = M * price_per_tab (or derived price).
+- Internally (in the payload sent to backend for invoices), always send:
+  - product_id
+  - batch_id
+  - base_qty (converted from user-visible unit)
+  - unit_type (STRIP or TABLET) if you need to store it for reporting, but base_qty should always be the authoritative quantity for stock.
+- Make sure GST and discount calculations continue to work off the base_qty and price as they do now, only using the converted quantity.
+
+5) Inventory update on sale
+- When an invoice is created:
+  - Use base_qty to reduce stock from the chosen batch.
+  - For example: batch.stock_qty_base -= base_qty.
+- Ensure that mixed units in the same invoice (e.g. 1 strip + 5 tablets of the same product) all reduce stock correctly via base_qty.
+
+6) Stock & UI display
+- In any stock/medicine list where inventory is shown, for products with pack_size > 1:
+  - Display stock in a friendly way, e.g.: “23 strips + 4 loose (234 tablets)”
+    calculated as:
+      strips = floor(stock_qty_base / pack_size)
+      loose = stock_qty_base % pack_size
+- For products with pack_size = 1 or no pack defined, display as the raw quantity as before so nothing changes for existing items.
+
+7) Backward compatibility & safety
+- For all existing products with no pack_size set:
+  - Default pack_size = 1, base_unit = "UNIT", so existing behaviour is identical.
+- Do NOT change existing invoice records, purchase records, or report queries in a way that breaks old data.
+- Where possible, infer base_qty from existing quantity fields without changing their meaning historically.
+- After implementing, manually test:
+  - Buying a product as strips and then selling both strips and tablets.
+  - Verifying that stock reduces correctly and never goes negative.
+  - Verifying that reports and stock summary still work and show correct totals.
+
+Search the codebase for the existing Product model, Batch/Stock model, Purchase flow, and Billing/New Sale component, and then apply the above extensions in the minimal places necessary, reusing existing services and APIs instead of creating duplicates.

@@ -77,6 +77,10 @@ interface SaleItem {
   gstRate: number;
   discount: number;
   availableQty: number;
+  unitType: "STRIP" | "TABLET";
+  packSize: number;
+  pricePerUnit: number | null;
+  displayQty: number;
 }
 
 function QuantityInput({ value, max, onChange, testId }: { value: number; max: number; onChange: (qty: number) => void; testId: string }) {
@@ -316,6 +320,8 @@ export default function NewSale() {
         toast({ title: "Insufficient stock", variant: "destructive" });
       }
     } else {
+      const packSize = medicine.packSize || 1;
+      const pricePerUnit = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : Number(medicine.price) / packSize;
       const newItem: SaleItem = {
         id: `${medicine.id}-${medicine.batchNumber}-${Date.now()}`,
         medicineId: medicine.id,
@@ -329,6 +335,10 @@ export default function NewSale() {
         gstRate: Number(medicine.gstRate),
         discount: 0,
         availableQty: Number(medicine.quantity),
+        unitType: packSize > 1 ? "STRIP" : "TABLET",
+        packSize: packSize,
+        pricePerUnit: pricePerUnit,
+        displayQty: 1,
       };
       setItems([...items, newItem]);
     }
@@ -364,6 +374,54 @@ export default function NewSale() {
       items.map((item) => {
         if (item.id === itemId) {
           return { ...item, price: Math.max(0, price) };
+        }
+        return item;
+      })
+    );
+  };
+
+  const updateItemUnit = (itemId: string, unitType: "STRIP" | "TABLET") => {
+    setItems(
+      items.map((item) => {
+        if (item.id === itemId) {
+          const displayQty = item.displayQty;
+          let newQuantity: number;
+          let newPrice: number;
+          
+          if (unitType === "STRIP") {
+            newQuantity = displayQty * item.packSize;
+            newPrice = item.price;
+          } else {
+            newQuantity = displayQty;
+            newPrice = item.pricePerUnit || item.price / item.packSize;
+          }
+          
+          const maxQty = Math.floor(item.availableQty / (unitType === "STRIP" ? item.packSize : 1));
+          const clampedDisplayQty = Math.min(displayQty, maxQty);
+          
+          return { 
+            ...item, 
+            unitType, 
+            displayQty: clampedDisplayQty,
+            quantity: unitType === "STRIP" ? clampedDisplayQty * item.packSize : clampedDisplayQty,
+            price: newPrice,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const updateItemDisplayQty = (itemId: string, displayQty: number) => {
+    setItems(
+      items.map((item) => {
+        if (item.id === itemId) {
+          const maxDisplayQty = item.unitType === "STRIP" 
+            ? Math.floor(item.availableQty / item.packSize)
+            : item.availableQty;
+          const clampedQty = Math.max(1, Math.min(displayQty, maxDisplayQty));
+          const baseQty = item.unitType === "STRIP" ? clampedQty * item.packSize : clampedQty;
+          return { ...item, displayQty: clampedQty, quantity: baseQty };
         }
         return item;
       })
@@ -897,9 +955,10 @@ export default function NewSale() {
                   <Table>
                     <TableHeader className="bg-muted/30">
                       <TableRow>
-                        <TableHead className="w-[25%]">Item</TableHead>
+                        <TableHead className="w-[20%]">Item</TableHead>
                         <TableHead>Batch</TableHead>
                         <TableHead>Expiry</TableHead>
+                        <TableHead className="w-[100px]">Unit</TableHead>
                         <TableHead className="text-right">Price</TableHead>
                         <TableHead className="w-[80px] text-center">Qty</TableHead>
                         <TableHead className="text-right">Total</TableHead>
@@ -909,18 +968,26 @@ export default function NewSale() {
                     <TableBody>
                       {items.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                             No items added. Search and add medicines above.
                           </TableCell>
                         </TableRow>
                       ) : (
                         items.map((item) => {
-                          const itemTotal = item.price * item.quantity - item.discount;
+                          const itemTotal = item.price * item.displayQty - item.discount;
+                          const maxDisplayQty = item.unitType === "STRIP" 
+                            ? Math.floor(item.availableQty / item.packSize)
+                            : item.availableQty;
 
                           return (
                             <TableRow key={item.id} data-testid={`sale-item-${item.id}`}>
                               <TableCell className="font-medium py-3">
-                                {item.name}
+                                <div>{item.name}</div>
+                                {item.packSize > 1 && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {item.packSize} units/strip
+                                  </div>
+                                )}
                               </TableCell>
                               <TableCell className="py-3">
                                 {item.batchNumber}
@@ -936,6 +1003,24 @@ export default function NewSale() {
                                 </span>
                                 {isNearExpiry(item.expiryDate) && (
                                   <AlertTriangle className="h-3 w-3 text-orange-500 inline ml-1" />
+                                )}
+                              </TableCell>
+                              <TableCell className="py-3">
+                                {item.packSize > 1 ? (
+                                  <Select
+                                    value={item.unitType}
+                                    onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
+                                  >
+                                    <SelectTrigger className="h-8 w-[90px]" data-testid={`select-unit-${item.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="STRIP">Strip</SelectItem>
+                                      <SelectItem value="TABLET">Tablet</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">Unit</span>
                                 )}
                               </TableCell>
                               <TableCell className="text-right py-3">
@@ -956,9 +1041,9 @@ export default function NewSale() {
                               </TableCell>
                               <TableCell className="py-3">
                                 <QuantityInput
-                                  value={item.quantity}
-                                  max={item.availableQty}
-                                  onChange={(qty) => updateItemQuantity(item.id, qty)}
+                                  value={item.displayQty}
+                                  max={maxDisplayQty}
+                                  onChange={(qty) => updateItemDisplayQty(item.id, qty)}
                                   testId={`input-qty-${item.id}`}
                                 />
                               </TableCell>

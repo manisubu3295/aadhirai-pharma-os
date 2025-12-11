@@ -46,6 +46,9 @@ export const medicines = pgTable("medicines", {
   minStock: integer("min_stock").default(10),
   maxStock: integer("max_stock").default(500),
   locationId: integer("location_id"),
+  baseUnit: text("base_unit").default("UNIT"),
+  packSize: integer("pack_size").default(1),
+  pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }),
 });
 
 export const customers = pgTable("customers", {
@@ -150,6 +153,9 @@ export const saleItems = pgTable("sale_items", {
   sgst: decimal("sgst", { precision: 10, scale: 2 }).default("0"),
   discount: decimal("discount", { precision: 10, scale: 2 }).notNull().default("0"),
   total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  unitType: text("unit_type").default("TABLET"),
+  displayQty: integer("display_qty").default(1),
+  packSize: integer("pack_size").default(1),
 });
 
 export const insertMedicineSchema = createInsertSchema(medicines).omit({ id: true });
@@ -308,6 +314,9 @@ export const goodsReceiptItems = pgTable("goods_receipt_items", {
   gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
   taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+  packSize: integer("pack_size").default(1),
+  unitType: text("unit_type").default("STRIP"),
+  displayQty: integer("display_qty"),
 });
 
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });

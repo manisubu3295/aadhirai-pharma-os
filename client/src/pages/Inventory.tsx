@@ -59,6 +59,7 @@ interface MedicineFormData {
   manufacturer: string;
   expiryDate: string;
   quantity: number;
+  packSize: number;
   price: string;
   costPrice: string;
   mrp: string;
@@ -78,6 +79,7 @@ const emptyForm: MedicineFormData = {
   manufacturer: "",
   expiryDate: "",
   quantity: 0,
+  packSize: 10,
   price: "",
   costPrice: "",
   mrp: "",
@@ -158,7 +160,7 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
         </Select>
       </div>
       <div>
-        <Label htmlFor="quantity">Quantity</Label>
+        <Label htmlFor="quantity">Quantity (in base units)</Label>
         <NumericInput
           min={0}
           value={formData.quantity}
@@ -166,6 +168,17 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           className="mt-1.5"
           data-testid="input-quantity"
         />
+      </div>
+      <div>
+        <Label htmlFor="packSize">Pack Size (units per strip)</Label>
+        <NumericInput
+          min={1}
+          value={formData.packSize}
+          onChange={(value) => setFormData(prev => ({ ...prev, packSize: value }))}
+          className="mt-1.5"
+          data-testid="input-pack-size"
+        />
+        <p className="text-xs text-muted-foreground mt-1">Units per strip/pack (e.g., 10 tablets per strip)</p>
       </div>
       <div>
         <Label htmlFor="reorderLevel">Reorder Level</Label>
@@ -476,6 +489,7 @@ export default function Inventory() {
       manufacturer: medicine.manufacturer,
       expiryDate: medicine.expiryDate,
       quantity: medicine.quantity,
+      packSize: medicine.packSize || 10,
       price: String(medicine.price),
       costPrice: medicine.costPrice ? String(medicine.costPrice) : "",
       mrp: medicine.mrp ? String(medicine.mrp) : "",
@@ -707,7 +721,16 @@ export default function Inventory() {
                           )}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right font-medium">{item.quantity}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {(item.packSize && item.packSize > 1) ? (
+                          <div>
+                            <div>{Math.floor(item.quantity / item.packSize)} strips + {item.quantity % item.packSize}</div>
+                            <div className="text-xs text-muted-foreground">({item.quantity} units)</div>
+                          </div>
+                        ) : (
+                          item.quantity
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">₹{parseFloat(String(item.price)).toFixed(2)}</TableCell>
                       <TableCell className="text-center text-xs">{item.gstRate}%</TableCell>
                       <TableCell className="text-center">
