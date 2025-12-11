@@ -140,6 +140,8 @@ export default function NewSale() {
   const [newMedicineDialog, setNewMedicineDialog] = useState(false);
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const [printSaleData, setPrintSaleData] = useState<{sale: Sale; items: SaleItemSchema[]} | null>(null);
+  const [invoiceSearchInput, setInvoiceSearchInput] = useState("");
+  const [searchingInvoice, setSearchingInvoice] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   const generateInvoiceNumber = () => `INV-${Date.now()}`;
   const [invoiceNumber, setInvoiceNumber] = useState<string>(generateInvoiceNumber());
@@ -494,6 +496,37 @@ export default function NewSale() {
     };
 
     createSaleMutation.mutate(saleData);
+  };
+
+  const handleInvoiceSearch = async () => {
+    if (!invoiceSearchInput.trim()) return;
+    
+    setSearchingInvoice(true);
+    try {
+      // Search for sale by invoice number
+      const res = await fetch(`/api/sales?invoiceNo=${encodeURIComponent(invoiceSearchInput.trim())}`);
+      if (!res.ok) throw new Error("Failed to search");
+      
+      const sales = await res.json();
+      if (sales.length === 0) {
+        toast({ title: "Invoice not found", description: `No invoice found with number: ${invoiceSearchInput}`, variant: "destructive" });
+        return;
+      }
+      
+      const sale = sales[0];
+      // Fetch sale items
+      const itemsRes = await fetch(`/api/sales/${sale.id}/items`);
+      if (!itemsRes.ok) throw new Error("Failed to fetch items");
+      
+      const items = await itemsRes.json();
+      setPrintSaleData({ sale, items });
+      setPrintDialogOpen(true);
+      setInvoiceSearchInput("");
+    } catch (error) {
+      toast({ title: "Search failed", description: "Unable to find invoice", variant: "destructive" });
+    } finally {
+      setSearchingInvoice(false);
+    }
   };
 
   const handleHoldBill = () => {
@@ -1161,6 +1194,38 @@ export default function NewSale() {
           </Card>
         </div>
       </div>
+
+      <Card className="border-0 shadow-sm mt-6">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Reprint Invoice</h3>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter invoice number (e.g., INV-1234567890)"
+              value={invoiceSearchInput}
+              onChange={(e) => setInvoiceSearchInput(e.target.value)}
+              className="max-w-md"
+              data-testid="input-invoice-search"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleInvoiceSearch();
+                }
+              }}
+            />
+            <Button 
+              onClick={handleInvoiceSearch}
+              disabled={!invoiceSearchInput.trim() || searchingInvoice}
+              data-testid="button-search-invoice"
+            >
+              {searchingInvoice ? "Searching..." : (
+                <>
+                  <Search className="h-4 w-4 mr-2" />
+                  Search & Print
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {recentSales.length > 0 && (
         <Card className="border-0 shadow-sm mt-6">

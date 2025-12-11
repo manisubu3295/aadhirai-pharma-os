@@ -448,6 +448,13 @@ export async function registerRoutes(
   app.get("/api/sales", async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const invoiceNo = req.query.invoiceNo as string | undefined;
+      
+      if (invoiceNo) {
+        const sale = await storage.getSaleByInvoiceNo(invoiceNo);
+        return res.json(sale ? [sale] : []);
+      }
+      
       const sales = await storage.getSales(limit);
       res.json(sales);
     } catch (error) {

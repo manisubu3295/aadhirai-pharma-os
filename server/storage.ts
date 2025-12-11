@@ -284,6 +284,7 @@ export interface IStorage {
   
   getSales(limit?: number): Promise<Sale[]>;
   getSale(id: number): Promise<Sale | undefined>;
+  getSaleByInvoiceNo(invoiceNo: string): Promise<Sale | undefined>;
   createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }>;
   getSaleItems(saleId: number): Promise<SaleItem[]>;
   
@@ -464,6 +465,11 @@ export class DatabaseStorage implements IStorage {
 
   async getSale(id: number): Promise<Sale | undefined> {
     const result = await db.select().from(sales).where(eq(sales.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getSaleByInvoiceNo(invoiceNo: string): Promise<Sale | undefined> {
+    const result = await db.select().from(sales).where(eq(sales.invoiceNo, invoiceNo)).limit(1);
     return result[0];
   }
 
