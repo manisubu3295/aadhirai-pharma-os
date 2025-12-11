@@ -63,24 +63,10 @@ export default function Login() {
           <p className="text-slate-400 text-lg max-w-md">
             Complete ERP solution for inventory management, billing, and business analytics.
           </p>
-          <div className="flex gap-6 pt-4">
-            <div className="text-center">
-              <p className="text-3xl font-bold text-white">500+</p>
-              <p className="text-sm text-slate-500">Pharmacies</p>
-            </div>
-            <div className="text-center">
-              <p className="text-3xl font-bold text-white">99.9%</p>
-              <p className="text-sm text-slate-500">Uptime</p>
-            </div>
-            <div className="text-center">
-              <p className="text-3xl font-bold text-white">24/7</p>
-              <p className="text-sm text-slate-500">Support</p>
-            </div>
-          </div>
         </div>
 
         <p className="text-slate-600 text-sm">
-          Aadhirai Innovations Pvt. Ltd.
+          Aadhirai Innovations
         </p>
       </div>
 
