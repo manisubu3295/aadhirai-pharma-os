@@ -25,6 +25,7 @@ import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_176527470081
 import { useAuth } from "@/lib/auth";
 import { usePlan } from "@/lib/planContext";
 import { Badge } from "@/components/ui/badge";
+import { useRef, useEffect } from "react";
 
 interface MenuItem {
   icon: React.ElementType;
@@ -38,6 +39,21 @@ export function Sidebar() {
   const [location] = useLocation();
   const { logout, user } = useAuth();
   const { isPro } = usePlan();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollPositionRef = useRef(0);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = scrollPositionRef.current;
+    }
+  }, [location]);
+
+  const handleScroll = () => {
+    if (scrollRef.current) {
+      scrollPositionRef.current = scrollRef.current.scrollTop;
+    }
+  };
 
   const menuItems: MenuItem[] = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/" },
@@ -72,7 +88,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
         <div className="px-3 mb-2">
            <Link href="/new-sale">
              <button className="w-full bg-white text-primary hover:bg-white/90 transition-colors h-10 rounded-md flex items-center justify-center gap-2 text-sm font-medium shadow-sm">
