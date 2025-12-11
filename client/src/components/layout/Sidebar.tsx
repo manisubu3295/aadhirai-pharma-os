@@ -252,7 +252,7 @@ export function Sidebar() {
               </div>
             </div>
             <div className="flex gap-2">
-              <Link href="/settings" onClick={handleMenuClick} className="flex-1">
+              <Link href="/profile" onClick={handleMenuClick} className="flex-1">
                 <button className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium transition-colors">
                   <User className="w-3.5 h-3.5" />
                   Profile

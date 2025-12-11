@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
+import { Lock, User, ArrowRight } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 
 export default function Login() {
@@ -37,71 +38,154 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center sidebar-gradient p-4">
-      <Card className="w-full max-w-md shadow-xl">
-        <CardHeader className="text-center pb-4">
-          <div className="mx-auto w-16 h-16 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-            <img src={logoImage} alt="Aadhirai Innovations" className="w-12 h-12 object-contain" />
+    <div className="min-h-screen flex">
+      {/* Left Panel - Branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-slate-900 flex-col justify-between p-12">
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center p-2 shadow-lg shadow-indigo-500/30">
+              <img src={logoImage} alt="Aadhirai" className="w-full h-full object-contain" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-white">Aadhirai</h1>
+              <p className="text-sm text-slate-400">Pharmacy Management</p>
+            </div>
           </div>
-          <CardTitle className="text-2xl font-bold" data-testid="text-login-title">
-            Aadhirai Innovations
-          </CardTitle>
-          <CardDescription>
-            Pharmacy Management System
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm p-3 rounded-md" data-testid="text-error-message">
-                {error}
+        </div>
+        
+        <div className="space-y-6">
+          <h2 className="text-4xl font-bold text-white leading-tight">
+            Streamline your<br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">
+              pharmacy operations
+            </span>
+          </h2>
+          <p className="text-slate-400 text-lg max-w-md">
+            Complete ERP solution for inventory management, billing, and business analytics.
+          </p>
+          <div className="flex gap-6 pt-4">
+            <div className="text-center">
+              <p className="text-3xl font-bold text-white">500+</p>
+              <p className="text-sm text-slate-500">Pharmacies</p>
+            </div>
+            <div className="text-center">
+              <p className="text-3xl font-bold text-white">99.9%</p>
+              <p className="text-sm text-slate-500">Uptime</p>
+            </div>
+            <div className="text-center">
+              <p className="text-3xl font-bold text-white">24/7</p>
+              <p className="text-sm text-slate-500">Support</p>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-slate-600 text-sm">
+          Aadhirai Innovations Pvt. Ltd.
+        </p>
+      </div>
+
+      {/* Right Panel - Login Form */}
+      <div className="flex-1 flex items-center justify-center bg-slate-50 p-8">
+        <div className="w-full max-w-md">
+          {/* Mobile Logo */}
+          <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center p-2 shadow-lg">
+              <img src={logoImage} alt="Aadhirai" className="w-full h-full object-contain" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">Aadhirai</h1>
+              <p className="text-sm text-slate-500">Pharmacy Management</p>
+            </div>
+          </div>
+
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-slate-900" data-testid="text-login-title">Welcome back</h2>
+            <p className="text-slate-500 mt-2">Sign in to continue to your dashboard</p>
+          </div>
+
+          <Card className="border-0 shadow-xl shadow-slate-200/50">
+            <CardContent className="pt-6">
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-lg flex items-center gap-2" data-testid="text-error-message">
+                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                    {error}
+                  </div>
+                )}
+                
+                <div className="space-y-2">
+                  <Label htmlFor="username" className="text-slate-700">Username</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="username"
+                      type="text"
+                      placeholder="Enter your username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                      data-testid="input-username"
+                      autoComplete="username"
+                      className="pl-10 h-11 bg-slate-50 border-slate-200 focus:bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-slate-700">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      data-testid="input-password"
+                      autoComplete="current-password"
+                      className="pl-10 h-11 bg-slate-50 border-slate-200 focus:bg-white"
+                    />
+                  </div>
+                </div>
+
+                <Button 
+                  type="submit" 
+                  className="w-full h-11 bg-slate-900 hover:bg-slate-800 text-white font-medium" 
+                  disabled={isLoading}
+                  data-testid="button-login"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      Signing in...
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      Sign In
+                      <ArrowRight className="w-4 h-4" />
+                    </span>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <div className="mt-6 p-4 bg-slate-100 rounded-lg border border-slate-200">
+            <p className="text-xs text-slate-500 text-center mb-2">Demo Credentials</p>
+            <div className="flex justify-center gap-6 text-sm">
+              <div className="text-center">
+                <p className="font-mono font-medium text-slate-700">owner</p>
+                <p className="text-xs text-slate-400">username</p>
               </div>
-            )}
-            
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                type="text"
-                placeholder="Enter your username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                data-testid="input-username"
-                autoComplete="username"
-              />
+              <div className="text-center">
+                <p className="font-mono font-medium text-slate-700">password123</p>
+                <p className="text-xs text-slate-400">password</p>
+              </div>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                data-testid="input-password"
-                autoComplete="current-password"
-              />
-            </div>
-
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isLoading}
-              data-testid="button-login"
-            >
-              {isLoading ? "Signing in..." : "Sign In"}
-            </Button>
-
-            <div className="text-center text-sm text-muted-foreground mt-4">
-              <p>Demo Credentials:</p>
-              <p className="font-mono mt-1">owner / password123</p>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
