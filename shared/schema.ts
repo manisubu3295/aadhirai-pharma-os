@@ -124,6 +124,7 @@ export const sales = pgTable("sales", {
   total: decimal("total", { precision: 10, scale: 2 }).notNull(),
   roundOff: decimal("round_off", { precision: 10, scale: 2 }).default("0"),
   paymentMethod: text("payment_method").notNull(),
+  paymentReference: text("payment_reference"),
   receivedAmount: decimal("received_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   changeAmount: decimal("change_amount", { precision: 10, scale: 2 }).default("0"),
   status: text("status").notNull().default("Completed"),

@@ -152,6 +152,7 @@ export async function initializeDatabase() {
         total DECIMAL(10,2) NOT NULL,
         round_off DECIMAL(10,2) DEFAULT 0,
         payment_method TEXT NOT NULL,
+        payment_reference TEXT,
         received_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
         change_amount DECIMAL(10,2) DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'Completed',

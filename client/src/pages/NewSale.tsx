@@ -127,6 +127,7 @@ export default function NewSale() {
   const [medicineSearch, setMedicineSearch] = useState("");
   const [medicineOpen, setMedicineOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentReference, setPaymentReference] = useState("");
   const [receivedAmount, setReceivedAmount] = useState("");
   const [printInvoice, setPrintInvoice] = useState(false);
   const [sendViaEmail, setSendViaEmail] = useState(false);
@@ -430,6 +431,7 @@ export default function NewSale() {
     setSelectedDoctor(null);
     setCustomerSearch("");
     setPaymentMethod("cash");
+    setPaymentReference("");
     setReceivedAmount("");
     setPrintInvoice(false);
     setSendViaEmail(false);
@@ -463,6 +465,7 @@ export default function NewSale() {
       total: calculations.netAmount.toFixed(2),
       roundOff: calculations.roundOff.toFixed(2),
       paymentMethod,
+      paymentReference: paymentReference || null,
       receivedAmount: calculations.received.toFixed(2),
       changeAmount: calculations.change.toFixed(2),
       status: "Completed",
@@ -1072,6 +1075,26 @@ export default function NewSale() {
                     </Label>
                   </div>
                 </RadioGroup>
+
+                {(paymentMethod === "upi" || paymentMethod === "card" || paymentMethod === "credit") && (
+                  <div className="mt-4">
+                    <Label htmlFor="paymentRef" className="text-sm text-muted-foreground">
+                      Reference (Optional)
+                    </Label>
+                    <Input
+                      id="paymentRef"
+                      value={paymentReference}
+                      onChange={(e) => setPaymentReference(e.target.value)}
+                      placeholder={
+                        paymentMethod === "upi" ? "UPI Transaction ID" :
+                        paymentMethod === "card" ? "Card approval code" :
+                        "Credit reference"
+                      }
+                      className="mt-1.5"
+                      data-testid="input-payment-reference"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="mb-8 space-y-3">
