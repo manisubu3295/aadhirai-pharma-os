@@ -43,7 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download } from "lucide-react";
+import { downloadFile, generateCSV } from "@/lib/exportUtils";
 import { useState, memo, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
@@ -543,6 +544,41 @@ export default function Inventory() {
     }
   };
 
+  const exportInventoryCSV = () => {
+    const headers = ["ID", "Name", "Batch Number", "Manufacturer", "Category", "Expiry Date", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock", "Status"];
+    const rows = filteredMedicines.map(m => [
+      m.id,
+      m.name,
+      m.batchNumber,
+      m.manufacturer,
+      m.category,
+      m.expiryDate,
+      m.quantity,
+      m.reorderLevel,
+      m.costPrice || "",
+      m.price,
+      m.mrp || "",
+      m.gstRate,
+      m.hsnCode || "",
+      m.barcode || "",
+      m.minStock || "",
+      m.maxStock || "",
+      m.status
+    ]);
+    const csv = generateCSV(headers, rows);
+    const today = new Date().toISOString().split('T')[0];
+    downloadFile(csv, `inventory_${today}.csv`, "text/csv");
+    toast({ title: "Inventory exported successfully" });
+  };
+
+  const downloadImportTemplate = () => {
+    const headers = ["Name", "Batch Number", "Manufacturer", "Category", "Expiry Date (YYYY-MM-DD)", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock"];
+    const sampleRow = ["Paracetamol 500mg", "BT2024001", "XYZ Pharma", "Tablets", "2025-12-31", "100", "50", "8.50", "10.00", "12.00", "12", "30049099", "", "10", "500"];
+    const csv = generateCSV(headers, [sampleRow]);
+    downloadFile(csv, "inventory_import_template.csv", "text/csv");
+    toast({ title: "Template downloaded" });
+  };
+
   return (
     <AppLayout title="Inventory Management">
       <Card>
@@ -557,9 +593,21 @@ export default function Inventory() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-9" data-testid="button-export">
-              <FileDown className="mr-2 h-4 w-4" /> Export
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9" data-testid="button-export">
+                  <FileDown className="mr-2 h-4 w-4" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={exportInventoryCSV} data-testid="menu-export-csv">
+                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={downloadImportTemplate} data-testid="menu-download-template">
+                  <Download className="mr-2 h-4 w-4" /> Download Import Template
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button 
               size="sm" 
               className="h-9"

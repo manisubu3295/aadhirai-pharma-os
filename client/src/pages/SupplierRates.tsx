@@ -34,7 +34,8 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Trash2, Tag, Package, IndianRupee } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Trash2, Tag, Package, IndianRupee, FileDown, FileSpreadsheet, Download } from "lucide-react";
+import { downloadFile, generateCSV } from "@/lib/exportUtils";
 import { useState, memo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { Supplier, SupplierRate, Medicine } from "@shared/schema";
@@ -324,6 +325,32 @@ export default function SupplierRates() {
     updateMutation.mutate({ ...formData, id: selectedRate.id });
   };
 
+  const exportRatesCSV = () => {
+    const headers = ["Medicine", "Supplier", "Rate", "MRP", "Discount %", "GST %", "Min Order Qty", "Lead Time (Days)"];
+    const rows = filteredRates.map(r => [
+      getMedicineName(r.medicineId),
+      getSupplierName(r.supplierId),
+      r.rate,
+      r.mrp || "",
+      r.discountPercent || "",
+      r.gstRate || "",
+      r.minOrderQty || "",
+      r.leadTimeDays || ""
+    ]);
+    const csv = generateCSV(headers, rows);
+    const today = new Date().toISOString().split('T')[0];
+    downloadFile(csv, `supplier_rates_${today}.csv`, "text/csv");
+    toast({ title: "Supplier rates exported successfully" });
+  };
+
+  const downloadRatesTemplate = () => {
+    const headers = ["Supplier Code", "Medicine Name", "Rate", "MRP", "Discount %", "GST %", "Min Order Qty", "Lead Time (Days)"];
+    const sampleRow = ["SUP001", "Paracetamol 500mg", "8.50", "12.00", "5", "12", "50", "3"];
+    const csv = generateCSV(headers, [sampleRow]);
+    downloadFile(csv, "supplier_rates_import_template.csv", "text/csv");
+    toast({ title: "Template downloaded" });
+  };
+
   return (
     <AppLayout title="Supplier Rate Master">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -405,6 +432,21 @@ export default function SupplierRates() {
                   data-testid="input-search-rates"
                 />
               </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" data-testid="button-export-rates">
+                    <FileDown className="mr-2 h-4 w-4" /> Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportRatesCSV} data-testid="menu-export-rates-csv">
+                    <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={downloadRatesTemplate} data-testid="menu-download-rates-template">
+                    <Download className="mr-2 h-4 w-4" /> Download Import Template
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button onClick={() => { setFormData(emptyForm); setAddDialogOpen(true); }} data-testid="button-add-rate">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Rate

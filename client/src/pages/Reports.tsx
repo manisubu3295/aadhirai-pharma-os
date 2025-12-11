@@ -24,7 +24,8 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
-  Crown
+  Crown,
+  Printer
 } from "lucide-react";
 import { useState } from "react";
 import { usePlan } from "@/lib/planContext";
@@ -121,7 +122,7 @@ export default function Reports() {
       s.paymentMethod
     ]);
     const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-    downloadFile(csv, `sales_report_${fromDate}_to_${toDate}.csv`, "text/csv");
+    downloadFileLocal(csv, `sales_report_${fromDate}_to_${toDate}.csv`, "text/csv");
     toast({ title: "Sales report exported" });
   };
 
@@ -142,7 +143,7 @@ export default function Reports() {
       isExpired(m.expiryDate) ? "Expired" : "Expiring Soon"
     ]);
     const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-    downloadFile(csv, `expiry_report_${todayStr}.csv`, "text/csv");
+    downloadFileLocal(csv, `expiry_report_${todayStr}.csv`, "text/csv");
     toast({ title: "Expiry report exported" });
   };
 
@@ -161,7 +162,7 @@ export default function Reports() {
       m.status
     ]);
     const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-    downloadFile(csv, `stock_report_${todayStr}.csv`, "text/csv");
+    downloadFileLocal(csv, `stock_report_${todayStr}.csv`, "text/csv");
     toast({ title: "Stock report exported" });
   };
 
@@ -184,18 +185,109 @@ export default function Reports() {
       ];
     });
     const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-    downloadFile(csv, `credit_due_report_${todayStr}.csv`, "text/csv");
+    downloadFileLocal(csv, `credit_due_report_${todayStr}.csv`, "text/csv");
     toast({ title: "Credit due report exported" });
   };
 
-  const downloadFile = (content: string, filename: string, type: string) => {
+  const downloadFileLocal = (content: string, filename: string, type: string) => {
     const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const printReport = (title: string, headers: string[], rows: string[][], subtitle?: string) => {
+    if (!isPro) {
+      toast({ title: "PRO feature", description: "Upgrade to PRO to print reports", variant: "destructive" });
+      return;
+    }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { margin-bottom: 5px; }
+          .subtitle { color: #666; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+          th { background-color: #f5f5f5; font-weight: bold; }
+          .text-right { text-align: right; }
+          .total-row { font-weight: bold; background-color: #f9f9f9; }
+          @media print {
+            body { padding: 10px; }
+            h1 { font-size: 18px; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        ${subtitle ? `<p class="subtitle">${subtitle}</p>` : ''}
+        <table>
+          <thead>
+            <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `<tr>${row.map((cell, i) => 
+              `<td${i >= headers.length - 3 && headers[i]?.includes('₹') || headers[i]?.includes('Total') || headers[i]?.includes('Subtotal') ? ' class="text-right"' : ''}>${cell}</td>`
+            ).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.print();
+    };
+  };
+
+  const printSalesReport = () => {
+    const headers = ["Invoice No", "Date", "Customer", "Subtotal", "Tax", "Total", "Payment"];
+    const rows = filteredSales.map(s => [
+      s.invoiceNo || `INV-${String(s.id).padStart(4, '0')}`,
+      new Date(s.createdAt).toLocaleDateString('en-IN'),
+      s.customerName,
+      `₹${Number(s.subtotal).toFixed(2)}`,
+      `₹${Number(s.tax).toFixed(2)}`,
+      `₹${Number(s.total).toFixed(2)}`,
+      s.paymentMethod
+    ]);
+    printReport("Sales Report", headers, rows, `${fromDate} to ${toDate} | Total: ₹${filteredTotal.toFixed(2)} | ${filteredSales.length} invoices`);
+  };
+
+  const printExpiryReport = () => {
+    const headers = ["Medicine", "Batch", "Expiry Date", "Quantity", "Status"];
+    const allExpiry = [...expiringMedicines.map(m => ({ ...m, expStatus: "Near Expiry" })), 
+                       ...expiredMedicines.map(m => ({ ...m, expStatus: "Expired" }))];
+    const rows = allExpiry.map(m => [m.name, m.batchNumber, m.expiryDate, String(m.quantity), m.expStatus]);
+    printReport("Expiry Report", headers, rows, `${expiringMedicines.length} near expiry | ${expiredMedicines.length} expired`);
+  };
+
+  const printStockReport = () => {
+    const headers = ["Medicine", "Manufacturer", "Category", "Quantity", "Reorder Level", "Status"];
+    const rows = lowStockMedicines.map(m => [m.name, m.manufacturer, m.category, String(m.quantity), String(m.reorderLevel), m.status]);
+    printReport("Stock Report", headers, rows, `${lowStockMedicines.length} items need attention`);
+  };
+
+  const printCreditReport = () => {
+    const headers = ["Customer", "Phone", "Credit Limit", "Outstanding", "Available"];
+    const rows = customersWithDue.map(c => {
+      const limit = Number(c.creditLimit || 0);
+      const outstanding = Number(c.outstandingBalance || 0);
+      const available = Math.max(0, limit - outstanding);
+      return [c.name, c.phone || "-", `₹${limit.toFixed(2)}`, `₹${outstanding.toFixed(2)}`, `₹${available.toFixed(2)}`];
+    });
+    printReport("Credit Due Report", headers, rows, `Total Due: ₹${totalDue.toFixed(2)} | ${customersWithDue.length} customers`);
   };
 
   return (
@@ -335,6 +427,17 @@ export default function Reports() {
                     CSV
                     {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
                   </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={printSalesReport}
+                    disabled={!isPro}
+                    data-testid="button-print-sales"
+                  >
+                    <Printer className="h-4 w-4 mr-1" />
+                    PDF
+                    {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -399,7 +502,18 @@ export default function Reports() {
                   data-testid="button-export-expiry-csv"
                 >
                   <FileSpreadsheet className="h-4 w-4 mr-1" />
-                  Export CSV
+                  CSV
+                  {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={printExpiryReport}
+                  disabled={!isPro}
+                  data-testid="button-print-expiry"
+                >
+                  <Printer className="h-4 w-4 mr-1" />
+                  PDF
                   {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
                 </Button>
               </div>
@@ -470,7 +584,18 @@ export default function Reports() {
                   data-testid="button-export-stock-csv"
                 >
                   <FileSpreadsheet className="h-4 w-4 mr-1" />
-                  Export CSV
+                  CSV
+                  {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={printStockReport}
+                  disabled={!isPro}
+                  data-testid="button-print-stock"
+                >
+                  <Printer className="h-4 w-4 mr-1" />
+                  PDF
                   {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
                 </Button>
               </div>
@@ -535,7 +660,18 @@ export default function Reports() {
                   data-testid="button-export-credit-csv"
                 >
                   <FileSpreadsheet className="h-4 w-4 mr-1" />
-                  Export CSV
+                  CSV
+                  {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={printCreditReport}
+                  disabled={!isPro}
+                  data-testid="button-print-credit"
+                >
+                  <Printer className="h-4 w-4 mr-1" />
+                  PDF
                   {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
                 </Button>
               </div>
