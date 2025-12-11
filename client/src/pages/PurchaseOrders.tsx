@@ -675,9 +675,6 @@ export default function PurchaseOrders() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>Close</Button>
             <Button onClick={() => {
-              const printContent = document.getElementById("po-print-content");
-              if (!printContent) return;
-              
               const printWindow = window.open("", "_blank");
               if (!printWindow) return;
               
