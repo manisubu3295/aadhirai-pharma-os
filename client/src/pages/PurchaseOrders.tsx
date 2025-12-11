@@ -29,10 +29,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send, Printer } from "lucide-react";
+import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send, Printer, Download, Calendar } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
+import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, Medicine, PurchaseOrder, PurchaseOrderItem, SupplierRate } from "@shared/schema";
 
 interface POItem {
@@ -73,6 +74,11 @@ export default function PurchaseOrders() {
   const [poMode, setPOMode] = useState<"direct" | "rates">("direct");
   const [items, setItems] = useState<POItem[]>([]);
   const [notes, setNotes] = useState("");
+  
+  const [fromDate, setFromDate] = useState<string>(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+  const [toDate, setToDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [supplierFilter, setSupplierFilter] = useState<string>("all");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -264,10 +270,36 @@ export default function PurchaseOrders() {
     setViewDialogOpen(true);
   };
 
-  const filteredOrders = purchaseOrders.filter((po) =>
-    po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    po.supplierName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredOrders = purchaseOrders.filter((po) => {
+    const matchesSearch = searchTerm === "" || 
+      po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      po.supplierName.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const poDate = new Date(po.orderDate);
+    const from = fromDate ? startOfDay(parseISO(fromDate)) : null;
+    const to = toDate ? endOfDay(parseISO(toDate)) : null;
+    const matchesDateRange = (!from || poDate >= from) && (!to || poDate <= to);
+    
+    const matchesStatus = statusFilter === "all" || po.status === statusFilter;
+    const matchesSupplier = supplierFilter === "all" || po.supplierId.toString() === supplierFilter;
+    
+    return matchesSearch && matchesDateRange && matchesStatus && matchesSupplier;
+  });
+
+  const handleExportPOs = () => {
+    const exportData = filteredOrders.map(po => ({
+      "PO Number": po.poNumber,
+      "Date": format(new Date(po.orderDate), "dd/MM/yyyy"),
+      "Supplier": po.supplierName,
+      "Status": po.status,
+      "Subtotal": po.subtotal,
+      "Tax": po.taxAmount,
+      "Total": po.totalAmount,
+      "Notes": po.notes || "",
+    }));
+    exportToCSV(exportData, `purchase_orders_${format(new Date(), "yyyyMMdd")}`);
+    toast({ title: "Purchase Orders exported successfully" });
+  };
 
   const calculateTotal = () => {
     const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.rate || "0") * item.quantity), 0);
@@ -352,22 +384,72 @@ export default function PurchaseOrders() {
               <CardTitle>Purchase Orders</CardTitle>
               <CardDescription>Manage purchase orders to suppliers</CardDescription>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search POs..." 
-                  className="pl-9 w-64"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  data-testid="input-search-pos"
-                />
-              </div>
+            <div className="flex items-center gap-2">
               <Button onClick={() => { resetForm(); setCreateDialogOpen(true); }} data-testid="button-create-po">
                 <Plus className="h-4 w-4 mr-2" />
                 Create PO
               </Button>
+              <Button variant="outline" onClick={handleExportPOs} data-testid="button-export-pos">
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search PO number, supplier..." 
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search-pos"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm whitespace-nowrap">From:</Label>
+              <Input 
+                type="date" 
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-40"
+                data-testid="input-po-from-date"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm whitespace-nowrap">To:</Label>
+              <Input 
+                type="date" 
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-40"
+                data-testid="input-po-to-date"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-36" data-testid="select-po-status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="Draft">Draft</SelectItem>
+                <SelectItem value="Issued">Issued</SelectItem>
+                <SelectItem value="PartiallyReceived">Partially Received</SelectItem>
+                <SelectItem value="Received">Received</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={supplierFilter} onValueChange={setSupplierFilter}>
+              <SelectTrigger className="w-40" data-testid="select-po-supplier">
+                <SelectValue placeholder="Supplier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Suppliers</SelectItem>
+                {suppliers.map(s => (
+                  <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent>

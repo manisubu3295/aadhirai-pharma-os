@@ -25,6 +25,15 @@ export function generateCSV(headers: string[], rows: (string | number | null | u
   return [headerLine, ...dataLines].join("\n");
 }
 
+export function exportToCSV(data: Record<string, any>[], filename: string) {
+  if (data.length === 0) return;
+  
+  const headers = Object.keys(data[0]);
+  const rows = data.map(row => headers.map(h => row[h]));
+  const csv = generateCSV(headers, rows);
+  downloadFile(csv, `${filename}.csv`, "text/csv;charset=utf-8;");
+}
+
 export function printElement(elementId: string, title: string) {
   const element = document.getElementById(elementId);
   if (!element) return;

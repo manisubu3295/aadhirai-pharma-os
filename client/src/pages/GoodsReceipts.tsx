@@ -28,10 +28,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, Package, Truck, CheckCircle2, Calendar, Printer } from "lucide-react";
+import { Search, Plus, Eye, Package, Truck, CheckCircle2, Calendar, Printer, Download } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
+import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, GoodsReceipt, GoodsReceiptItem } from "@shared/schema";
 
 interface GRNItem {
@@ -58,6 +59,11 @@ export default function GoodsReceipts() {
   const [selectedPOId, setSelectedPOId] = useState<string>("");
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
   const [items, setItems] = useState<GRNItem[]>([]);
+  
+  const [fromDate, setFromDate] = useState<string>(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+  const [toDate, setToDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [supplierFilter, setSupplierFilter] = useState<string>("all");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -236,11 +242,37 @@ export default function GoodsReceipts() {
     setViewDialogOpen(true);
   };
 
-  const filteredReceipts = goodsReceipts.filter((grn) =>
-    grn.grnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    grn.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (grn.supplierInvoiceNo && grn.supplierInvoiceNo.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredReceipts = goodsReceipts.filter((grn) => {
+    const matchesSearch = searchTerm === "" || 
+      grn.grnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      grn.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (grn.supplierInvoiceNo && grn.supplierInvoiceNo.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const grnDate = new Date(grn.receiptDate);
+    const from = fromDate ? startOfDay(parseISO(fromDate)) : null;
+    const to = toDate ? endOfDay(parseISO(toDate)) : null;
+    const matchesDateRange = (!from || grnDate >= from) && (!to || grnDate <= to);
+    
+    const matchesStatus = statusFilter === "all" || grn.status === statusFilter;
+    const matchesSupplier = supplierFilter === "all" || grn.supplierId.toString() === supplierFilter;
+    
+    return matchesSearch && matchesDateRange && matchesStatus && matchesSupplier;
+  });
+
+  const handleExportGRNs = () => {
+    const exportData = filteredReceipts.map(grn => ({
+      "GRN Number": grn.grnNumber,
+      "Receipt Date": format(new Date(grn.receiptDate), "dd/MM/yyyy"),
+      "Supplier": grn.supplierName,
+      "Supplier Invoice": grn.supplierInvoiceNo || "",
+      "Status": grn.status,
+      "Subtotal": grn.subtotal,
+      "Tax": grn.taxAmount,
+      "Total": grn.totalAmount,
+    }));
+    exportToCSV(exportData, `goods_receipts_${format(new Date(), "yyyyMMdd")}`);
+    toast({ title: "Goods Receipts exported successfully" });
+  };
 
   const calculateTotal = () => {
     const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.rate || "0") * item.quantity), 0);
@@ -310,22 +342,69 @@ export default function GoodsReceipts() {
               <CardTitle>Goods Receipts</CardTitle>
               <CardDescription>Record goods received and update inventory</CardDescription>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search GRNs..." 
-                  className="pl-9 w-64"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  data-testid="input-search-grns"
-                />
-              </div>
+            <div className="flex items-center gap-2">
               <Button onClick={() => { resetForm(); setCreateDialogOpen(true); }} data-testid="button-create-grn">
                 <Plus className="h-4 w-4 mr-2" />
                 Create GRN
               </Button>
+              <Button variant="outline" onClick={handleExportGRNs} data-testid="button-export-grns">
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search GRN number, supplier..." 
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search-grns"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm whitespace-nowrap">From:</Label>
+              <Input 
+                type="date" 
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-40"
+                data-testid="input-grn-from-date"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm whitespace-nowrap">To:</Label>
+              <Input 
+                type="date" 
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-40"
+                data-testid="input-grn-to-date"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-36" data-testid="select-grn-status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={supplierFilter} onValueChange={setSupplierFilter}>
+              <SelectTrigger className="w-40" data-testid="select-grn-supplier">
+                <SelectValue placeholder="Supplier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Suppliers</SelectItem>
+                {suppliers.map(s => (
+                  <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent>
