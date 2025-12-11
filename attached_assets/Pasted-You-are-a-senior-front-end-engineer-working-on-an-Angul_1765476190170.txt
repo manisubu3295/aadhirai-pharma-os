@@ -1,0 +1,64 @@
+You are a senior front-end engineer working on an Angular + Angular Material web app (pharmacy management). There is already a main layout with a vertical navigation menu (sidebar / navbar) that contains many menu items, so the nav itself is scrollable.
+
+Current problem:
+- When the user scrolls DOWN inside the nav and clicks a menu item near the bottom, after navigation:
+  - The nav bar scroll position jumps back to the TOP.
+  - The active menu item is no longer in view in the nav.
+- I want the nav to either:
+  - Preserve its scroll position when changing routes, OR
+  - Automatically scroll the active menu item into view after navigation.
+- The main content scroll behaviour should NOT change; only fix the nav scroll behaviour.
+
+IMPORTANT RULES:
+- Do NOT break existing router links, route guards, or lazy loading.
+- Do NOT change any business logic.
+- Only modify the navigation component / layout so that the nav scroll is handled correctly.
+- Solution must work on both desktop and mobile layouts.
+
+Please do the following:
+
+1) Identify the nav container
+- Find the Angular component/template that renders the vertical nav menu (in mat-sidenav, mat-drawer, or similar).
+- Identify the scrollable container element for the nav (e.g. a div with `overflow-y: auto` or the mat-sidenav content element).
+- Add a template reference (e.g. `#navScrollContainer`) and in the TS file use `@ViewChild` to access it as an `ElementRef<HTMLElement>`.
+
+2) Preserve nav scroll position between route changes
+- Implement a small service or shared utility (e.g. `NavScrollService`) that stores the nav scroll position:
+  - It should expose `setScrollTop(value: number)` and `getScrollTop(): number`.
+  - It can keep the value in memory only (no need for localStorage unless you think it is necessary).
+- In the nav component:
+  - On nav scroll (listen to `scroll` event on the nav container), update the stored scrollTop in `NavScrollService`.
+  - On init/after view init and after navigation, read `scrollTop` from `NavScrollService` and apply it to the nav scroll container so that the nav remains in the same position.
+
+3) Make sure active item is visible
+- Additionally, after a navigation completes:
+  - Find the DOM element of the active nav item (for example using a CSS class like `.active` or the Angular routerLinkActive directive).
+  - Call `element.scrollIntoView({ block: 'nearest', inline: 'nearest' })` on the active nav item, **without** snapping the entire nav back to top.
+- This ensures that:
+  - If scrollTop was not restored exactly, the active item will still be in view.
+  - The nav will not jump to the very top unnecessarily.
+
+4) Hook into router events safely
+- Use Angular Router events in the nav component (e.g. subscribe to `router.events` and filter for `NavigationEnd`) to know when navigation is finished.
+- On `NavigationEnd`:
+  - Restore nav scrollTop from `NavScrollService` to the nav container.
+  - Then scroll the active nav item into view as described above.
+- Make sure to unsubscribe from router events in `ngOnDestroy` to avoid memory leaks.
+
+5) Do NOT change main page scroll behaviour
+- The main content area’s scroll position can continue to reset as usual with each route.
+- Only the **nav scroll container** should preserve its scroll or adjust to keep the active link visible.
+
+6) Styling / CSS
+- Keep the existing nav design.
+- Only ensure the nav container has `overflow-y: auto` (or the appropriate scroll style) so that manual and programmatic scrolling both work.
+- Do not change colours, icons, or labels.
+
+After implementing:
+- Test scenario:
+  - Scroll down the nav so a bottom menu item is visible.
+  - Click that item to navigate.
+  - Confirm:
+    - Nav does NOT jump back to the top.
+    - The active menu item remains visible in the nav.
+    - All router links still work, including guards and lazy loaded modules.
