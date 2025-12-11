@@ -330,7 +330,7 @@ export default function NewSale() {
       }
     } else {
       const isLiquid = isLiquidCategory(medicine.category);
-      const packSize = isLiquid ? 1 : (medicine.packSize || 10);
+      const packSize = isLiquid ? 1 : (medicine.packSize && medicine.packSize > 1 ? medicine.packSize : 10);
       const stripPrice = Number(medicine.price);
       const tabletPrice = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : stripPrice / packSize;
       const defaultUnit = isLiquid ? "BOTTLE" : "STRIP";
