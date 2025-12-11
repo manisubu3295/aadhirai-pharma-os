@@ -35,6 +35,7 @@ import {
   type InsertSalesReturn,
   type SalesReturnItem,
   type InsertSalesReturnItem,
+  type AppSetting,
   users,
   medicines,
   customers,
@@ -52,7 +53,8 @@ import {
   goodsReceipts,
   goodsReceiptItems,
   salesReturns,
-  salesReturnItems
+  salesReturnItems,
+  appSettings
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -794,6 +796,38 @@ export class DatabaseStorage implements IStorage {
         lte(salesReturns.returnDate, endDate)
       ));
     return result[0]?.total || "0";
+  }
+
+  async getAllSettings(): Promise<AppSetting[]> {
+    return await db.select().from(appSettings);
+  }
+
+  async getSetting(key: string): Promise<AppSetting | undefined> {
+    const result = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    return result[0];
+  }
+
+  async upsertSetting(key: string, value: string): Promise<AppSetting> {
+    const existing = await this.getSetting(key);
+    if (existing) {
+      const result = await db.update(appSettings)
+        .set({ value, updatedAt: new Date() })
+        .where(eq(appSettings.key, key))
+        .returning();
+      return result[0];
+    } else {
+      const result = await db.insert(appSettings).values({ key, value }).returning();
+      return result[0];
+    }
+  }
+
+  async upsertMultipleSettings(settings: { key: string; value: string }[]): Promise<AppSetting[]> {
+    const results: AppSetting[] = [];
+    for (const setting of settings) {
+      const result = await this.upsertSetting(setting.key, setting.value);
+      results.push(result);
+    }
+    return results;
   }
 }
 

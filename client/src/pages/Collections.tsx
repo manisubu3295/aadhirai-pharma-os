@@ -13,6 +13,7 @@ import { usePlan } from "@/lib/planContext";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { SalesReturnDialog } from "@/components/SalesReturnDialog";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
+import { useSettings } from "@/contexts/SettingsContext";
 import type { Sale as SaleType, SaleItem } from "@shared/schema";
 
 interface Sale {
@@ -38,6 +39,7 @@ interface Sale {
 
 export default function Collections() {
   const { isPro } = usePlan();
+  const { settings: appSettings } = useSettings();
   const today = new Date();
   const [dateFrom, setDateFrom] = useState(format(today, "yyyy-MM-dd"));
   const [dateTo, setDateTo] = useState(format(today, "yyyy-MM-dd"));
@@ -394,7 +396,22 @@ export default function Collections() {
           </DialogHeader>
           {printSale && (
             <div id="reprint-invoice-content">
-              <PrintableInvoice sale={printSale as unknown as SaleType} items={printItems} />
+              <PrintableInvoice 
+                sale={printSale as unknown as SaleType} 
+                items={printItems}
+                storeInfo={{
+                  name: appSettings.storeName,
+                  address: appSettings.storeAddress,
+                  phone: appSettings.storePhone,
+                  gstin: appSettings.gstin,
+                  dlNo: appSettings.dlNo,
+                }}
+                invoiceSettings={{
+                  showMrp: appSettings.showMrp,
+                  showGstBreakup: appSettings.showGstBreakup,
+                  showDoctor: appSettings.showDoctor,
+                }}
+              />
             </div>
           )}
           <DialogFooter>

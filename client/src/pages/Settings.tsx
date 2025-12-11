@@ -36,9 +36,10 @@ import {
   Plus,
   Shield,
   CheckCircle,
-  XCircle
+  XCircle,
+  Loader2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 interface User {
@@ -60,6 +61,40 @@ interface UserFormData {
   phone: string;
 }
 
+interface SettingsData {
+  storeName: string;
+  storePhone: string;
+  storeAddress: string;
+  storeEmail: string;
+  dlNo: string;
+  gstin: string;
+  stateCode: string;
+  autoGst: string;
+  invoicePrefix: string;
+  startNumber: string;
+  showMrp: string;
+  showGstBreakup: string;
+  showDoctor: string;
+  printOnSave: string;
+}
+
+const defaultSettings: SettingsData = {
+  storeName: "Aadhirai Innovations Pharmacy",
+  storePhone: "+91 98765 43210",
+  storeAddress: "123 Main Street, Chennai, Tamil Nadu - 600001",
+  storeEmail: "contact@aadhiraipharmacy.com",
+  dlNo: "TN-01-123456",
+  gstin: "33AABCU9603R1ZM",
+  stateCode: "33",
+  autoGst: "true",
+  invoicePrefix: "INV-",
+  startNumber: "1001",
+  showMrp: "true",
+  showGstBreakup: "true",
+  showDoctor: "true",
+  printOnSave: "false",
+};
+
 const emptyUserForm: UserFormData = {
   username: "",
   password: "",
@@ -72,6 +107,7 @@ const emptyUserForm: UserFormData = {
 export default function Settings() {
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
   const [userFormData, setUserFormData] = useState<UserFormData>(emptyUserForm);
+  const [settings, setSettings] = useState<SettingsData>(defaultSettings);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -82,6 +118,55 @@ export default function Settings() {
       const res = await fetch("/api/users");
       if (!res.ok) throw new Error("Failed to fetch users");
       return res.json();
+    },
+  });
+
+  const { data: savedSettings, isLoading: settingsLoading } = useQuery<Record<string, string>>({
+    queryKey: ["/api/settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/settings");
+      if (!res.ok) throw new Error("Failed to fetch settings");
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (savedSettings) {
+      setSettings({
+        storeName: savedSettings.storeName || defaultSettings.storeName,
+        storePhone: savedSettings.storePhone || defaultSettings.storePhone,
+        storeAddress: savedSettings.storeAddress || defaultSettings.storeAddress,
+        storeEmail: savedSettings.storeEmail || defaultSettings.storeEmail,
+        dlNo: savedSettings.dlNo || defaultSettings.dlNo,
+        gstin: savedSettings.gstin || defaultSettings.gstin,
+        stateCode: savedSettings.stateCode || defaultSettings.stateCode,
+        autoGst: savedSettings.autoGst || defaultSettings.autoGst,
+        invoicePrefix: savedSettings.invoicePrefix || defaultSettings.invoicePrefix,
+        startNumber: savedSettings.startNumber || defaultSettings.startNumber,
+        showMrp: savedSettings.showMrp || defaultSettings.showMrp,
+        showGstBreakup: savedSettings.showGstBreakup || defaultSettings.showGstBreakup,
+        showDoctor: savedSettings.showDoctor || defaultSettings.showDoctor,
+        printOnSave: savedSettings.printOnSave || defaultSettings.printOnSave,
+      });
+    }
+  }, [savedSettings]);
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: async (data: Partial<SettingsData>) => {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to save settings");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({ title: "Settings saved successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save settings", variant: "destructive" });
     },
   });
 
@@ -112,6 +197,35 @@ export default function Settings() {
       return;
     }
     createUserMutation.mutate(userFormData);
+  };
+
+  const handleSaveStoreSettings = () => {
+    saveSettingsMutation.mutate({
+      storeName: settings.storeName,
+      storePhone: settings.storePhone,
+      storeAddress: settings.storeAddress,
+      storeEmail: settings.storeEmail,
+      dlNo: settings.dlNo,
+    });
+  };
+
+  const handleSaveGstSettings = () => {
+    saveSettingsMutation.mutate({
+      gstin: settings.gstin,
+      stateCode: settings.stateCode,
+      autoGst: settings.autoGst,
+    });
+  };
+
+  const handleSaveInvoiceSettings = () => {
+    saveSettingsMutation.mutate({
+      invoicePrefix: settings.invoicePrefix,
+      startNumber: settings.startNumber,
+      showMrp: settings.showMrp,
+      showGstBreakup: settings.showGstBreakup,
+      showDoctor: settings.showDoctor,
+      printOnSave: settings.printOnSave,
+    });
   };
 
   const getRoleBadgeColor = (role: string) => {
@@ -222,55 +336,81 @@ export default function Settings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="storeName">Store Name</Label>
-                  <Input
-                    id="storeName"
-                    defaultValue="Aadhirai Innovations Pharmacy"
-                    className="mt-1.5"
-                    data-testid="input-store-name"
-                  />
+              {settingsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
-                <div>
-                  <Label htmlFor="storePhone">Phone Number</Label>
-                  <Input
-                    id="storePhone"
-                    defaultValue="+91 98765 43210"
-                    className="mt-1.5"
-                    data-testid="input-store-phone"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="storeAddress">Address</Label>
-                  <Input
-                    id="storeAddress"
-                    defaultValue="123 Main Street, Chennai, Tamil Nadu - 600001"
-                    className="mt-1.5"
-                    data-testid="input-store-address"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="dlNo">Drug License Number</Label>
-                  <Input
-                    id="dlNo"
-                    defaultValue="TN-01-123456"
-                    className="mt-1.5"
-                    data-testid="input-dl-number"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="storeEmail">Email</Label>
-                  <Input
-                    id="storeEmail"
-                    type="email"
-                    defaultValue="contact@aadhiraipharmacy.com"
-                    className="mt-1.5"
-                    data-testid="input-store-email"
-                  />
-                </div>
-              </div>
-              <Button data-testid="button-save-store">Save Changes</Button>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label htmlFor="storeName">Store Name</Label>
+                      <Input
+                        id="storeName"
+                        value={settings.storeName}
+                        onChange={(e) => setSettings({ ...settings, storeName: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-store-name"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="storePhone">Phone Number</Label>
+                      <Input
+                        id="storePhone"
+                        value={settings.storePhone}
+                        onChange={(e) => setSettings({ ...settings, storePhone: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-store-phone"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label htmlFor="storeAddress">Address</Label>
+                      <Input
+                        id="storeAddress"
+                        value={settings.storeAddress}
+                        onChange={(e) => setSettings({ ...settings, storeAddress: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-store-address"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="dlNo">Drug License Number</Label>
+                      <Input
+                        id="dlNo"
+                        value={settings.dlNo}
+                        onChange={(e) => setSettings({ ...settings, dlNo: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-dl-number"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="storeEmail">Email</Label>
+                      <Input
+                        id="storeEmail"
+                        type="email"
+                        value={settings.storeEmail}
+                        onChange={(e) => setSettings({ ...settings, storeEmail: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-store-email"
+                      />
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={handleSaveStoreSettings}
+                    disabled={saveSettingsMutation.isPending}
+                    data-testid="button-save-store"
+                  >
+                    {saveSettingsMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -287,48 +427,76 @@ export default function Settings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="gstin">GSTIN Number</Label>
-                  <Input
-                    id="gstin"
-                    defaultValue="33AABCU9603R1ZM"
-                    className="mt-1.5"
-                    data-testid="input-gstin"
-                  />
+              {settingsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
-                <div>
-                  <Label htmlFor="stateCode">State Code</Label>
-                  <Input
-                    id="stateCode"
-                    defaultValue="33"
-                    className="mt-1.5"
-                    data-testid="input-state-code"
-                  />
-                </div>
-              </div>
-              <div className="space-y-4">
-                <h4 className="font-medium">Default GST Rates</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 border rounded-lg">
-                    <p className="text-sm text-muted-foreground">Standard Rate</p>
-                    <p className="text-2xl font-bold">18%</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label htmlFor="gstin">GSTIN Number</Label>
+                      <Input
+                        id="gstin"
+                        value={settings.gstin}
+                        onChange={(e) => setSettings({ ...settings, gstin: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-gstin"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="stateCode">State Code</Label>
+                      <Input
+                        id="stateCode"
+                        value={settings.stateCode}
+                        onChange={(e) => setSettings({ ...settings, stateCode: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-state-code"
+                      />
+                    </div>
                   </div>
-                  <div className="p-4 border rounded-lg">
-                    <p className="text-sm text-muted-foreground">Reduced Rate</p>
-                    <p className="text-2xl font-bold">12%</p>
+                  <div className="space-y-4">
+                    <h4 className="font-medium">Default GST Rates</h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 border rounded-lg">
+                        <p className="text-sm text-muted-foreground">Standard Rate</p>
+                        <p className="text-2xl font-bold">18%</p>
+                      </div>
+                      <div className="p-4 border rounded-lg">
+                        <p className="text-sm text-muted-foreground">Reduced Rate</p>
+                        <p className="text-2xl font-bold">12%</p>
+                      </div>
+                      <div className="p-4 border rounded-lg">
+                        <p className="text-sm text-muted-foreground">Lower Rate</p>
+                        <p className="text-2xl font-bold">5%</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-4 border rounded-lg">
-                    <p className="text-sm text-muted-foreground">Lower Rate</p>
-                    <p className="text-2xl font-bold">5%</p>
+                  <div className="flex items-center space-x-2">
+                    <Switch 
+                      id="autoGst" 
+                      checked={settings.autoGst === "true"}
+                      onCheckedChange={(checked) => setSettings({ ...settings, autoGst: checked ? "true" : "false" })}
+                      data-testid="switch-auto-gst" 
+                    />
+                    <Label htmlFor="autoGst">Auto-calculate GST (split CGST/SGST for local sales)</Label>
                   </div>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Switch id="autoGst" defaultChecked data-testid="switch-auto-gst" />
-                <Label htmlFor="autoGst">Auto-calculate GST (split CGST/SGST for local sales)</Label>
-              </div>
-              <Button data-testid="button-save-gst">Save Changes</Button>
+                  <Button 
+                    onClick={handleSaveGstSettings}
+                    disabled={saveSettingsMutation.isPending}
+                    data-testid="button-save-gst"
+                  >
+                    {saveSettingsMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -345,49 +513,92 @@ export default function Settings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="invoicePrefix">Invoice Prefix</Label>
-                  <Input
-                    id="invoicePrefix"
-                    defaultValue="INV-"
-                    className="mt-1.5"
-                    data-testid="input-invoice-prefix"
-                  />
+              {settingsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
-                <div>
-                  <Label htmlFor="startNumber">Starting Number</Label>
-                  <Input
-                    id="startNumber"
-                    type="number"
-                    defaultValue="1001"
-                    className="mt-1.5"
-                    data-testid="input-start-number"
-                  />
-                </div>
-              </div>
-              <div className="space-y-4">
-                <h4 className="font-medium">Invoice Options</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <Switch id="showMrp" defaultChecked data-testid="switch-show-mrp" />
-                    <Label htmlFor="showMrp">Show MRP on invoice</Label>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label htmlFor="invoicePrefix">Invoice Prefix</Label>
+                      <Input
+                        id="invoicePrefix"
+                        value={settings.invoicePrefix}
+                        onChange={(e) => setSettings({ ...settings, invoicePrefix: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-invoice-prefix"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="startNumber">Starting Number</Label>
+                      <Input
+                        id="startNumber"
+                        type="number"
+                        value={settings.startNumber}
+                        onChange={(e) => setSettings({ ...settings, startNumber: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-start-number"
+                      />
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch id="showGstBreakup" defaultChecked data-testid="switch-show-gst" />
-                    <Label htmlFor="showGstBreakup">Show GST breakup (CGST/SGST)</Label>
+                  <div className="space-y-4">
+                    <h4 className="font-medium">Invoice Options</h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2">
+                        <Switch 
+                          id="showMrp" 
+                          checked={settings.showMrp === "true"}
+                          onCheckedChange={(checked) => setSettings({ ...settings, showMrp: checked ? "true" : "false" })}
+                          data-testid="switch-show-mrp" 
+                        />
+                        <Label htmlFor="showMrp">Show MRP on invoice</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Switch 
+                          id="showGstBreakup" 
+                          checked={settings.showGstBreakup === "true"}
+                          onCheckedChange={(checked) => setSettings({ ...settings, showGstBreakup: checked ? "true" : "false" })}
+                          data-testid="switch-show-gst" 
+                        />
+                        <Label htmlFor="showGstBreakup">Show GST breakup (CGST/SGST)</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Switch 
+                          id="showDoctor" 
+                          checked={settings.showDoctor === "true"}
+                          onCheckedChange={(checked) => setSettings({ ...settings, showDoctor: checked ? "true" : "false" })}
+                          data-testid="switch-show-doctor" 
+                        />
+                        <Label htmlFor="showDoctor">Show doctor name on invoice</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Switch 
+                          id="printOnSave" 
+                          checked={settings.printOnSave === "true"}
+                          onCheckedChange={(checked) => setSettings({ ...settings, printOnSave: checked ? "true" : "false" })}
+                          data-testid="switch-print-on-save" 
+                        />
+                        <Label htmlFor="printOnSave">Auto-print invoice on save</Label>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch id="showDoctor" defaultChecked data-testid="switch-show-doctor" />
-                    <Label htmlFor="showDoctor">Show doctor name on invoice</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch id="printOnSave" data-testid="switch-print-on-save" />
-                    <Label htmlFor="printOnSave">Auto-print invoice on save</Label>
-                  </div>
-                </div>
-              </div>
-              <Button data-testid="button-save-invoice">Save Changes</Button>
+                  <Button 
+                    onClick={handleSaveInvoiceSettings}
+                    disabled={saveSettingsMutation.isPending}
+                    data-testid="button-save-invoice"
+                  >
+                    {saveSettingsMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

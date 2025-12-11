@@ -1,6 +1,12 @@
 import { forwardRef } from "react";
 import type { Sale, SaleItem } from "@shared/schema";
 
+interface InvoiceSettings {
+  showMrp?: boolean;
+  showGstBreakup?: boolean;
+  showDoctor?: boolean;
+}
+
 interface PrintableInvoiceProps {
   sale: Sale;
   items: SaleItem[];
@@ -11,6 +17,7 @@ interface PrintableInvoiceProps {
     gstin: string;
     dlNo: string;
   };
+  invoiceSettings?: InvoiceSettings;
 }
 
 const defaultStoreInfo = {
@@ -21,8 +28,16 @@ const defaultStoreInfo = {
   dlNo: "TN-01-123456",
 };
 
+const defaultInvoiceSettings: InvoiceSettings = {
+  showMrp: true,
+  showGstBreakup: true,
+  showDoctor: true,
+};
+
 export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps>(
-  ({ sale, items, storeInfo = defaultStoreInfo }, ref) => {
+  ({ sale, items, storeInfo = defaultStoreInfo, invoiceSettings = defaultInvoiceSettings }, ref) => {
+    const settings = { ...defaultInvoiceSettings, ...invoiceSettings };
+    
     const formatDate = (date: Date | string) => {
       const d = new Date(date);
       return d.toLocaleDateString("en-IN", {
@@ -71,7 +86,7 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
             <p><strong>Customer:</strong> {sale.customerName}</p>
             {sale.customerPhone && <p><strong>Phone:</strong> {sale.customerPhone}</p>}
             {sale.customerGstin && <p><strong>GSTIN:</strong> {sale.customerGstin}</p>}
-            {sale.doctorName && <p><strong>Doctor:</strong> Dr. {sale.doctorName}</p>}
+            {settings.showDoctor && sale.doctorName && <p><strong>Doctor:</strong> Dr. {sale.doctorName}</p>}
           </div>
         </div>
 
@@ -83,7 +98,7 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
               <th className="border border-black p-2 text-center">HSN</th>
               <th className="border border-black p-2 text-center">Batch</th>
               <th className="border border-black p-2 text-center">Exp</th>
-              <th className="border border-black p-2 text-right">MRP</th>
+              {settings.showMrp && <th className="border border-black p-2 text-right">MRP</th>}
               <th className="border border-black p-2 text-center">Qty</th>
               <th className="border border-black p-2 text-right">Rate</th>
               <th className="border border-black p-2 text-center">GST%</th>
@@ -98,9 +113,11 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
                 <td className="border border-black p-2 text-center">{item.hsnCode || "-"}</td>
                 <td className="border border-black p-2 text-center">{item.batchNumber}</td>
                 <td className="border border-black p-2 text-center">{item.expiryDate}</td>
-                <td className="border border-black p-2 text-right">
-                  {item.mrp ? `₹${Number(item.mrp).toFixed(2)}` : "-"}
-                </td>
+                {settings.showMrp && (
+                  <td className="border border-black p-2 text-right">
+                    {item.mrp ? `₹${Number(item.mrp).toFixed(2)}` : "-"}
+                  </td>
+                )}
                 <td className="border border-black p-2 text-center">{item.quantity}</td>
                 <td className="border border-black p-2 text-right">₹{Number(item.price).toFixed(2)}</td>
                 <td className="border border-black p-2 text-center">{item.gstRate}%</td>
@@ -122,14 +139,23 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
                 <span>-₹{Number(sale.discount).toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between py-1 border-b">
-              <span>CGST:</span>
-              <span>₹{Number(sale.cgst).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b">
-              <span>SGST:</span>
-              <span>₹{Number(sale.sgst).toFixed(2)}</span>
-            </div>
+            {settings.showGstBreakup ? (
+              <>
+                <div className="flex justify-between py-1 border-b">
+                  <span>CGST:</span>
+                  <span>₹{Number(sale.cgst).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b">
+                  <span>SGST:</span>
+                  <span>₹{Number(sale.sgst).toFixed(2)}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between py-1 border-b">
+                <span>GST:</span>
+                <span>₹{(Number(sale.cgst) + Number(sale.sgst)).toFixed(2)}</span>
+              </div>
+            )}
             {Number(sale.roundOff) !== 0 && (
               <div className="flex justify-between py-1 border-b">
                 <span>Round Off:</span>

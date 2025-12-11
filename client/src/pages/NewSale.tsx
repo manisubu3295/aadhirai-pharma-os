@@ -61,6 +61,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
+import { useSettings } from "@/contexts/SettingsContext";
 import type { Customer, Doctor, Medicine, HeldBill, Sale, SaleItem as SaleItemSchema } from "@shared/schema";
 
 interface SaleItem {
@@ -117,6 +118,7 @@ export default function NewSale() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { settings: appSettings } = useSettings();
   const isOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
 
   const [items, setItems] = useState<SaleItem[]>([]);
@@ -229,7 +231,8 @@ export default function NewSale() {
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       toast({ title: "Invoice generated successfully!" });
       
-      if (variables.printInvoice && saleResult.sale && saleResult.items) {
+      const shouldPrint = variables.printInvoice || appSettings.printOnSave;
+      if (shouldPrint && saleResult.sale && saleResult.items) {
         setPrintSaleData(saleResult);
         setPrintDialogOpen(true);
       }
@@ -1456,7 +1459,19 @@ export default function NewSale() {
             <div ref={printRef}>
               <PrintableInvoice 
                 sale={printSaleData.sale} 
-                items={printSaleData.items} 
+                items={printSaleData.items}
+                storeInfo={{
+                  name: appSettings.storeName,
+                  address: appSettings.storeAddress,
+                  phone: appSettings.storePhone,
+                  gstin: appSettings.gstin,
+                  dlNo: appSettings.dlNo,
+                }}
+                invoiceSettings={{
+                  showMrp: appSettings.showMrp,
+                  showGstBreakup: appSettings.showGstBreakup,
+                  showDoctor: appSettings.showDoctor,
+                }}
               />
             </div>
           )}

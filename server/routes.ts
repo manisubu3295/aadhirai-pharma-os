@@ -1095,5 +1095,40 @@ export async function registerRoutes(
     }
   });
 
+  // Settings routes
+  app.get("/api/settings", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getAllSettings();
+      const settingsMap: Record<string, string> = {};
+      for (const s of settings) {
+        settingsMap[s.key] = s.value;
+      }
+      res.json(settingsMap);
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  app.post("/api/settings", requireAuth, async (req, res) => {
+    try {
+      const settings = req.body;
+      if (!settings || typeof settings !== 'object') {
+        return res.status(400).json({ error: "Invalid settings data" });
+      }
+      
+      const settingsArray = Object.entries(settings).map(([key, value]) => ({
+        key,
+        value: String(value)
+      }));
+      
+      await storage.upsertMultipleSettings(settingsArray);
+      res.json({ message: "Settings saved successfully" });
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      res.status(500).json({ error: "Failed to save settings" });
+    }
+  });
+
   return httpServer;
 }
