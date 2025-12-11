@@ -53,12 +53,13 @@ import {
   Clock,
   Package
 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import type { Customer, Doctor, Medicine, HeldBill, Sale } from "@shared/schema";
+import { PrintableInvoice } from "@/components/PrintableInvoice";
+import type { Customer, Doctor, Medicine, HeldBill, Sale, SaleItem as SaleItemSchema } from "@shared/schema";
 
 interface SaleItem {
   id: string;
@@ -99,6 +100,9 @@ export default function NewSale() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [heldBillsDialogOpen, setHeldBillsDialogOpen] = useState(false);
   const [newMedicineDialog, setNewMedicineDialog] = useState(false);
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printSaleData, setPrintSaleData] = useState<{sale: Sale; items: SaleItemSchema[]} | null>(null);
+  const printRef = useRef<HTMLDivElement>(null);
   const generateInvoiceNumber = () => `INV-${Date.now()}`;
   const [invoiceNumber, setInvoiceNumber] = useState<string>(generateInvoiceNumber());
 
@@ -180,10 +184,16 @@ export default function NewSale() {
       if (!res.ok) throw new Error("Failed to create sale");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (saleResult: { sale: Sale; items: SaleItemSchema[] }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       toast({ title: "Invoice generated successfully!" });
+      
+      if (variables.printInvoice && saleResult.sale && saleResult.items) {
+        setPrintSaleData(saleResult);
+        setPrintDialogOpen(true);
+      }
+      
       resetForm();
     },
     onError: () => {
@@ -546,14 +556,6 @@ export default function NewSale() {
             <Button 
               variant="outline" 
               className="h-9"
-              onClick={resetForm}
-              data-testid="button-new-bill"
-            >
-              New Bill
-            </Button>
-            <Button 
-              variant="outline" 
-              className="h-9"
               onClick={handleHoldBill}
               disabled={items.length === 0 || holdBillMutation.isPending}
               data-testid="button-hold-bill"
@@ -879,13 +881,20 @@ export default function NewSale() {
                               </TableCell>
                               <TableCell className="py-3">
                                 <Input
-                                  type="number"
-                                  min={1}
-                                  max={item.availableQty}
+                                  type="text"
+                                  inputMode="numeric"
                                   value={item.quantity}
-                                  onChange={(e) =>
-                                    updateItemQuantity(item.id, parseInt(e.target.value) || 1)
-                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === '' || /^\d+$/.test(val)) {
+                                      const qty = val === '' ? 0 : parseInt(val);
+                                      updateItemQuantity(item.id, Math.min(Math.max(qty, 0), item.availableQty));
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const qty = parseInt(e.target.value) || 1;
+                                    updateItemQuantity(item.id, Math.min(Math.max(qty, 1), item.availableQty));
+                                  }}
                                   className="w-16 text-center h-8"
                                   data-testid={`input-qty-${item.id}`}
                                 />
@@ -1303,6 +1312,77 @@ export default function NewSale() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setHeldBillsDialogOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>Print Invoice</DialogTitle>
+          </DialogHeader>
+          {printSaleData && (
+            <div ref={printRef}>
+              <PrintableInvoice 
+                sale={printSaleData.sale} 
+                items={printSaleData.items} 
+              />
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>
+              Close
+            </Button>
+            <Button 
+              onClick={() => {
+                const printContent = printRef.current;
+                if (!printContent) return;
+                
+                const printWindow = window.open('', '_blank');
+                if (printWindow) {
+                  printWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                      <head>
+                        <title>Invoice</title>
+                        <style>
+                          body { margin: 0; padding: 20px; font-family: Arial, sans-serif; font-size: 12px; }
+                          table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+                          th, td { border: 1px solid black; padding: 8px; }
+                          th { background-color: #f3f4f6; text-align: left; }
+                          .text-center { text-align: center; }
+                          .text-right { text-align: right; }
+                          .font-bold { font-weight: bold; }
+                          .mb-4 { margin-bottom: 16px; }
+                          .mb-6 { margin-bottom: 24px; }
+                          .mt-2 { margin-top: 8px; }
+                          .border-b { border-bottom: 1px solid black; }
+                          .border-t-2 { border-top: 2px solid black; }
+                          .py-1 { padding-top: 4px; padding-bottom: 4px; }
+                          .py-2 { padding-top: 8px; padding-bottom: 8px; }
+                          @media print {
+                            body { margin: 0; padding: 10mm; }
+                            @page { margin: 10mm; size: A4; }
+                          }
+                        </style>
+                      </head>
+                      <body>
+                        ${printContent.innerHTML}
+                      </body>
+                    </html>
+                  `);
+                  printWindow.document.close();
+                  printWindow.focus();
+                  setTimeout(() => {
+                    printWindow.print();
+                    printWindow.close();
+                  }, 250);
+                }
+              }}
+              data-testid="button-print-invoice"
+            >
+              Print
             </Button>
           </DialogFooter>
         </DialogContent>

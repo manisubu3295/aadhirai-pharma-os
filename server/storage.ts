@@ -283,7 +283,7 @@ export interface IStorage {
   
   getSales(limit?: number): Promise<Sale[]>;
   getSale(id: number): Promise<Sale | undefined>;
-  createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<Sale>;
+  createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }>;
   getSaleItems(saleId: number): Promise<SaleItem[]>;
   
   getDashboardStats(): Promise<{
@@ -466,18 +466,18 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<Sale> {
+  async createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }> {
     const saleResult = await db.insert(sales).values(sale).returning();
     const createdSale = saleResult[0];
     
     const itemsWithSaleId = items.map(item => ({ ...item, saleId: createdSale.id }));
-    await db.insert(saleItems).values(itemsWithSaleId);
+    const createdItems = await db.insert(saleItems).values(itemsWithSaleId).returning();
     
     for (const item of items) {
       await this.updateMedicineStock(item.medicineId, -item.quantity);
     }
     
-    return createdSale;
+    return { sale: createdSale, items: createdItems };
   }
 
   async getSaleItems(saleId: number): Promise<SaleItem[]> {
