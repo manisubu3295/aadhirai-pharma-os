@@ -19,7 +19,8 @@ import {
   Tags,
   ClipboardList,
   PackageCheck,
-  Receipt
+  Receipt,
+  RotateCcw
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
@@ -64,6 +65,7 @@ export function Sidebar() {
     { icon: PackageCheck, label: "Goods Receipt", href: "/goods-receipts" },
     { icon: ShoppingCart, label: "Point of Sale", href: "/pos" },
     { icon: Receipt, label: "Credit Billing", href: "/credit-billing" },
+    { icon: RotateCcw, label: "Medicine Refund", href: "/medicine-refund" },
     { icon: Users, label: "Customers", href: "/customers" },
     { icon: FileText, label: "Reports", href: "/reports" },
     { icon: Stethoscope, label: "Doctors", href: "/doctors", proOnly: true },

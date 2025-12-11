@@ -1,0 +1,125 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app (Node/Express backend, Angular + Angular Material frontend). The app already has billing (New Sale), collections, and some refund/return handling.
+
+IMPORTANT:
+- Do NOT break existing flows.
+- Do NOT rename or remove existing DB fields or APIs.
+- Only extend or carefully restrict behaviour based on conditions.
+- Backwards compatibility with existing data is required.
+
+New requirements:
+
+A) Credit bill refunds – restrict refund modes
+B) Move refund out of Collections into a dedicated “Medicine Refund” menu
+C) Extend Collections reports to support monthly / quarterly / yearly summaries and exports (Excel & PDF)
+
+Implement the following:
+
+A) Credit bill refunds – only allow credit refund, not cash/card/UPI
+
+1) Business rule:
+- If an invoice was originally paid in CREDIT (e.g. `payment_mode = 'CREDIT'` or similar field), any medicine refund (sales return) for that invoice:
+  - MUST be processed as a CREDIT/ADJUSTMENT, not as cash, card, or UPI.
+  - That means: refund_mode must be something like `'CREDIT_ADJUSTMENT'` or `'CREDIT'`.
+- For non-credit invoices (cash/UPI/card bills), existing refund logic can remain as-is (refund via the same payment modes is allowed).
+
+2) Backend changes:
+- In the sales return / refund API (for example `POST /api/sales-returns` or whichever endpoint currently handles refunds/returns):
+  - Look up the original invoice by `original_invoice_id`.
+  - If `invoice.payment_mode` is CREDIT:
+    - Validate that `refund_mode` in the request is CREDIT or CREDIT_ADJUSTMENT.
+    - If `refund_mode` is CASH/UPI/CARD, reject the request with a 400 error and a clear message:
+      `"Credit bill refunds must be processed as credit adjustments, not cash/card/UPI."`
+  - For non-credit invoices, keep existing behaviour.
+
+- Ensure that any accounting/collection entry for this refund:
+  - Does NOT create a positive cash entry for credit refunds.
+  - Instead, creates a credit adjustment entry that reduces the outstanding credit for that customer or the credit bucket (depending on how credits are currently tracked).
+
+3) Frontend (New Sale / Refund UI):
+- In any refund dialog/page where refund mode is selected:
+  - When loading a refund for an invoice paid in CREDIT:
+    - Hide or disable CASH/UPI/CARD options.
+    - Only show CREDIT/ADJUSTMENT as available refund mode.
+  - Show a small note: “This is a credit bill; refund will be adjusted in credit, not paid in cash.”
+- For non-credit invoices, keep the existing choices.
+
+B) Remove refund from Collections and create a dedicated “Medicine Refund” menu
+
+1) Collections screen:
+- Identify the current **Collections** page where you show datewise collections and possibly allow refunds or adjustments.
+- Remove the “Refund” action/button from the Collections screen so users cannot trigger refunds from there anymore.
+  - Keep view-only behaviour for collections on that page:
+    - You can still show sales, payments, and collections, but no refund actions.
+
+2) New “Medicine Refund” menu:
+- Add a new main menu item in the sidebar called **“Medicine Refund”** or **“Sales Return”**.
+- This new page should:
+  - Allow searching invoices (e.g., by invoice number, date, customer).
+  - When an invoice is selected, open the existing refund/return UI (or a new dedicated component reusing existing logic) where:
+    - Items can be selected for return.
+    - Quantities can be entered.
+    - Refund mode selection honours the new credit rule described above.
+- Reuse the existing refund/sales return APIs rather than creating duplicate endpoints.
+- Ensure that all stock adjustments and financial entries for refunds happen only through this new “Medicine Refund” page, not through Collections.
+
+C) Collections: monthly / quarterly / yearly reports + Excel/PDF exports
+
+Currently collections are only datewise. Extend them as follows:
+
+1) Backend – reporting endpoints:
+- Add or extend reporting endpoints so that collections can be aggregated by:
+  - Monthly (group by year + month)
+  - Quarterly (group by year + Q1/Q2/Q3/Q4)
+  - Yearly (group by year)
+
+Examples (adapt paths/names to match existing APIs, do not break them):
+- `GET /api/reports/collections/daily?date=YYYY-MM-DD`
+- `GET /api/reports/collections/monthly?year=YYYY`
+  - Returns a list of months with total collections, separated by payment modes (cash, UPI, card, credit, etc.).
+- `GET /api/reports/collections/quarterly?year=YYYY`
+  - Returns Q1–Q4 aggregates.
+- `GET /api/reports/collections/yearly`
+  - Returns per-year collection totals.
+
+Make sure:
+- These endpoints do NOT change the behaviour of any existing daily-only collection endpoint.
+- They always return clear, structured JSON that the frontend can use for tables and exports (e.g. month name, year, totals by mode, net total).
+
+2) Frontend – Collections UI:
+- On the Collections screen, add tabs or filters to view:
+  - Daily (existing behaviour)
+  - Monthly
+  - Quarterly
+  - Yearly
+- For each mode:
+  - Show a table with appropriate columns. Examples:
+    - Monthly: Month, Year, Cash Total, UPI Total, Card Total, Credit Collections, Net Total.
+    - Quarterly: Quarter, Year, totals by mode and net.
+    - Yearly: Year, totals by mode and net.
+
+3) Excel and PDF exports:
+- Add export buttons (e.g. Angular Material buttons) for:
+  - Export Monthly Collections (current filter) to Excel and PDF.
+  - Export Quarterly Collections to Excel and PDF.
+  - Export Yearly Collections to Excel and PDF.
+- Use or extend the existing export logic/utilities if present:
+  - If there is already a datewise Excel/PDF export, reuse the same library (e.g. SheetJS, jsPDF) and only change the data mapping.
+- Make sure exports:
+  - Include filter context (e.g. “Collections – Monthly – Year 2025” in header).
+  - Include breakdown by payment modes and net total.
+  - Do not change current datewise export format (add new options instead of replacing).
+
+4) Safety and compatibility:
+- Do NOT remove existing datewise collections API or UI; just add new options on top.
+- Ensure that adding monthly/quarterly/yearly report endpoints does not require destructive DB schema changes; use existing transaction/collections tables and aggregate via SQL/ORM queries.
+- After implementation, manually verify:
+  - Daily view still works as before.
+  - Refunds can only be initiated from the new “Medicine Refund” menu.
+  - Credit bill refunds can only be done as credit adjustments, not cash/UPI/card.
+  - Monthly, quarterly, and yearly reports show correct totals and exports work in both Excel and PDF.
+
+Search the codebase for:
+- Existing collections endpoints and components.
+- Existing refund/return logic (backend & frontend).
+- Existing export utilities (Excel/PDF).
+Extend them according to the above requirements without breaking existing functionality.

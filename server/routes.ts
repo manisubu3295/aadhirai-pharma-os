@@ -510,6 +510,129 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/reports/collections/monthly", async (req, res) => {
+    try {
+      const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
+      const allSales = await storage.getSales(10000);
+      
+      const monthlyData: Record<string, { cash: number; card: number; upi: number; credit: number; total: number }> = {};
+      
+      for (let month = 1; month <= 12; month++) {
+        const monthKey = `${year}-${month.toString().padStart(2, '0')}`;
+        monthlyData[monthKey] = { cash: 0, card: 0, upi: 0, credit: 0, total: 0 };
+      }
+      
+      allSales.forEach((sale) => {
+        const saleDate = new Date(sale.createdAt);
+        if (saleDate.getFullYear() === year) {
+          const monthKey = `${year}-${(saleDate.getMonth() + 1).toString().padStart(2, '0')}`;
+          const amount = parseFloat(String(sale.total));
+          const method = sale.paymentMethod?.toLowerCase() || 'cash';
+          
+          if (monthlyData[monthKey]) {
+            monthlyData[monthKey].total += amount;
+            if (method === 'cash') monthlyData[monthKey].cash += amount;
+            else if (method === 'card') monthlyData[monthKey].card += amount;
+            else if (method === 'upi') monthlyData[monthKey].upi += amount;
+            else if (method === 'credit') monthlyData[monthKey].credit += amount;
+            else monthlyData[monthKey].cash += amount;
+          }
+        }
+      });
+      
+      const result = Object.entries(monthlyData).map(([month, data]) => ({
+        month,
+        year,
+        monthName: new Date(`${month}-01`).toLocaleString('default', { month: 'long' }),
+        ...data
+      }));
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Monthly collections error:", error);
+      res.status(500).json({ error: "Failed to fetch monthly collections" });
+    }
+  });
+
+  app.get("/api/reports/collections/quarterly", async (req, res) => {
+    try {
+      const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
+      const allSales = await storage.getSales(10000);
+      
+      const quarterlyData: Record<string, { cash: number; card: number; upi: number; credit: number; total: number }> = {
+        'Q1': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 },
+        'Q2': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 },
+        'Q3': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 },
+        'Q4': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 }
+      };
+      
+      allSales.forEach((sale) => {
+        const saleDate = new Date(sale.createdAt);
+        if (saleDate.getFullYear() === year) {
+          const month = saleDate.getMonth();
+          const quarter = month < 3 ? 'Q1' : month < 6 ? 'Q2' : month < 9 ? 'Q3' : 'Q4';
+          const amount = parseFloat(String(sale.total));
+          const method = sale.paymentMethod?.toLowerCase() || 'cash';
+          
+          quarterlyData[quarter].total += amount;
+          if (method === 'cash') quarterlyData[quarter].cash += amount;
+          else if (method === 'card') quarterlyData[quarter].card += amount;
+          else if (method === 'upi') quarterlyData[quarter].upi += amount;
+          else if (method === 'credit') quarterlyData[quarter].credit += amount;
+          else quarterlyData[quarter].cash += amount;
+        }
+      });
+      
+      const result = Object.entries(quarterlyData).map(([quarter, data]) => ({
+        quarter,
+        year,
+        ...data
+      }));
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Quarterly collections error:", error);
+      res.status(500).json({ error: "Failed to fetch quarterly collections" });
+    }
+  });
+
+  app.get("/api/reports/collections/yearly", async (req, res) => {
+    try {
+      const allSales = await storage.getSales(10000);
+      
+      const yearlyData: Record<number, { cash: number; card: number; upi: number; credit: number; total: number }> = {};
+      
+      allSales.forEach((sale) => {
+        const saleDate = new Date(sale.createdAt);
+        const year = saleDate.getFullYear();
+        
+        if (!yearlyData[year]) {
+          yearlyData[year] = { cash: 0, card: 0, upi: 0, credit: 0, total: 0 };
+        }
+        
+        const amount = parseFloat(String(sale.total));
+        const method = sale.paymentMethod?.toLowerCase() || 'cash';
+        
+        yearlyData[year].total += amount;
+        if (method === 'cash') yearlyData[year].cash += amount;
+        else if (method === 'card') yearlyData[year].card += amount;
+        else if (method === 'upi') yearlyData[year].upi += amount;
+        else if (method === 'credit') yearlyData[year].credit += amount;
+        else yearlyData[year].cash += amount;
+      });
+      
+      const result = Object.entries(yearlyData).map(([year, data]) => ({
+        year: parseInt(year),
+        ...data
+      })).sort((a, b) => b.year - a.year);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Yearly collections error:", error);
+      res.status(500).json({ error: "Failed to fetch yearly collections" });
+    }
+  });
+
   app.get("/api/locations", async (req, res) => {
     try {
       const locations = await storage.getLocations();
@@ -1048,6 +1171,18 @@ export async function registerRoutes(
       const saleWithReturns = await storage.getSaleWithReturns(returnData.originalSaleId);
       if (!saleWithReturns) {
         return res.status(404).json({ error: "Original sale not found" });
+      }
+      
+      const originalPaymentMethod = saleWithReturns.sale.paymentMethod?.toLowerCase();
+      const requestedRefundMode = returnData.refundMode?.toLowerCase();
+      
+      if (originalPaymentMethod === "credit") {
+        const allowedCreditRefundModes = ["credit", "adjustment", "credit_adjustment"];
+        if (!allowedCreditRefundModes.includes(requestedRefundMode)) {
+          return res.status(400).json({ 
+            error: "Credit bill refunds must be processed as credit adjustments, not cash/card/UPI." 
+          });
+        }
       }
       
       const returnItems = items || [];

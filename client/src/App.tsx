@@ -27,6 +27,7 @@ import PurchaseOrders from "@/pages/PurchaseOrders";
 import GoodsReceipts from "@/pages/GoodsReceipts";
 import Profile from "@/pages/Profile";
 import CreditBilling from "@/pages/CreditBilling";
+import MedicineRefund from "@/pages/MedicineRefund";
 
 function Router() {
   return (
@@ -125,6 +126,11 @@ function Router() {
       <Route path="/credit-billing">
         <ProtectedRoute>
           <CreditBilling />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/medicine-refund">
+        <ProtectedRoute>
+          <MedicineRefund />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />

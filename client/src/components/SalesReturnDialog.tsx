@@ -27,6 +27,7 @@ interface SaleWithReturns {
     invoiceNo: string;
     customerName: string;
     total: string;
+    paymentMethod: string;
   };
   items: SaleItem[];
   returns: any[];
@@ -68,8 +69,14 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
         initialQty[item.id] = 0;
       });
       setReturnQuantities(initialQty);
+      
+      if (saleData.sale.paymentMethod?.toLowerCase() === "credit") {
+        setRefundMode("adjustment");
+      }
     }
   }, [saleData]);
+
+  const isCreditBill = saleData?.sale.paymentMethod?.toLowerCase() === "credit";
 
   const createReturnMutation = useMutation({
     mutationFn: async (data: { originalSaleId: number; refundMode: string; reason: string; items: ReturnItem[] }) => {
@@ -212,17 +219,30 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Refund Mode</Label>
-                <Select value={refundMode} onValueChange={setRefundMode}>
+                <Select 
+                  value={refundMode} 
+                  onValueChange={setRefundMode}
+                  disabled={isCreditBill}
+                >
                   <SelectTrigger data-testid="select-refund-mode">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="upi">UPI</SelectItem>
-                    <SelectItem value="card">Card</SelectItem>
+                    {!isCreditBill && (
+                      <>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="upi">UPI</SelectItem>
+                        <SelectItem value="card">Card</SelectItem>
+                      </>
+                    )}
                     <SelectItem value="adjustment">Credit Adjustment</SelectItem>
                   </SelectContent>
                 </Select>
+                {isCreditBill && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    This is a credit bill; refund will be adjusted in credit, not paid in cash.
+                  </p>
+                )}
               </div>
               <div className="flex items-end">
                 <div className="w-full text-right">
