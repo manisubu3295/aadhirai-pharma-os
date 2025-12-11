@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RotateCcw, Search, Receipt } from "lucide-react";
+import { RotateCcw, Search, Receipt, FileSpreadsheet, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { SalesReturnDialog } from "@/components/SalesReturnDialog";
 
@@ -20,15 +20,31 @@ interface Sale {
   createdAt: string;
 }
 
+interface SalesReturn {
+  id: number;
+  saleId: number;
+  invoiceNo: string;
+  returnDate: string;
+  totalRefund: string;
+  refundMode: string;
+  reason: string;
+  createdAt: string;
+}
+
 export default function MedicineRefund() {
+  const today = format(new Date(), "yyyy-MM-dd");
   const [searchTerm, setSearchTerm] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
 
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+  });
+
+  const { data: salesReturns = [] } = useQuery<SalesReturn[]>({
+    queryKey: ["/api/sales-returns"],
   });
 
   const openReturnDialog = (saleId: number) => {
@@ -43,22 +59,104 @@ export default function MedicineRefund() {
       sale.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       sale.customerPhone?.includes(searchTerm);
 
-    let matchesDate = true;
-    if (dateFrom || dateTo) {
-      const saleDate = new Date(sale.createdAt);
-      if (dateFrom) {
-        const fromDate = new Date(dateFrom);
-        matchesDate = matchesDate && saleDate >= fromDate;
-      }
-      if (dateTo) {
-        const toDate = new Date(dateTo);
-        toDate.setHours(23, 59, 59, 999);
-        matchesDate = matchesDate && saleDate <= toDate;
-      }
-    }
+    const saleDate = new Date(sale.createdAt);
+    const fromDate = new Date(dateFrom);
+    const toDate = new Date(dateTo);
+    toDate.setHours(23, 59, 59, 999);
+    
+    const matchesDate = saleDate >= fromDate && saleDate <= toDate;
 
     return matchesSearch && matchesDate;
   });
+
+  const filteredReturns = salesReturns.filter((ret) => {
+    const matchesSearch = 
+      !searchTerm ||
+      ret.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const returnDate = new Date(ret.createdAt);
+    const fromDate = new Date(dateFrom);
+    const toDate = new Date(dateTo);
+    toDate.setHours(23, 59, 59, 999);
+    
+    const matchesDate = returnDate >= fromDate && returnDate <= toDate;
+
+    return matchesSearch && matchesDate;
+  });
+
+  const exportToCSV = () => {
+    const headers = ["Return Invoice", "Original Invoice", "Date", "Refund Amount", "Refund Mode", "Reason"];
+    const rows = filteredReturns.map(ret => [
+      `RET-${ret.id}`,
+      ret.invoiceNo,
+      format(new Date(ret.createdAt), "dd/MM/yyyy HH:mm"),
+      ret.totalRefund,
+      ret.refundMode,
+      ret.reason || ""
+    ]);
+    
+    const csvContent = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `refunds_${dateFrom}_to_${dateTo}.csv`;
+    a.click();
+  };
+
+  const exportToPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Refunds Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #1e40af; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #1e40af; color: white; }
+          .text-right { text-align: right; }
+          .total { margin-top: 20px; font-size: 18px; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <h1>Medicine Refunds Report</h1>
+        <p>Period: ${format(new Date(dateFrom), "dd MMM yyyy")} - ${format(new Date(dateTo), "dd MMM yyyy")}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Return Invoice</th>
+              <th>Original Invoice</th>
+              <th>Date</th>
+              <th>Refund Mode</th>
+              <th class="text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredReturns.map(ret => `
+              <tr>
+                <td>RET-${ret.id}</td>
+                <td>${ret.invoiceNo}</td>
+                <td>${format(new Date(ret.createdAt), "dd/MM/yyyy HH:mm")}</td>
+                <td>${ret.refundMode}</td>
+                <td class="text-right">₹${parseFloat(ret.totalRefund).toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <p class="total">Total Refunds: ₹${filteredReturns.reduce((sum, r) => sum + parseFloat(r.totalRefund), 0).toFixed(2)}</p>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.print();
+  };
 
   return (
     <AppLayout title="Medicine Refund">
@@ -109,9 +207,11 @@ export default function MedicineRefund() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Receipt className="w-5 h-5" />
-              Invoice List ({filteredSales.length} results)
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Receipt className="w-5 h-5" />
+                Invoices for Refund ({filteredSales.length} results)
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -119,9 +219,7 @@ export default function MedicineRefund() {
               <p className="text-center py-8">Loading...</p>
             ) : filteredSales.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
-                {searchTerm || dateFrom || dateTo 
-                  ? "No invoices found matching your search criteria" 
-                  : "Enter search criteria to find invoices for refund"}
+                No invoices found for the selected date range
               </p>
             ) : (
               <Table>
@@ -169,6 +267,67 @@ export default function MedicineRefund() {
                           <RotateCcw className="h-4 w-4 mr-1" />
                           Process Return
                         </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <RotateCcw className="w-5 h-5" />
+                Recent Refunds ({filteredReturns.length} results)
+              </span>
+              <div className="flex items-center gap-2">
+                <Button onClick={exportToCSV} variant="outline" size="sm" data-testid="button-export-refunds-csv">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Excel
+                </Button>
+                <Button onClick={exportToPDF} variant="outline" size="sm" data-testid="button-export-refunds-pdf">
+                  <FileText className="w-4 h-4 mr-2" />
+                  PDF
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {filteredReturns.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">
+                No refunds found for the selected date range
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Return No</TableHead>
+                    <TableHead>Original Invoice</TableHead>
+                    <TableHead>Date & Time</TableHead>
+                    <TableHead>Refund Mode</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead className="text-right">Refund Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredReturns.map((ret) => (
+                    <TableRow key={ret.id} data-testid={`row-refund-${ret.id}`}>
+                      <TableCell className="font-medium">RET-{ret.id}</TableCell>
+                      <TableCell>{ret.invoiceNo}</TableCell>
+                      <TableCell>
+                        {format(new Date(ret.createdAt), "dd MMM yyyy, hh:mm a")}
+                      </TableCell>
+                      <TableCell>
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                          {ret.refundMode}
+                        </span>
+                      </TableCell>
+                      <TableCell>{ret.reason || "-"}</TableCell>
+                      <TableCell className="text-right font-semibold text-red-600">
+                        -₹{parseFloat(ret.totalRefund).toFixed(2)}
                       </TableCell>
                     </TableRow>
                   ))}

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode, Printer, Calendar, CalendarDays, CalendarRange } from "lucide-react";
+import { FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode, Printer, Calendar, CalendarDays, CalendarRange, Users, Package, RotateCcw, Search } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
 import { format } from "date-fns";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
@@ -34,7 +34,25 @@ interface Sale {
   receivedAmount: string;
   changeAmount: string;
   createdAt: string;
-  userId: string | null;
+  userId: number | null;
+}
+
+interface SalesReturn {
+  id: number;
+  saleId: number;
+  invoiceNo: string;
+  returnDate: string;
+  totalRefund: string;
+  refundMode: string;
+  reason: string;
+  createdAt: string;
+}
+
+interface User {
+  id: number;
+  username: string;
+  name: string;
+  role: string;
 }
 
 interface MonthlyData {
@@ -77,6 +95,7 @@ export default function Collections() {
   const [dateTo, setDateTo] = useState(format(today, "yyyy-MM-dd"));
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState(currentYear.toString());
+  const [searchTerm, setSearchTerm] = useState("");
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const [printSale, setPrintSale] = useState<Sale | null>(null);
   const [printItems, setPrintItems] = useState<SaleItem[]>([]);
@@ -138,6 +157,14 @@ export default function Collections() {
     queryKey: ["/api/sales"],
   });
 
+  const { data: salesReturns = [] } = useQuery<SalesReturn[]>({
+    queryKey: ["/api/sales-returns"],
+  });
+
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
   const { data: monthlyData = [], isLoading: monthlyLoading } = useQuery<MonthlyData[]>({
     queryKey: ["/api/reports/collections/monthly", selectedYear],
     queryFn: async () => {
@@ -179,7 +206,7 @@ export default function Collections() {
               </div>
               <h3 className="text-lg font-semibold mb-2">PRO Feature</h3>
               <p className="text-muted-foreground">
-                Collections module is available in the PRO plan. Switch to PRO to access detailed collection reports with CSV/PDF exports.
+                Collections module is available in the PRO plan.
               </p>
             </CardContent>
           </Card>
@@ -188,16 +215,26 @@ export default function Collections() {
     );
   }
 
-  const filteredSales = sales.filter((sale) => {
-    const saleDate = new Date(sale.createdAt);
-    const fromDate = new Date(dateFrom);
-    const toDate = new Date(dateTo);
-    toDate.setHours(23, 59, 59, 999);
-    
-    const dateMatch = saleDate >= fromDate && saleDate <= toDate;
+  const filterByDateRange = <T extends { createdAt?: string; returnDate?: string }>(items: T[]) => {
+    return items.filter((item) => {
+      const itemDate = new Date(item.createdAt || item.returnDate || "");
+      const fromDate = new Date(dateFrom);
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      return itemDate >= fromDate && itemDate <= toDate;
+    });
+  };
+
+  const filteredSales = filterByDateRange(sales).filter((sale) => {
     const paymentMatch = paymentFilter === "all" || sale.paymentMethod.toLowerCase() === paymentFilter.toLowerCase();
-    
-    return dateMatch && paymentMatch;
+    const searchMatch = !searchTerm || 
+      sale.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      sale.customerName?.toLowerCase().includes(searchTerm.toLowerCase());
+    return paymentMatch && searchMatch;
+  });
+
+  const filteredReturns = filterByDateRange(salesReturns).filter((ret) => {
+    return !searchTerm || ret.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   const paymentTotals = filteredSales.reduce((acc, sale) => {
@@ -208,88 +245,73 @@ export default function Collections() {
 
   const grandTotal = Object.values(paymentTotals).reduce((a, b) => a + b, 0);
 
-  const exportDailyToCSV = () => {
-    const headers = ["Invoice No", "Date", "Customer", "Payment Method", "Amount"];
-    const rows = filteredSales.map(sale => [
-      sale.invoiceNo || `INV-${sale.id}`,
-      format(new Date(sale.createdAt), "dd/MM/yyyy HH:mm"),
-      sale.customerName,
-      sale.paymentMethod,
-      sale.total
-    ]);
+  const staffCollections = filteredSales.reduce((acc, sale) => {
+    const staffId = sale.userId || 0;
+    const staff = users.find(u => u.id === staffId);
+    const staffName = staff?.name || staff?.username || "Unknown";
     
-    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    if (!acc[staffName]) {
+      acc[staffName] = { name: staffName, cash: 0, card: 0, upi: 0, credit: 0, total: 0, count: 0 };
+    }
+    
+    const amount = parseFloat(sale.total);
+    const method = sale.paymentMethod?.toLowerCase();
+    acc[staffName].total += amount;
+    acc[staffName].count += 1;
+    if (method === 'cash') acc[staffName].cash += amount;
+    else if (method === 'card') acc[staffName].card += amount;
+    else if (method === 'upi') acc[staffName].upi += amount;
+    else if (method === 'credit') acc[staffName].credit += amount;
+    
+    return acc;
+  }, {} as Record<string, { name: string; cash: number; card: number; upi: number; credit: number; total: number; count: number }>);
+
+  const staffCollectionsList = Object.values(staffCollections).filter(s => 
+    !searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const [itemCollections, setItemCollections] = useState<Record<string, { name: string; qty: number; total: number }>>({});
+
+  const fetchItemCollections = async () => {
+    const itemData: Record<string, { name: string; qty: number; total: number }> = {};
+    
+    for (const sale of filteredSales) {
+      try {
+        const res = await fetch(`/api/sales/${sale.id}/items`);
+        if (res.ok) {
+          const items = await res.json();
+          items.forEach((item: any) => {
+            const key = item.medicineName || `Item-${item.medicineId}`;
+            if (!itemData[key]) {
+              itemData[key] = { name: key, qty: 0, total: 0 };
+            }
+            itemData[key].qty += item.quantity || 0;
+            itemData[key].total += parseFloat(item.total || "0");
+          });
+        }
+      } catch (e) {
+        console.error("Failed to fetch items for sale", sale.id);
+      }
+    }
+    
+    setItemCollections(itemData);
+  };
+
+  const itemCollectionsList = Object.values(itemCollections).filter(i => 
+    !searchTerm || i.name.toLowerCase().includes(searchTerm.toLowerCase())
+  ).sort((a, b) => b.total - a.total);
+
+  const exportToCSV = (filename: string, headers: string[], rows: string[][]) => {
+    const csvContent = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `collections_daily_${dateFrom}_to_${dateTo}.csv`;
+    a.download = filename;
     a.click();
   };
 
-  const exportMonthlyToCSV = () => {
-    const headers = ["Month", "Year", "Cash", "Card", "UPI", "Credit", "Total"];
-    const rows = monthlyData.map(d => [
-      d.monthName,
-      d.year,
-      d.cash.toFixed(2),
-      d.card.toFixed(2),
-      d.upi.toFixed(2),
-      d.credit.toFixed(2),
-      d.total.toFixed(2)
-    ]);
-    
-    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `collections_monthly_${selectedYear}.csv`;
-    a.click();
-  };
-
-  const exportQuarterlyToCSV = () => {
-    const headers = ["Quarter", "Year", "Cash", "Card", "UPI", "Credit", "Total"];
-    const rows = quarterlyData.map(d => [
-      d.quarter,
-      d.year,
-      d.cash.toFixed(2),
-      d.card.toFixed(2),
-      d.upi.toFixed(2),
-      d.credit.toFixed(2),
-      d.total.toFixed(2)
-    ]);
-    
-    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `collections_quarterly_${selectedYear}.csv`;
-    a.click();
-  };
-
-  const exportYearlyToCSV = () => {
-    const headers = ["Year", "Cash", "Card", "UPI", "Credit", "Total"];
-    const rows = yearlyData.map(d => [
-      d.year,
-      d.cash.toFixed(2),
-      d.card.toFixed(2),
-      d.upi.toFixed(2),
-      d.credit.toFixed(2),
-      d.total.toFixed(2)
-    ]);
-    
-    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `collections_yearly.csv`;
-    a.click();
-  };
-
-  const exportToPDF = (title: string, headers: string[], rows: string[][], totals?: Record<string, number>) => {
+  const exportToPDF = (title: string, headers: string[], rows: string[][]) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
     
@@ -305,34 +327,19 @@ export default function Collections() {
           th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
           th { background-color: #1e40af; color: white; }
           .text-right { text-align: right; }
-          .totals { margin-top: 20px; background: #f5f5f5; padding: 15px; }
-          .grand-total { font-size: 18px; font-weight: bold; color: #1e40af; }
         </style>
       </head>
       <body>
         <h1>${title}</h1>
+        <p>Period: ${format(new Date(dateFrom), "dd MMM yyyy")} - ${format(new Date(dateTo), "dd MMM yyyy")}</p>
         <table>
           <thead>
-            <tr>
-              ${headers.map(h => `<th>${h}</th>`).join('')}
-            </tr>
+            <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
           </thead>
           <tbody>
-            ${rows.map(row => `
-              <tr>
-                ${row.map((cell, i) => `<td class="${i >= row.length - 5 ? 'text-right' : ''}">${cell}</td>`).join('')}
-              </tr>
-            `).join('')}
+            ${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}
           </tbody>
         </table>
-        ${totals ? `
-          <div class="totals">
-            <h3>Summary by Payment Method</h3>
-            ${Object.entries(totals).map(([method, total]) => 
-              `<p>${method}: ₹${total.toFixed(2)}</p>`
-            ).join('')}
-          </div>
-        ` : ''}
       </body>
       </html>
     `;
@@ -353,25 +360,92 @@ export default function Collections() {
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
+  const DateFilters = ({ showPayment = true, showSearch = true }: { showPayment?: boolean; showSearch?: boolean }) => (
+    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+      {showSearch && (
+        <div>
+          <Label>Search</Label>
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+              data-testid="input-search"
+            />
+          </div>
+        </div>
+      )}
+      <div>
+        <Label>From Date</Label>
+        <Input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          data-testid="input-date-from"
+        />
+      </div>
+      <div>
+        <Label>To Date</Label>
+        <Input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          data-testid="input-date-to"
+        />
+      </div>
+      {showPayment && (
+        <div>
+          <Label>Payment Mode</Label>
+          <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+            <SelectTrigger data-testid="select-payment-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Methods</SelectItem>
+              <SelectItem value="cash">Cash</SelectItem>
+              <SelectItem value="card">Card</SelectItem>
+              <SelectItem value="upi">UPI</SelectItem>
+              <SelectItem value="credit">Credit</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <AppLayout title="Collections">
       <div className="space-y-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 max-w-md">
+        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSearchTerm(""); }}>
+          <TabsList className="grid w-full grid-cols-7 max-w-4xl">
             <TabsTrigger value="daily" data-testid="tab-daily">
-              <Calendar className="w-4 h-4 mr-2" />
+              <Calendar className="w-4 h-4 mr-1" />
               Daily
             </TabsTrigger>
+            <TabsTrigger value="refunds" data-testid="tab-refunds">
+              <RotateCcw className="w-4 h-4 mr-1" />
+              Refunds
+            </TabsTrigger>
+            <TabsTrigger value="by-staff" data-testid="tab-by-staff">
+              <Users className="w-4 h-4 mr-1" />
+              By Staff
+            </TabsTrigger>
+            <TabsTrigger value="by-item" data-testid="tab-by-item" onClick={fetchItemCollections}>
+              <Package className="w-4 h-4 mr-1" />
+              By Item
+            </TabsTrigger>
             <TabsTrigger value="monthly" data-testid="tab-monthly">
-              <CalendarDays className="w-4 h-4 mr-2" />
+              <CalendarDays className="w-4 h-4 mr-1" />
               Monthly
             </TabsTrigger>
             <TabsTrigger value="quarterly" data-testid="tab-quarterly">
-              <CalendarRange className="w-4 h-4 mr-2" />
+              <CalendarRange className="w-4 h-4 mr-1" />
               Quarterly
             </TabsTrigger>
             <TabsTrigger value="yearly" data-testid="tab-yearly">
-              <CalendarRange className="w-4 h-4 mr-2" />
+              <CalendarRange className="w-4 h-4 mr-1" />
               Yearly
             </TabsTrigger>
           </TabsList>
@@ -379,105 +453,66 @@ export default function Collections() {
           <TabsContent value="daily" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="w-5 h-5" />
-                  Daily Collection Filters
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div>
-                    <Label>From Date</Label>
-                    <Input
-                      type="date"
-                      value={dateFrom}
-                      onChange={(e) => setDateFrom(e.target.value)}
-                      data-testid="input-date-from"
-                    />
-                  </div>
-                  <div>
-                    <Label>To Date</Label>
-                    <Input
-                      type="date"
-                      value={dateTo}
-                      onChange={(e) => setDateTo(e.target.value)}
-                      data-testid="input-date-to"
-                    />
-                  </div>
-                  <div>
-                    <Label>Payment Mode</Label>
-                    <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-                      <SelectTrigger data-testid="select-payment-filter">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Methods</SelectItem>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="card">Card</SelectItem>
-                        <SelectItem value="upi">UPI</SelectItem>
-                        <SelectItem value="credit">Credit</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Button onClick={exportDailyToCSV} variant="outline" className="flex-1" data-testid="button-export-csv">
-                      <FileSpreadsheet className="w-4 h-4 mr-2" />
-                      CSV
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <CreditCard className="w-5 h-5" />
+                    Daily Collections
+                  </span>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => exportToCSV(
+                        `collections_daily_${dateFrom}_to_${dateTo}.csv`,
+                        ["Invoice No", "Date", "Customer", "Payment Method", "Amount"],
+                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, format(new Date(s.createdAt), "dd/MM/yyyy HH:mm"), s.customerName, s.paymentMethod, s.total])
+                      )} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-export-csv"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
                     </Button>
                     <Button 
                       onClick={() => exportToPDF(
-                        `Collections Report - ${format(new Date(dateFrom), "dd MMM yyyy")} to ${format(new Date(dateTo), "dd MMM yyyy")}`,
-                        ["Invoice No", "Date", "Customer", "Payment Method", "Amount"],
-                        filteredSales.map(sale => [
-                          sale.invoiceNo || `INV-${sale.id}`,
-                          format(new Date(sale.createdAt), "dd/MM/yyyy HH:mm"),
-                          sale.customerName,
-                          sale.paymentMethod,
-                          `₹${parseFloat(sale.total).toFixed(2)}`
-                        ]),
-                        paymentTotals
+                        "Daily Collections Report",
+                        ["Invoice No", "Date", "Customer", "Payment", "Amount"],
+                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, format(new Date(s.createdAt), "dd/MM/yyyy"), s.customerName, s.paymentMethod, `₹${parseFloat(s.total).toFixed(2)}`])
                       )} 
                       variant="outline" 
-                      className="flex-1" 
+                      size="sm"
                       data-testid="button-export-pdf"
                     >
-                      <FileText className="w-4 h-4 mr-2" />
-                      PDF
+                      <FileText className="w-4 h-4 mr-2" />PDF
                     </Button>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {Object.entries(paymentTotals).map(([method, total]) => (
-                <Card key={method}>
-                  <CardContent className="pt-4">
-                    <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                      {getPaymentIcon(method)}
-                      {method}
-                    </div>
-                    <p className="text-2xl font-bold mt-1">₹{total.toFixed(2)}</p>
-                  </CardContent>
-                </Card>
-              ))}
-              <Card className="bg-primary text-primary-foreground">
-                <CardContent className="pt-4">
-                  <div className="text-sm opacity-80">Grand Total</div>
-                  <p className="text-2xl font-bold mt-1">₹{grandTotal.toFixed(2)}</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Collection Details ({filteredSales.length} transactions)</CardTitle>
+                </CardTitle>
               </CardHeader>
               <CardContent>
+                <DateFilters />
+                
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                  {Object.entries(paymentTotals).map(([method, total]) => (
+                    <Card key={method}>
+                      <CardContent className="pt-4">
+                        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                          {getPaymentIcon(method)}
+                          {method}
+                        </div>
+                        <p className="text-2xl font-bold mt-1">₹{total.toFixed(2)}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  <Card className="bg-primary text-primary-foreground">
+                    <CardContent className="pt-4">
+                      <div className="text-sm opacity-80">Grand Total</div>
+                      <p className="text-2xl font-bold mt-1">₹{grandTotal.toFixed(2)}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
                 {salesLoading ? (
                   <p>Loading...</p>
                 ) : filteredSales.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">No collections found for the selected period</p>
+                  <p className="text-muted-foreground text-center py-8">No collections found</p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -485,7 +520,7 @@ export default function Collections() {
                         <TableHead>Invoice No</TableHead>
                         <TableHead>Date & Time</TableHead>
                         <TableHead>Customer</TableHead>
-                        <TableHead>Payment Method</TableHead>
+                        <TableHead>Payment</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -504,17 +539,255 @@ export default function Collections() {
                           </TableCell>
                           <TableCell className="text-right font-semibold">₹{parseFloat(sale.total).toFixed(2)}</TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleReprint(sale)}
-                              data-testid={`button-reprint-${sale.id}`}
-                            >
+                            <Button variant="ghost" size="sm" onClick={() => handleReprint(sale)} data-testid={`button-reprint-${sale.id}`}>
                               <Printer className="h-4 w-4" />
                             </Button>
                           </TableCell>
                         </TableRow>
                       ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="refunds" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <RotateCcw className="w-5 h-5" />
+                    Refund List ({filteredReturns.length})
+                  </span>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => exportToCSV(
+                        `refunds_${dateFrom}_to_${dateTo}.csv`,
+                        ["Return No", "Invoice", "Date", "Refund Mode", "Amount", "Reason"],
+                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, format(new Date(r.createdAt), "dd/MM/yyyy"), r.refundMode, r.totalRefund, r.reason || ""])
+                      )} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-export-refunds-csv"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+                    </Button>
+                    <Button 
+                      onClick={() => exportToPDF(
+                        "Refunds Report",
+                        ["Return No", "Invoice", "Date", "Mode", "Amount"],
+                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, format(new Date(r.createdAt), "dd/MM/yyyy"), r.refundMode, `₹${parseFloat(r.totalRefund).toFixed(2)}`])
+                      )} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-export-refunds-pdf"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />PDF
+                    </Button>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DateFilters showPayment={false} />
+                
+                <div className="mb-4">
+                  <Card className="bg-red-50">
+                    <CardContent className="pt-4">
+                      <div className="text-sm text-red-600">Total Refunds</div>
+                      <p className="text-2xl font-bold text-red-700">
+                        -₹{filteredReturns.reduce((s, r) => s + parseFloat(r.totalRefund), 0).toFixed(2)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {filteredReturns.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">No refunds found</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Return No</TableHead>
+                        <TableHead>Original Invoice</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Refund Mode</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredReturns.map((ret) => (
+                        <TableRow key={ret.id} data-testid={`row-refund-${ret.id}`}>
+                          <TableCell className="font-medium">RET-{ret.id}</TableCell>
+                          <TableCell>{ret.invoiceNo}</TableCell>
+                          <TableCell>{format(new Date(ret.createdAt), "dd MMM yyyy, hh:mm a")}</TableCell>
+                          <TableCell>
+                            <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                              {ret.refundMode}
+                            </span>
+                          </TableCell>
+                          <TableCell>{ret.reason || "-"}</TableCell>
+                          <TableCell className="text-right font-semibold text-red-600">
+                            -₹{parseFloat(ret.totalRefund).toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="by-staff" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Collection by Staff
+                  </span>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => exportToCSV(
+                        `collections_by_staff_${dateFrom}_to_${dateTo}.csv`,
+                        ["Staff Name", "Invoices", "Cash", "Card", "UPI", "Credit", "Total"],
+                        staffCollectionsList.map(s => [s.name, s.count.toString(), s.cash.toFixed(2), s.card.toFixed(2), s.upi.toFixed(2), s.credit.toFixed(2), s.total.toFixed(2)])
+                      )} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-export-staff-csv"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+                    </Button>
+                    <Button 
+                      onClick={() => exportToPDF(
+                        "Collection by Staff Report",
+                        ["Staff Name", "Invoices", "Cash", "Card", "UPI", "Credit", "Total"],
+                        staffCollectionsList.map(s => [s.name, s.count.toString(), `₹${s.cash.toFixed(2)}`, `₹${s.card.toFixed(2)}`, `₹${s.upi.toFixed(2)}`, `₹${s.credit.toFixed(2)}`, `₹${s.total.toFixed(2)}`])
+                      )} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-export-staff-pdf"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />PDF
+                    </Button>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DateFilters showPayment={false} />
+                
+                {staffCollectionsList.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">No staff collections found</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Staff Name</TableHead>
+                        <TableHead className="text-right">Invoices</TableHead>
+                        <TableHead className="text-right">Cash</TableHead>
+                        <TableHead className="text-right">Card</TableHead>
+                        <TableHead className="text-right">UPI</TableHead>
+                        <TableHead className="text-right">Credit</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {staffCollectionsList.map((staff) => (
+                        <TableRow key={staff.name} data-testid={`row-staff-${staff.name}`}>
+                          <TableCell className="font-medium">{staff.name}</TableCell>
+                          <TableCell className="text-right">{staff.count}</TableCell>
+                          <TableCell className="text-right">₹{staff.cash.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">₹{staff.card.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">₹{staff.upi.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">₹{staff.credit.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-semibold">₹{staff.total.toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/50 font-bold">
+                        <TableCell>Total</TableCell>
+                        <TableCell className="text-right">{staffCollectionsList.reduce((s, st) => s + st.count, 0)}</TableCell>
+                        <TableCell className="text-right">₹{staffCollectionsList.reduce((s, st) => s + st.cash, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">₹{staffCollectionsList.reduce((s, st) => s + st.card, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">₹{staffCollectionsList.reduce((s, st) => s + st.upi, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">₹{staffCollectionsList.reduce((s, st) => s + st.credit, 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">₹{staffCollectionsList.reduce((s, st) => s + st.total, 0).toFixed(2)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="by-item" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Package className="w-5 h-5" />
+                    Collection by Item
+                  </span>
+                  <div className="flex gap-2">
+                    <Button onClick={fetchItemCollections} variant="outline" size="sm" data-testid="button-refresh-items">
+                      Refresh
+                    </Button>
+                    <Button 
+                      onClick={() => exportToCSV(
+                        `collections_by_item_${dateFrom}_to_${dateTo}.csv`,
+                        ["Item Name", "Quantity Sold", "Total Amount"],
+                        itemCollectionsList.map(i => [i.name, i.qty.toString(), i.total.toFixed(2)])
+                      )} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-export-item-csv"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+                    </Button>
+                    <Button 
+                      onClick={() => exportToPDF(
+                        "Collection by Item Report",
+                        ["Item Name", "Qty Sold", "Total Amount"],
+                        itemCollectionsList.map(i => [i.name, i.qty.toString(), `₹${i.total.toFixed(2)}`])
+                      )} 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-export-item-pdf"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />PDF
+                    </Button>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DateFilters showPayment={false} />
+                
+                {itemCollectionsList.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">Click "Refresh" to load item collections data</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item Name</TableHead>
+                        <TableHead className="text-right">Quantity Sold</TableHead>
+                        <TableHead className="text-right">Total Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {itemCollectionsList.map((item) => (
+                        <TableRow key={item.name} data-testid={`row-item-${item.name}`}>
+                          <TableCell className="font-medium">{item.name}</TableCell>
+                          <TableCell className="text-right">{item.qty}</TableCell>
+                          <TableCell className="text-right font-semibold">₹{item.total.toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/50 font-bold">
+                        <TableCell>Total</TableCell>
+                        <TableCell className="text-right">{itemCollectionsList.reduce((s, i) => s + i.qty, 0)}</TableCell>
+                        <TableCell className="text-right">₹{itemCollectionsList.reduce((s, i) => s + i.total, 0).toFixed(2)}</TableCell>
+                      </TableRow>
                     </TableBody>
                   </Table>
                 )}
@@ -541,29 +814,25 @@ export default function Collections() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={exportMonthlyToCSV} variant="outline" size="sm" data-testid="button-export-monthly-csv">
-                      <FileSpreadsheet className="w-4 h-4 mr-2" />
-                      Excel
+                    <Button 
+                      onClick={() => exportToCSV(
+                        `collections_monthly_${selectedYear}.csv`,
+                        ["Month", "Cash", "Card", "UPI", "Credit", "Total"],
+                        monthlyData.map(d => [d.monthName, d.cash.toFixed(2), d.card.toFixed(2), d.upi.toFixed(2), d.credit.toFixed(2), d.total.toFixed(2)])
+                      )}
+                      variant="outline" size="sm" data-testid="button-export-monthly-csv"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
                     </Button>
                     <Button 
                       onClick={() => exportToPDF(
-                        `Monthly Collections Report - ${selectedYear}`,
+                        `Monthly Collections - ${selectedYear}`,
                         ["Month", "Cash", "Card", "UPI", "Credit", "Total"],
-                        monthlyData.map(d => [
-                          d.monthName,
-                          `₹${d.cash.toFixed(2)}`,
-                          `₹${d.card.toFixed(2)}`,
-                          `₹${d.upi.toFixed(2)}`,
-                          `₹${d.credit.toFixed(2)}`,
-                          `₹${d.total.toFixed(2)}`
-                        ])
-                      )} 
-                      variant="outline" 
-                      size="sm"
-                      data-testid="button-export-monthly-pdf"
+                        monthlyData.map(d => [d.monthName, `₹${d.cash.toFixed(2)}`, `₹${d.card.toFixed(2)}`, `₹${d.upi.toFixed(2)}`, `₹${d.credit.toFixed(2)}`, `₹${d.total.toFixed(2)}`])
+                      )}
+                      variant="outline" size="sm" data-testid="button-export-monthly-pdf"
                     >
-                      <FileText className="w-4 h-4 mr-2" />
-                      PDF
+                      <FileText className="w-4 h-4 mr-2" />PDF
                     </Button>
                   </div>
                 </CardTitle>
@@ -628,29 +897,25 @@ export default function Collections() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={exportQuarterlyToCSV} variant="outline" size="sm" data-testid="button-export-quarterly-csv">
-                      <FileSpreadsheet className="w-4 h-4 mr-2" />
-                      Excel
+                    <Button 
+                      onClick={() => exportToCSV(
+                        `collections_quarterly_${selectedYear}.csv`,
+                        ["Quarter", "Cash", "Card", "UPI", "Credit", "Total"],
+                        quarterlyData.map(d => [d.quarter, d.cash.toFixed(2), d.card.toFixed(2), d.upi.toFixed(2), d.credit.toFixed(2), d.total.toFixed(2)])
+                      )}
+                      variant="outline" size="sm" data-testid="button-export-quarterly-csv"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
                     </Button>
                     <Button 
                       onClick={() => exportToPDF(
-                        `Quarterly Collections Report - ${selectedYear}`,
+                        `Quarterly Collections - ${selectedYear}`,
                         ["Quarter", "Cash", "Card", "UPI", "Credit", "Total"],
-                        quarterlyData.map(d => [
-                          d.quarter,
-                          `₹${d.cash.toFixed(2)}`,
-                          `₹${d.card.toFixed(2)}`,
-                          `₹${d.upi.toFixed(2)}`,
-                          `₹${d.credit.toFixed(2)}`,
-                          `₹${d.total.toFixed(2)}`
-                        ])
-                      )} 
-                      variant="outline" 
-                      size="sm"
-                      data-testid="button-export-quarterly-pdf"
+                        quarterlyData.map(d => [d.quarter, `₹${d.cash.toFixed(2)}`, `₹${d.card.toFixed(2)}`, `₹${d.upi.toFixed(2)}`, `₹${d.credit.toFixed(2)}`, `₹${d.total.toFixed(2)}`])
+                      )}
+                      variant="outline" size="sm" data-testid="button-export-quarterly-pdf"
                     >
-                      <FileText className="w-4 h-4 mr-2" />
-                      PDF
+                      <FileText className="w-4 h-4 mr-2" />PDF
                     </Button>
                   </div>
                 </CardTitle>
@@ -673,7 +938,7 @@ export default function Collections() {
                     <TableBody>
                       {quarterlyData.map((row) => (
                         <TableRow key={row.quarter} data-testid={`row-quarterly-${row.quarter}`}>
-                          <TableCell className="font-medium">{row.quarter} ({selectedYear})</TableCell>
+                          <TableCell className="font-medium">{row.quarter}</TableCell>
                           <TableCell className="text-right">₹{row.cash.toFixed(2)}</TableCell>
                           <TableCell className="text-right">₹{row.card.toFixed(2)}</TableCell>
                           <TableCell className="text-right">₹{row.upi.toFixed(2)}</TableCell>
@@ -705,29 +970,25 @@ export default function Collections() {
                     Yearly Collections Summary
                   </span>
                   <div className="flex items-center gap-2">
-                    <Button onClick={exportYearlyToCSV} variant="outline" size="sm" data-testid="button-export-yearly-csv">
-                      <FileSpreadsheet className="w-4 h-4 mr-2" />
-                      Excel
+                    <Button 
+                      onClick={() => exportToCSV(
+                        "collections_yearly.csv",
+                        ["Year", "Cash", "Card", "UPI", "Credit", "Total"],
+                        yearlyData.map(d => [d.year.toString(), d.cash.toFixed(2), d.card.toFixed(2), d.upi.toFixed(2), d.credit.toFixed(2), d.total.toFixed(2)])
+                      )}
+                      variant="outline" size="sm" data-testid="button-export-yearly-csv"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
                     </Button>
                     <Button 
                       onClick={() => exportToPDF(
                         "Yearly Collections Report",
                         ["Year", "Cash", "Card", "UPI", "Credit", "Total"],
-                        yearlyData.map(d => [
-                          d.year.toString(),
-                          `₹${d.cash.toFixed(2)}`,
-                          `₹${d.card.toFixed(2)}`,
-                          `₹${d.upi.toFixed(2)}`,
-                          `₹${d.credit.toFixed(2)}`,
-                          `₹${d.total.toFixed(2)}`
-                        ])
-                      )} 
-                      variant="outline" 
-                      size="sm"
-                      data-testid="button-export-yearly-pdf"
+                        yearlyData.map(d => [d.year.toString(), `₹${d.cash.toFixed(2)}`, `₹${d.card.toFixed(2)}`, `₹${d.upi.toFixed(2)}`, `₹${d.credit.toFixed(2)}`, `₹${d.total.toFixed(2)}`])
+                      )}
+                      variant="outline" size="sm" data-testid="button-export-yearly-pdf"
                     >
-                      <FileText className="w-4 h-4 mr-2" />
-                      PDF
+                      <FileText className="w-4 h-4 mr-2" />PDF
                     </Button>
                   </div>
                 </CardTitle>
