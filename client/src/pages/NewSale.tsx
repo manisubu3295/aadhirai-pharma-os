@@ -71,6 +71,7 @@ interface SaleItem {
   batchNumber: string;
   expiryDate: string;
   hsnCode: string | null;
+  category: string;
   quantity: number;
   price: number;
   stripPrice: number;
@@ -79,11 +80,17 @@ interface SaleItem {
   gstRate: number;
   discount: number;
   availableQty: number;
-  unitType: "STRIP" | "TABLET";
+  unitType: "STRIP" | "TABLET" | "BOTTLE";
   packSize: number;
   pricePerUnit: number | null;
   displayQty: number;
 }
+
+const LIQUID_CATEGORIES = ["Syrups", "Drops", "Injections", "Cough & Cold"];
+const isLiquidCategory = (category: string | undefined) => {
+  if (!category) return false;
+  return LIQUID_CATEGORIES.some(c => category.toLowerCase().includes(c.toLowerCase()));
+};
 
 function QuantityInput({ value, max, onChange, testId }: { value: number; max: number; onChange: (qty: number) => void; testId: string }) {
   const [inputValue, setInputValue] = useState(String(value));
@@ -322,9 +329,11 @@ export default function NewSale() {
         toast({ title: "Insufficient stock", variant: "destructive" });
       }
     } else {
-      const packSize = medicine.packSize || 10;
+      const isLiquid = isLiquidCategory(medicine.category);
+      const packSize = isLiquid ? 1 : (medicine.packSize || 10);
       const stripPrice = Number(medicine.price);
       const tabletPrice = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : stripPrice / packSize;
+      const defaultUnit = isLiquid ? "BOTTLE" : "STRIP";
       const newItem: SaleItem = {
         id: `${medicine.id}-${medicine.batchNumber}-${Date.now()}`,
         medicineId: medicine.id,
@@ -332,7 +341,8 @@ export default function NewSale() {
         batchNumber: medicine.batchNumber,
         expiryDate: medicine.expiryDate,
         hsnCode: medicine.hsnCode,
-        quantity: packSize,
+        category: medicine.category,
+        quantity: isLiquid ? 1 : packSize,
         price: stripPrice,
         stripPrice: stripPrice,
         tabletPrice: tabletPrice,
@@ -340,7 +350,7 @@ export default function NewSale() {
         gstRate: Number(medicine.gstRate),
         discount: 0,
         availableQty: Number(medicine.quantity),
-        unitType: "STRIP",
+        unitType: defaultUnit,
         packSize: packSize,
         pricePerUnit: tabletPrice,
         displayQty: 1,
@@ -1024,18 +1034,22 @@ export default function NewSale() {
                                 )}
                               </TableCell>
                               <TableCell className="py-3">
-                                <Select
-                                  value={item.unitType}
-                                  onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
-                                >
-                                  <SelectTrigger className="h-8 w-[90px]" data-testid={`select-unit-${item.id}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="STRIP">Strip</SelectItem>
-                                    <SelectItem value="TABLET">Tablet</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                                {isLiquidCategory(item.category) ? (
+                                  <span className="text-sm font-medium px-2 py-1 bg-muted rounded">Bottle</span>
+                                ) : (
+                                  <Select
+                                    value={item.unitType}
+                                    onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
+                                  >
+                                    <SelectTrigger className="h-8 w-[90px]" data-testid={`select-unit-${item.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="STRIP">Strip</SelectItem>
+                                      <SelectItem value="TABLET">Tablet</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
                               </TableCell>
                               <TableCell className="text-right py-3">
                                 {isOwnerOrAdmin ? (
