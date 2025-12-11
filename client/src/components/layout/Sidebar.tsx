@@ -26,7 +26,9 @@ import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_176527470081
 import { useAuth } from "@/lib/auth";
 import { usePlan } from "@/lib/planContext";
 import { Badge } from "@/components/ui/badge";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback } from "react";
+
+const NAV_SCROLL_KEY = "nav-scroll-position";
 
 interface MenuItem {
   icon: React.ElementType;
@@ -41,20 +43,45 @@ export function Sidebar() {
   const { user } = useAuth();
   const { isPro } = usePlan();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollPositionRef = useRef(0);
+  const isNavigatingRef = useRef(false);
+
+  const saveScrollPosition = useCallback(() => {
+    if (scrollRef.current) {
+      sessionStorage.setItem(NAV_SCROLL_KEY, scrollRef.current.scrollTop.toString());
+    }
+  }, []);
+
+  const restoreScrollPosition = useCallback(() => {
+    const savedPosition = sessionStorage.getItem(NAV_SCROLL_KEY);
+    if (savedPosition && scrollRef.current) {
+      scrollRef.current.scrollTop = parseInt(savedPosition, 10);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    restoreScrollPosition();
+  }, [location, restoreScrollPosition]);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTop = scrollPositionRef.current;
-    }
-  }, [location]);
+    const timer = setTimeout(() => {
+      restoreScrollPosition();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [location, restoreScrollPosition]);
 
-  const handleScroll = () => {
-    if (scrollRef.current) {
-      scrollPositionRef.current = scrollRef.current.scrollTop;
+  const handleScroll = useCallback(() => {
+    if (scrollRef.current && !isNavigatingRef.current) {
+      saveScrollPosition();
     }
-  };
+  }, [saveScrollPosition]);
+
+  const handleMenuClick = useCallback(() => {
+    saveScrollPosition();
+    isNavigatingRef.current = true;
+    setTimeout(() => {
+      isNavigatingRef.current = false;
+    }, 100);
+  }, [saveScrollPosition]);
 
   const menuItems: MenuItem[] = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/" },
@@ -93,7 +120,7 @@ export function Sidebar() {
 
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
         <div className="px-3 mb-2">
-           <Link href="/new-sale">
+           <Link href="/new-sale" onClick={handleMenuClick}>
              <button className="w-full bg-white text-primary hover:bg-white/90 transition-colors h-10 rounded-md flex items-center justify-center gap-2 text-sm font-medium shadow-sm">
                <Plus className="w-4 h-4" /> New Sale
              </button>
@@ -126,7 +153,7 @@ export function Sidebar() {
           }
           
           return (
-            <Link key={item.href} href={item.href}>
+            <Link key={item.href} href={item.href} onClick={handleMenuClick}>
               <div className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 group cursor-pointer",
                 isActive 
