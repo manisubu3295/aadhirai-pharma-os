@@ -1,0 +1,59 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app (Node/Express backend, Angular + Angular Material frontend). Do NOT remove GST from the system. Only adjust how it is DISPLAYED in the New Sale (Billing) page and invoice UI.
+
+Goal:
+- Keep CGST/SGST calculation and totals exactly as they are.
+- Hide per-item GST% display and per-item “total including 18% GST”.
+- For each line item, show Total = quantity × selling_price (before GST).
+- Summary should still show Subtotal, CGST, SGST, Grand Total.
+
+Please implement the following changes in a NON-BREAKING way:
+
+1) New Sale / Billing line items table
+- In the New Sale (Billing) screen, the medicine items table currently shows GST% (e.g. 18%) and/or a line total that already includes GST.
+- Change the line item display so that:
+  - The GST% column is NOT shown to the user (either hide the column or remove it from the visible table).
+  - The line “Total” for each item should be:
+      line_total_display = quantity * selling_price_ex_gst
+    where selling_price_ex_gst is the normal selling price stored/used now (before GST).
+- IMPORTANT: Do NOT change how GST is calculated internally for that item; just change what is shown in the UI. The backend should still know the GST rate and amount for each line.
+
+2) Summary section (right-hand / bottom bill summary)
+- Keep the existing GST logic:
+  - Subtotal (sum of all line base amounts before GST)
+  - CGST total
+  - SGST total
+  - Grand Total (Subtotal + CGST + SGST)
+- Make sure Subtotal is calculated from the same base that is shown in the per-item totals (qty × selling_price_ex_gst).
+- Keep CGST and SGST amounts visible as they are now.
+- If there is any label that says “Total (incl 18% GST)” or mentions GST%, change the label text to something neutral like:
+  - “Grand Total” or “Net Amount”
+  so the user does not see “18% GST” on the label, but the math remains correct.
+- Do NOT remove CGST/SGST rows from the summary, and do NOT remove GST values from the database or responses.
+
+3) Backend behaviour
+- Do NOT remove or modify the GST rate fields in the database or API.
+- Continue calculating GST per item as before:
+  - Use gst_rate to compute gst_amount for each item.
+  - Aggregate gst_amount into CGST and SGST totals as before.
+- If the backend currently returns per-item totals that already include GST, it is OK; the frontend can still:
+  - Use base fields (unit price and quantity) to compute display totals (ex-GST).
+  - Use the existing gst fields for summary CGST/SGST amounts.
+- Do not change any report endpoints (daily sales, GST reports) except if needed to ensure they still calculate from base + GST amounts as before.
+
+4) Frontend details (Angular)
+- Update the Angular component/template for the Billing / New Sale page:
+  - Hide/remove the GST% column from the mat-table of line items.
+  - Ensure the line item Total column binds to (quantity * selling_price_ex_gst), not “total with GST”.
+  - Keep the summary card fields: Subtotal, CGST amount, SGST amount, Grand Total.
+  - Update labels to remove “18% GST” wording and use generic labels.
+- After changes, manually test:
+  - Add items with different GST rates and quantities.
+  - Confirm per-item totals show only base amount (qty × price).
+  - Confirm Subtotal = sum of per-item base totals.
+  - Confirm CGST + SGST still match previous GST logic.
+  - Confirm Grand Total = Subtotal + CGST + SGST.
+
+General:
+- Do not rename or remove existing fields in the API/DB.
+- Do not break any existing billing, stock, or report logic.
+- Only touch the minimum backend code necessary to separate base amount and GST amount if not already clearly separated, and adjust the Angular UI to show the new display behaviour.
