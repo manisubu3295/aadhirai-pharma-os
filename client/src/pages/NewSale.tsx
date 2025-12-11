@@ -73,6 +73,8 @@ interface SaleItem {
   hsnCode: string | null;
   quantity: number;
   price: number;
+  stripPrice: number;
+  tabletPrice: number;
   mrp: number | null;
   gstRate: number;
   discount: number;
@@ -321,7 +323,8 @@ export default function NewSale() {
       }
     } else {
       const packSize = medicine.packSize || 10;
-      const pricePerUnit = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : Number(medicine.price) / packSize;
+      const stripPrice = Number(medicine.price);
+      const tabletPrice = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : stripPrice / packSize;
       const newItem: SaleItem = {
         id: `${medicine.id}-${medicine.batchNumber}-${Date.now()}`,
         medicineId: medicine.id,
@@ -329,15 +332,17 @@ export default function NewSale() {
         batchNumber: medicine.batchNumber,
         expiryDate: medicine.expiryDate,
         hsnCode: medicine.hsnCode,
-        quantity: 1,
-        price: Number(medicine.price),
+        quantity: packSize,
+        price: stripPrice,
+        stripPrice: stripPrice,
+        tabletPrice: tabletPrice,
         mrp: medicine.mrp ? Number(medicine.mrp) : null,
         gstRate: Number(medicine.gstRate),
         discount: 0,
         availableQty: Number(medicine.quantity),
         unitType: "STRIP",
         packSize: packSize,
-        pricePerUnit: pricePerUnit,
+        pricePerUnit: tabletPrice,
         displayQty: 1,
       };
       setItems([...items, newItem]);
@@ -384,26 +389,39 @@ export default function NewSale() {
     setItems(
       items.map((item) => {
         if (item.id === itemId) {
-          const displayQty = item.displayQty;
-          let newQuantity: number;
+          let newDisplayQty: number;
           let newPrice: number;
+          let newQuantity: number;
           
           if (unitType === "STRIP") {
-            newQuantity = displayQty * item.packSize;
-            newPrice = item.price;
+            if (item.unitType === "TABLET") {
+              newDisplayQty = Math.max(1, Math.floor(item.displayQty / item.packSize));
+            } else {
+              newDisplayQty = item.displayQty;
+            }
+            newPrice = item.stripPrice;
+            newQuantity = newDisplayQty * item.packSize;
           } else {
-            newQuantity = displayQty;
-            newPrice = item.pricePerUnit || item.price / item.packSize;
+            if (item.unitType === "STRIP") {
+              newDisplayQty = item.displayQty * item.packSize;
+            } else {
+              newDisplayQty = item.displayQty;
+            }
+            newPrice = item.tabletPrice;
+            newQuantity = newDisplayQty;
           }
           
-          const maxQty = Math.floor(item.availableQty / (unitType === "STRIP" ? item.packSize : 1));
-          const clampedDisplayQty = Math.min(displayQty, maxQty);
+          const maxQty = unitType === "STRIP" 
+            ? Math.floor(item.availableQty / item.packSize)
+            : item.availableQty;
+          const clampedDisplayQty = Math.max(1, Math.min(newDisplayQty, maxQty));
+          const clampedQuantity = unitType === "STRIP" ? clampedDisplayQty * item.packSize : clampedDisplayQty;
           
           return { 
             ...item, 
             unitType, 
             displayQty: clampedDisplayQty,
-            quantity: unitType === "STRIP" ? clampedDisplayQty * item.packSize : clampedDisplayQty,
+            quantity: clampedQuantity,
             price: newPrice,
           };
         }
