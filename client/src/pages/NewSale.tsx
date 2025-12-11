@@ -52,7 +52,8 @@ import {
   Pause,
   Play,
   Clock,
-  Package
+  Package,
+  Printer
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1174,6 +1175,7 @@ export default function NewSale() {
                     <TableHead>Customer</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead>Payment</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1199,6 +1201,27 @@ export default function NewSale() {
                       </TableCell>
                       <TableCell className="capitalize">
                         {sale.paymentMethod}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/sales/${sale.id}/items`);
+                              if (res.ok) {
+                                const items = await res.json();
+                                setPrintSaleData({ sale, items });
+                                setPrintDialogOpen(true);
+                              }
+                            } catch (error) {
+                              console.error("Failed to fetch sale items:", error);
+                            }
+                          }}
+                          data-testid={`button-reprint-${sale.id}`}
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

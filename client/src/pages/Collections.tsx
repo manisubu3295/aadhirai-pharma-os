@@ -7,17 +7,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode, RotateCcw } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode, RotateCcw, Printer } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { SalesReturnDialog } from "@/components/SalesReturnDialog";
+import { PrintableInvoice } from "@/components/PrintableInvoice";
+import type { Sale as SaleType, SaleItem } from "@shared/schema";
 
 interface Sale {
   id: number;
   invoiceNo: string;
   customerName: string;
+  customerPhone: string | null;
+  customerGstin: string | null;
+  doctorName: string | null;
+  subtotal: string;
+  discount: string;
+  cgst: string;
+  sgst: string;
+  tax: string;
   total: string;
+  roundOff: string;
   paymentMethod: string;
+  receivedAmount: string;
+  changeAmount: string;
   createdAt: string;
   userId: string | null;
 }
@@ -30,10 +44,66 @@ export default function Collections() {
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printSale, setPrintSale] = useState<Sale | null>(null);
+  const [printItems, setPrintItems] = useState<SaleItem[]>([]);
 
   const openReturnDialog = (saleId: number) => {
     setSelectedSaleId(saleId);
     setReturnDialogOpen(true);
+  };
+
+  const handleReprint = async (sale: Sale) => {
+    try {
+      const res = await fetch(`/api/sales/${sale.id}/items`);
+      if (res.ok) {
+        const items = await res.json();
+        setPrintSale(sale);
+        setPrintItems(items);
+        setPrintDialogOpen(true);
+      }
+    } catch (error) {
+      console.error("Failed to fetch sale items:", error);
+    }
+  };
+
+  const executePrint = () => {
+    const printContent = document.getElementById("reprint-invoice-content");
+    if (!printContent) return;
+    
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Invoice</title>
+          <style>
+            body { margin: 0; padding: 20px; font-family: Arial, sans-serif; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+            th, td { border: 1px solid black; padding: 8px; }
+            th { background-color: #f3f4f6; text-align: left; }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .font-bold { font-weight: bold; }
+            @media print {
+              body { margin: 0; padding: 10mm; }
+              @page { margin: 10mm; size: A4; }
+            }
+          </style>
+        </head>
+        <body>
+          ${printContent.innerHTML}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
@@ -282,15 +352,25 @@ export default function Collections() {
                       </TableCell>
                       <TableCell className="text-right font-semibold">₹{parseFloat(sale.total).toFixed(2)}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openReturnDialog(sale.id)}
-                          data-testid={`button-return-${sale.id}`}
-                        >
-                          <RotateCcw className="h-4 w-4 mr-1" />
-                          Return
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleReprint(sale)}
+                            data-testid={`button-reprint-${sale.id}`}
+                          >
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openReturnDialog(sale.id)}
+                            data-testid={`button-return-${sale.id}`}
+                          >
+                            <RotateCcw className="h-4 w-4 mr-1" />
+                            Return
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -306,6 +386,28 @@ export default function Collections() {
         open={returnDialogOpen}
         onOpenChange={setReturnDialogOpen}
       />
+
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Invoice Preview</DialogTitle>
+          </DialogHeader>
+          {printSale && (
+            <div id="reprint-invoice-content">
+              <PrintableInvoice sale={printSale as unknown as SaleType} items={printItems} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={executePrint} data-testid="button-print-invoice">
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

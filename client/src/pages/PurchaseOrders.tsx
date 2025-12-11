@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send } from "lucide-react";
+import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send, Printer } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -674,6 +674,91 @@ export default function PurchaseOrders() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>Close</Button>
+            <Button onClick={() => {
+              const printContent = document.getElementById("po-print-content");
+              if (!printContent) return;
+              
+              const printWindow = window.open("", "_blank");
+              if (!printWindow) return;
+              
+              printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                  <head>
+                    <title>Purchase Order - ${selectedPO?.poNumber}</title>
+                    <style>
+                      body { margin: 0; padding: 20px; font-family: Arial, sans-serif; font-size: 12px; }
+                      table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+                      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                      th { background-color: #f3f4f6; }
+                      .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+                      .header h1 { margin: 0 0 5px 0; }
+                      .info-grid { display: flex; justify-content: space-between; margin-bottom: 16px; }
+                      .text-right { text-align: right; }
+                      .totals { margin-top: 16px; text-align: right; }
+                      .totals div { margin: 4px 0; }
+                      .total-line { font-weight: bold; font-size: 14px; border-top: 2px solid #000; padding-top: 8px; }
+                      @media print {
+                        body { margin: 0; padding: 10mm; }
+                        @page { margin: 10mm; size: A4; }
+                      }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="header">
+                      <h1>Aadhirai Innovations Pharmacy</h1>
+                      <p>123 Main Street, Chennai, Tamil Nadu - 600001</p>
+                      <h2>PURCHASE ORDER</h2>
+                    </div>
+                    <div class="info-grid">
+                      <div>
+                        <p><strong>PO Number:</strong> ${selectedPO?.poNumber}</p>
+                        <p><strong>Date:</strong> ${selectedPO ? format(new Date(selectedPO.orderDate), "dd MMM yyyy") : ""}</p>
+                        <p><strong>Status:</strong> ${selectedPO?.status}</p>
+                      </div>
+                      <div class="text-right">
+                        <p><strong>Supplier:</strong> ${selectedPO?.supplierName}</p>
+                        ${selectedPO?.expectedDeliveryDate ? `<p><strong>Expected:</strong> ${format(new Date(selectedPO.expectedDeliveryDate), "dd MMM yyyy")}</p>` : ""}
+                      </div>
+                    </div>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Medicine</th>
+                          <th class="text-right">Qty</th>
+                          <th class="text-right">Rate</th>
+                          <th class="text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${poItems.map(item => `
+                          <tr>
+                            <td>${item.medicineName}</td>
+                            <td class="text-right">${item.quantity}</td>
+                            <td class="text-right">₹${item.rate}</td>
+                            <td class="text-right">₹${item.totalAmount}</td>
+                          </tr>
+                        `).join("")}
+                      </tbody>
+                    </table>
+                    <div class="totals">
+                      <div>Subtotal: ₹${selectedPO?.subtotal}</div>
+                      <div>Tax: ₹${selectedPO?.taxAmount}</div>
+                      <div class="total-line">Total: ₹${selectedPO?.totalAmount}</div>
+                    </div>
+                  </body>
+                </html>
+              `);
+              printWindow.document.close();
+              printWindow.focus();
+              setTimeout(() => {
+                printWindow.print();
+                printWindow.close();
+              }, 250);
+            }} data-testid="button-print-po">
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
