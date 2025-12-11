@@ -294,7 +294,7 @@ export default function Dashboard() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Recent Transactions</CardTitle>
-              <Link href="/sales" className="text-xs text-primary hover:underline flex items-center">
+              <Link href="/reports" className="text-xs text-primary hover:underline flex items-center">
                 View All <ArrowUpRight className="w-3 h-3 ml-1" />
               </Link>
             </div>
