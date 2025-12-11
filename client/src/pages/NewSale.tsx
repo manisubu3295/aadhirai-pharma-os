@@ -320,7 +320,7 @@ export default function NewSale() {
         toast({ title: "Insufficient stock", variant: "destructive" });
       }
     } else {
-      const packSize = medicine.packSize || 1;
+      const packSize = medicine.packSize || 10;
       const pricePerUnit = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : Number(medicine.price) / packSize;
       const newItem: SaleItem = {
         id: `${medicine.id}-${medicine.batchNumber}-${Date.now()}`,
@@ -335,7 +335,7 @@ export default function NewSale() {
         gstRate: Number(medicine.gstRate),
         discount: 0,
         availableQty: Number(medicine.quantity),
-        unitType: packSize > 1 ? "STRIP" : "TABLET",
+        unitType: "STRIP",
         packSize: packSize,
         pricePerUnit: pricePerUnit,
         displayQty: 1,
@@ -1006,22 +1006,18 @@ export default function NewSale() {
                                 )}
                               </TableCell>
                               <TableCell className="py-3">
-                                {item.packSize > 1 ? (
-                                  <Select
-                                    value={item.unitType}
-                                    onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
-                                  >
-                                    <SelectTrigger className="h-8 w-[90px]" data-testid={`select-unit-${item.id}`}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="STRIP">Strip</SelectItem>
-                                      <SelectItem value="TABLET">Tablet</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <span className="text-sm text-muted-foreground">Unit</span>
-                                )}
+                                <Select
+                                  value={item.unitType}
+                                  onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
+                                >
+                                  <SelectTrigger className="h-8 w-[90px]" data-testid={`select-unit-${item.id}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="STRIP">Strip</SelectItem>
+                                    <SelectItem value="TABLET">Tablet</SelectItem>
+                                  </SelectContent>
+                                </Select>
                               </TableCell>
                               <TableCell className="text-right py-3">
                                 {isOwnerOrAdmin ? (
