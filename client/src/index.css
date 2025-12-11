@@ -55,7 +55,7 @@
   --color-sidebar-ring: hsl(var(--sidebar-ring));
 }
 
-/* MEDICAL ENTERPRISE THEME */
+/* PREMIUM ENTERPRISE THEME */
 :root {
   /* Clean White Background */
   --background: 210 20% 98%;
@@ -68,8 +68,8 @@
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
 
-  /* Royal Blue Primary */
-  --primary: 225 65% 45%; /* Royal Blue */
+  /* Premium Slate Primary - Dark sophisticated buttons */
+  --primary: 222 47% 16%;
   --primary-foreground: 0 0% 100%;
 
   /* Soft Slate Secondary */
@@ -81,8 +81,8 @@
   --muted-foreground: 215 16% 47%;
 
   /* Subtle Accents */
-  --accent: 225 50% 96%;
-  --accent-foreground: 225 65% 45%;
+  --accent: 220 14% 96%;
+  --accent-foreground: 222 47% 16%;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
@@ -90,26 +90,26 @@
   /* Borders */
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
-  --ring: 225 65% 45%;
+  --ring: 222 47% 16%;
 
   --radius: 0.5rem;
 
-  /* Charts - Royal Blue Theme */
-  --chart-1: 225 65% 45%;
-  --chart-2: 225 55% 55%;
-  --chart-3: 225 45% 35%;
-  --chart-4: 43 74% 66%;
-  --chart-5: 27 87% 67%;
+  /* Charts - Premium Slate Theme */
+  --chart-1: 222 47% 25%;
+  --chart-2: 220 40% 45%;
+  --chart-3: 215 30% 35%;
+  --chart-4: 160 60% 45%;
+  --chart-5: 38 92% 50%;
 
-  /* Sidebar - Royal Blue Theme */
-  --sidebar: 225 65% 25%; /* Royal Blue */
+  /* Sidebar - Dark Slate Theme */
+  --sidebar: 222 47% 11%;
   --sidebar-foreground: 0 0% 100%;
   --sidebar-primary: 0 0% 100%;
-  --sidebar-primary-foreground: 225 65% 25%;
-  --sidebar-accent: 225 65% 35%; /* Lighter royal blue for hover */
+  --sidebar-primary-foreground: 222 47% 11%;
+  --sidebar-accent: 220 30% 20%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-border: 225 65% 20%;
-  --sidebar-ring: 225 65% 80%;
+  --sidebar-border: 220 30% 15%;
+  --sidebar-ring: 220 30% 50%;
 }
 
 .dark {
@@ -166,11 +166,11 @@
   }
 }
 
-/* Royal Blue Gradient for Sidebar */
+/* Premium Slate Gradient for Login */
 .sidebar-gradient {
   background: linear-gradient(180deg, 
-    hsl(225 65% 30%) 0%, 
-    hsl(225 65% 22%) 100%
+    hsl(222 47% 15%) 0%, 
+    hsl(222 47% 11%) 100%
   );
 }
 
