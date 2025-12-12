@@ -488,6 +488,18 @@ export class DatabaseStorage implements IStorage {
       await this.updateMedicineStock(item.medicineId, -item.quantity);
     }
     
+    if (sale.paymentMethod?.toLowerCase() === 'credit' && sale.customerId) {
+      const customer = await this.getCustomer(sale.customerId);
+      if (customer) {
+        const currentBalance = parseFloat(customer.outstandingBalance || "0");
+        const saleTotal = parseFloat(String(sale.total || 0));
+        const newBalance = currentBalance + saleTotal;
+        await this.updateCustomer(sale.customerId, {
+          outstandingBalance: newBalance.toFixed(2),
+        });
+      }
+    }
+    
     return { sale: createdSale, items: createdItems };
   }
 

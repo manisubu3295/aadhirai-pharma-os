@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Bell, HelpCircle, Package, AlertTriangle, CreditCard, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 
 interface Medicine {
   id: number;
@@ -38,6 +39,34 @@ export function Header({ title }: { title: string }) {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const [open, setOpen] = useState(false);
+  const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("dismissedNotifications");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        const today = new Date().toDateString();
+        if (parsed.date === today) {
+          setDismissedNotifications(parsed.ids || []);
+        } else {
+          localStorage.removeItem("dismissedNotifications");
+        }
+      } catch {
+        localStorage.removeItem("dismissedNotifications");
+      }
+    }
+  }, []);
+
+  const dismissNotification = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newDismissed = [...dismissedNotifications, id];
+    setDismissedNotifications(newDismissed);
+    localStorage.setItem("dismissedNotifications", JSON.stringify({
+      date: new Date().toDateString(),
+      ids: newDismissed,
+    }));
+  };
 
   const { data: medicines = [] } = useQuery<Medicine[]>({
     queryKey: ["/api/medicines"],
@@ -69,10 +98,10 @@ export function Header({ title }: { title: string }) {
     return saleDate >= threeDaysAgo;
   });
 
-  const notifications: Notification[] = [];
+  const allNotifications: Notification[] = [];
 
   if (expiredMedicines.length > 0) {
-    notifications.push({
+    allNotifications.push({
       id: "expired",
       type: "expired",
       title: "Expired Medicines",
@@ -82,7 +111,7 @@ export function Header({ title }: { title: string }) {
   }
 
   if (lowStockMedicines.length > 0) {
-    notifications.push({
+    allNotifications.push({
       id: "low_stock",
       type: "low_stock",
       title: "Low Stock Alert",
@@ -92,7 +121,7 @@ export function Header({ title }: { title: string }) {
   }
 
   if (recentCreditBills.length > 0) {
-    notifications.push({
+    allNotifications.push({
       id: "credit_bill",
       type: "credit_bill",
       title: "New Credit Bills",
@@ -101,7 +130,10 @@ export function Header({ title }: { title: string }) {
     });
   }
 
+  const notifications = allNotifications.filter(n => !dismissedNotifications.includes(n.id));
+
   const handleNotificationClick = (notification: Notification) => {
+    dismissNotification(notification.id, { stopPropagation: () => {} } as React.MouseEvent);
     setOpen(false);
     navigate(notification.link);
   };
@@ -162,20 +194,33 @@ export function Header({ title }: { title: string }) {
               ) : (
                 <div className="divide-y">
                   {notifications.map((notification) => (
-                    <button
+                    <div
                       key={notification.id}
-                      onClick={() => handleNotificationClick(notification)}
                       className={`w-full flex items-start gap-3 p-4 text-left transition-colors ${getBgColor(notification.type)}`}
                       data-testid={`notification-${notification.type}`}
                     >
-                      <div className="mt-0.5">
-                        {getIcon(notification.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900">{notification.title}</p>
-                        <p className="text-xs text-slate-600 mt-0.5">{notification.description}</p>
-                      </div>
-                    </button>
+                      <button
+                        onClick={() => handleNotificationClick(notification)}
+                        className="flex items-start gap-3 flex-1 text-left"
+                      >
+                        <div className="mt-0.5">
+                          {getIcon(notification.type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900">{notification.title}</p>
+                          <p className="text-xs text-slate-600 mt-0.5">{notification.description}</p>
+                        </div>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+                        onClick={(e) => dismissNotification(notification.id, e)}
+                        data-testid={`dismiss-${notification.type}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
                   ))}
                 </div>
               )}

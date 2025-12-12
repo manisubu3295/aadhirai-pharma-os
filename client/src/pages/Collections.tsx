@@ -478,7 +478,7 @@ export default function Collections() {
               <CardContent>
                 <DateFilters />
                 
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   {Object.entries(paymentTotals).map(([method, total]) => (
                     <Card key={method}>
                       <CardContent className="pt-4">
@@ -490,10 +490,31 @@ export default function Collections() {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <Card className="bg-primary text-primary-foreground">
                     <CardContent className="pt-4">
-                      <div className="text-sm opacity-80">Grand Total</div>
+                      <div className="text-sm opacity-80">Gross Sales</div>
                       <p className="text-2xl font-bold mt-1">₹{grandTotal.toFixed(2)}</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-red-50 border-red-200">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center gap-2 text-red-600 text-sm">
+                        <RotateCcw className="w-4 h-4" />
+                        Refunds
+                      </div>
+                      <p className="text-2xl font-bold text-red-600 mt-1" data-testid="text-daily-refunds">
+                        -₹{filteredReturns.reduce((s, r) => s + parseFloat(r.totalRefund), 0).toFixed(2)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-green-50 border-green-200">
+                    <CardContent className="pt-4">
+                      <div className="text-green-600 text-sm">Net Collection</div>
+                      <p className="text-2xl font-bold text-green-700 mt-1" data-testid="text-net-collection">
+                        ₹{(grandTotal - filteredReturns.reduce((s, r) => s + parseFloat(r.totalRefund), 0)).toFixed(2)}
+                      </p>
                     </CardContent>
                   </Card>
                 </div>
