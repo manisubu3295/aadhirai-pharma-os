@@ -1501,10 +1501,9 @@ export async function registerRoutes(
         totalRefundAmount += returnItem.refundAmount;
       }
       
-      const returnNo = `RET-${Date.now()}`;
       const parsedReturnData = insertSalesReturnSchema.parse({
         ...returnData,
-        invoiceNo: returnNo,
+        invoiceNo: saleWithReturns.sale.invoiceNo,
         totalRefundAmount: totalRefundAmount.toFixed(2),
         customerName: saleWithReturns.sale.customerName,
         customerId: saleWithReturns.sale.customerId
