@@ -254,6 +254,7 @@ export default function NewSale() {
     onSuccess: (saleResult: { sale: Sale; items: SaleItemSchema[] }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       toast({ title: "Invoice generated successfully!" });
       
       const shouldPrint = variables.printInvoice || appSettings.printOnSave;
