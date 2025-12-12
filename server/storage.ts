@@ -493,7 +493,9 @@ export class DatabaseStorage implements IStorage {
       if (customer) {
         const currentBalance = parseFloat(customer.outstandingBalance || "0");
         const saleTotal = parseFloat(String(sale.total || 0));
-        const newBalance = currentBalance + saleTotal;
+        const receivedAmount = parseFloat(String(sale.receivedAmount || 0));
+        const unpaidAmount = Math.max(0, saleTotal - receivedAmount);
+        const newBalance = currentBalance + unpaidAmount;
         await this.updateCustomer(sale.customerId, {
           outstandingBalance: newBalance.toFixed(2),
         });
