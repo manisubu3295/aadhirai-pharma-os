@@ -1,0 +1,163 @@
+You are a senior full-stack engineer working on an existing Pharmacy / Inventory web app:
+
+- Backend: Node.js + Express.js
+- Frontend: React.js (SPA)
+- There is already a working login/logout and protected routes.
+
+GOAL
+Implement proper session handling so that:
+
+1) Users stay logged in while actively using the app.
+2) Users are automatically logged out after being idle for a certain time (e.g. 30 minutes).
+3) Frontend reacts gracefully:
+   - Shows a clear message when the session expires.
+   - Redirects to the login page.
+4) Do NOT break any existing auth or API behaviour.
+
+IMPORTANT RULES
+- Do NOT rewrite the entire auth system.
+- Detect whether the app currently uses:
+  - express-session (server sessions), OR
+  - JWT tokens (stored in localStorage/cookies).
+- Extend the existing approach instead of replacing it.
+- All changes must be backward compatible.
+
+────────────────────────
+1) Backend – enforce idle timeout
+────────────────────────
+
+Step 1: Detect current auth mechanism
+- Inspect the existing auth code:
+  - If using `express-session` or similar middleware:
+    - Session-based approach → follow “Session path”.
+  - If using JWT (signing tokens with a secret, verifying on each request):
+    - Token-based approach → follow “JWT path”.
+
+––––– Session path (express-session or similar) –––––
+If the app uses express-session:
+
+1.1 Add last activity tracking
+- On login, ensure the server creates a session and stores:
+  - `req.session.userId` (or equivalent).
+  - `req.session.lastActivity = Date.now()`.
+
+- Add a middleware that runs on every authenticated request:
+
+  - Read `req.session.userId`.
+    - If not present → skip (user not logged in).
+  - Read `req.session.lastActivity` (default to now if missing).
+  - Compute time since last activity.
+    - If `now - lastActivity > IDLE_TIMEOUT_MS` (e.g. 30 * 60 * 1000):
+      - Destroy the session.
+      - Return HTTP 401 with JSON:
+        `{ message: 'Session expired due to inactivity. Please log in again.' }`
+    - Else:
+      - Update `req.session.lastActivity = now`.
+      - Call `next()`.
+
+- Mount this middleware near the top of the auth-protected routes, but AFTER the session middleware.
+
+––––– JWT path –––––
+If the app uses JWT access tokens (and possibly refresh tokens):
+
+1.2 Enforce idle timeout using server-side tracking
+- Keep the existing JWT verification middleware as-is (do not remove exp checks).
+- Introduce a simple server-side “session activity” store:
+  - Example: DB table or in-memory map keyed by userId or sessionId:
+    - Fields: user_id, last_activity_at.
+  - Or reuse an existing user_sessions table if one exists.
+
+- After a JWT is successfully verified in the auth middleware:
+  - Update that user’s `last_activity_at` to `Date.now()` in the store.
+
+- Add an idle-time check in the same middleware:
+  - Look up `last_activity_at` for the user.
+  - If `now - last_activity_at > IDLE_TIMEOUT_MS`:
+    - Treat the JWT as expired for idle reasons:
+      - Option 1 (simpler): Return HTTP 401 with message:
+        `{ message: 'Session expired due to inactivity. Please log in again.' }`
+      - Option 2: Mark the session/token as invalid in the store and then return 401.
+
+- Keep access token exp behaviour unchanged, but ensure idle timeout is enforced in addition to exp.
+
+Use a reasonable IDLE_TIMEOUT_MS constant (e.g. 30 minutes).
+
+────────────────────────
+2) Frontend (React) – auto logout on inactivity
+────────────────────────
+
+2.1 Add a global idle timer hook
+- Create a custom hook, e.g. `useAutoLogout`, in a shared place (e.g. src/hooks/useAutoLogout.tsx or similar).
+- This hook should:
+  - Set up listeners on window for activity events:
+    - 'mousemove', 'keydown', 'click', 'scroll', 'touchstart'
+  - Maintain a timeout using `setTimeout`:
+    - Reset the timeout on each activity event.
+    - When timeout fires (e.g. after 30 minutes of no activity on the client):
+      - Call a provided `onLogout` callback that:
+        - Clears auth tokens / session info from localStorage or context.
+        - Optionally calls a backend `/logout` endpoint if available.
+        - Redirects user to the login page (e.g. using react-router’s navigate).
+
+- Use this hook in the main app shell / layout component that wraps protected routes, for example:
+
+  - In `AppShell` or `MainLayout`:
+    - Import `useAutoLogout`.
+    - Pass an `onLogout` function that:
+      - Clears tokens.
+      - Clears user state.
+      - Navigates to `/login`.
+
+2.2 Handle backend 401 (expired session) gracefully
+- If you are using Axios or a fetch wrapper:
+  - Add a response interceptor / wrapper that:
+    - If any API call returns HTTP 401 with message like “Session expired…”:
+      - Trigger the same logout flow used above:
+        - Clear tokens/session.
+        - Show a toast/snackbar: “Session expired due to inactivity. Please log in again.”
+        - Redirect to login page.
+- Make sure not to create infinite loops:
+  - Do not keep retrying the same failing request after logout.
+  - Just redirect the user.
+
+2.3 Keep “remembered login” behaviour intact
+- If the app currently remembers login via token in localStorage:
+  - Keep that behaviour.
+  - Auto-logout should only run after the user opens the app and becomes idle.
+- Do NOT change how the initial login is performed; only add the inactivity logout layer.
+
+────────────────────────
+3) UX details
+────────────────────────
+
+- When auto-logout triggers on the frontend:
+  - Show a clear message through snackbar/toast/dialog:
+    - “You have been logged out due to inactivity. Please log in again.”
+- Do not show technical error messages to the user.
+- Ensure that if the user is actively clicking/typing, the idle timer resets and they are not logged out unexpectedly.
+
+────────────────────────
+4) Testing checklist
+────────────────────────
+
+After implementing, manually test the following scenarios:
+
+1. Log in and actively use the app:
+   - Make several API calls.
+   - Confirm session does NOT expire while you are active.
+
+2. Log in, then stay idle longer than the idle timeout:
+   - Confirm that:
+     - Next API call returns 401 from backend.
+     - Frontend shows “session expired” message and redirects to login.
+     - Or the auto-logout timer on the client logs out and redirects even before the next request.
+
+3. Refresh the page:
+   - If your app uses persistent token/session, confirm it still restores logged-in state as before (until idle timeout hits).
+
+4. Make sure existing auth logic (login, logout, role-based guards) still works and has not been broken by these changes.
+
+Implement these changes with minimal modifications:
+- Reuse existing auth middleware on backend.
+- Reuse existing auth context/store and navigation logic on frontend.
+- Do not refactor unrelated code.

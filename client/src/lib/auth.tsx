@@ -1,5 +1,8 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useLocation } from "wouter";
+import { useAutoLogout } from "@/hooks/useAutoLogout";
+import { setSessionExpiredHandler } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface User {
   id: string;
@@ -25,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const checkAuth = async () => {
     try {
@@ -79,6 +83,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLocation("/login");
     }
   };
+
+  const handleSessionExpired = useCallback(() => {
+    toast({
+      title: "Session Expired",
+      description: "You have been logged out due to inactivity. Please log in again.",
+      variant: "destructive",
+    });
+    setUser(null);
+    setLocation("/login");
+  }, [toast, setLocation]);
+
+  useEffect(() => {
+    setSessionExpiredHandler(handleSessionExpired);
+  }, [handleSessionExpired]);
+
+  useAutoLogout({
+    onLogout: handleSessionExpired,
+    enabled: !!user,
+  });
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout, checkAuth }}>

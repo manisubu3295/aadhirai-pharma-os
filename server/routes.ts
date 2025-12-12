@@ -28,10 +28,27 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Unauthorized" });
   }
+  
+  const now = Date.now();
+  const lastActivity = req.session.lastActivity || now;
+  
+  if (now - lastActivity > IDLE_TIMEOUT_MS) {
+    req.session.destroy((err) => {
+      if (err) console.error("Session destroy error:", err);
+    });
+    return res.status(401).json({ 
+      error: "Session expired due to inactivity. Please log in again.",
+      sessionExpired: true 
+    });
+  }
+  
+  req.session.lastActivity = now;
   next();
 }
 
@@ -94,6 +111,7 @@ export async function registerRoutes(
       }
       
       req.session.userId = user.id;
+      req.session.lastActivity = Date.now();
       
       const { password: _, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });

@@ -1,8 +1,26 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+let sessionExpiredHandler: (() => void) | null = null;
+
+export function setSessionExpiredHandler(handler: () => void) {
+  sessionExpiredHandler = handler;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+    
+    if (res.status === 401) {
+      try {
+        const data = JSON.parse(text.replace(/^\d+:\s*/, ''));
+        if (data.sessionExpired && sessionExpiredHandler) {
+          sessionExpiredHandler();
+          throw new Error("Session expired due to inactivity. Please log in again.");
+        }
+      } catch (parseError) {
+      }
+    }
+    
     throw new Error(`${res.status}: ${text}`);
   }
 }
