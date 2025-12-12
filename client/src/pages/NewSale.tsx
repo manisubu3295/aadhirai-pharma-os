@@ -797,7 +797,7 @@ export default function NewSale() {
             <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded text-sm">
               <span className="text-muted-foreground">Invoice:</span>
               <span className="font-mono font-semibold text-muted-foreground" data-testid="text-invoice-number">
-                Auto on save
+                {lastSavedInvoiceNo || "Auto on save"}
               </span>
             </div>
             <div className="flex gap-2">
@@ -1626,6 +1626,96 @@ export default function NewSale() {
               data-testid="button-print-invoice"
             >
               Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reprintDialogOpen} onOpenChange={setReprintDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Reprint Bill</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter invoice number..."
+                value={invoiceSearchInput}
+                onChange={(e) => setInvoiceSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleInvoiceSearch();
+                    setReprintDialogOpen(false);
+                  }
+                }}
+                data-testid="input-reprint-invoice-search"
+              />
+              <Button 
+                onClick={() => {
+                  handleInvoiceSearch();
+                  setReprintDialogOpen(false);
+                }}
+                disabled={searchingInvoice || !invoiceSearchInput.trim()}
+                data-testid="button-search-invoice"
+              >
+                <Search className="h-4 w-4 mr-1" />
+                Search
+              </Button>
+            </div>
+            
+            <div className="border rounded-md">
+              <div className="bg-muted/50 px-3 py-2 border-b">
+                <h4 className="text-sm font-medium">Recent Invoices</h4>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto">
+                {recentSales.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    No recent invoices found
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Invoice No</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {recentSales.map((sale) => (
+                        <TableRow 
+                          key={sale.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={async () => {
+                            try {
+                              const itemsRes = await fetch(`/api/sales/${sale.id}/items`);
+                              if (!itemsRes.ok) throw new Error("Failed to fetch items");
+                              const items = await itemsRes.json();
+                              setPrintSaleData({ sale, items });
+                              setReprintDialogOpen(false);
+                              setPrintDialogOpen(true);
+                            } catch (error) {
+                              toast({ title: "Failed to load invoice", variant: "destructive" });
+                            }
+                          }}
+                          data-testid={`row-recent-invoice-${sale.id}`}
+                        >
+                          <TableCell className="font-mono text-sm">{sale.invoiceNo}</TableCell>
+                          <TableCell>{sale.customerName || "Walk-in"}</TableCell>
+                          <TableCell>{new Date(sale.createdAt).toLocaleDateString()}</TableCell>
+                          <TableCell className="text-right font-medium">₹{parseFloat(sale.total).toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReprintDialogOpen(false)} data-testid="button-close-reprint">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
