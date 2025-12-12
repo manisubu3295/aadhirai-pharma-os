@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 
 type PlanType = "BASIC" | "PRO";
 
@@ -13,24 +13,16 @@ const PlanContext = createContext<PlanContextType | undefined>(undefined);
 const PLAN_STORAGE_KEY = "pharmacy_plan_mode";
 
 export function PlanProvider({ children }: { children: ReactNode }) {
-  const [plan, setPlanState] = useState<PlanType>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(PLAN_STORAGE_KEY);
-      return (stored as PlanType) || "BASIC";
-    }
-    return "BASIC";
-  });
-
-  useEffect(() => {
-    localStorage.setItem(PLAN_STORAGE_KEY, plan);
-  }, [plan]);
+  // Plan gating removed - all features now available to all users
+  // The plan state is kept for backward compatibility but isPro is always true
+  const [plan, setPlanState] = useState<PlanType>("PRO");
 
   const setPlan = (newPlan: PlanType) => {
     setPlanState(newPlan);
   };
 
   return (
-    <PlanContext.Provider value={{ plan, setPlan, isPro: plan === "PRO" }}>
+    <PlanContext.Provider value={{ plan, setPlan, isPro: true }}>
       {children}
     </PlanContext.Provider>
   );

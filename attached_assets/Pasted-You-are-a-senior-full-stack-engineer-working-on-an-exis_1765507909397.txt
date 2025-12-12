@@ -1,0 +1,77 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app (Node/Express backend, Angular + Angular Material frontend).
+
+Originally, the app had a subscription concept with plan_type = 'BASIC' or 'PRO', and some features/menus were PRO-only. That business model is now removed.
+
+NEW REQUIREMENT:
+- Completely remove Basic/Pro feature gating.
+- All menus and features that were previously PRO-only must now be available whenever the logged-in user is an OWNER/ADMIN.
+- STAFF restrictions should still apply as before (e.g. some features only for ADMIN), but there is NO plan-based restriction anymore.
+
+IMPORTANT:
+- Do NOT break DB schema or existing data.
+- Do NOT remove columns like plan_type from the DB; just stop using them for access control.
+- Do NOT change routes or API shapes in a breaking way.
+- Only relax/remove the plan checks and update the UI so everything works for owner.
+
+Please implement the following changes step by step:
+
+1) Backend: remove PRO-only gating
+- Search the backend for all uses of:
+  - plan_type
+  - 'BASIC' / 'PRO'
+  - isProPlan / isPro / proOnly / requiresPro
+  - any middleware that checks plan_type before allowing access.
+- For each endpoint that is currently restricted to PRO (for example: expiry alerts, reorder suggestions, profit estimate, advanced reports, etc.):
+  - Remove or bypass the plan_type check.
+  - Instead, if needed, only check user role:
+    - Allow if user.role === 'ADMIN' (owner).
+    - STAFF permissions remain as they are today.
+- Keep the plan_type field in the DB and entities, but:
+  - It should not be used for conditional access anymore.
+  - If there are default values being set, they can stay; they are just ignored by logic.
+- Make sure the removed PRO check does not cause null / undefined errors; if code expects plan_type, just let it be present but unused.
+
+2) Frontend: show all menus/features for Owner
+- Search the Angular frontend for:
+  - plan_type
+  - BASIC / PRO
+  - functions like isProPlan(), isProFeature(), isProOnly, upgradeToPro, etc.
+  - Any *ngIf conditions that hide menus/buttons based on plan_type.
+- Update these conditions as follows:
+  - Remove plan_type checks for showing/hiding menu items and features.
+  - Instead, base visibility only on user role:
+    - OWNER/ADMIN sees all items (including previously PRO-only menus like advanced reports, expiry alerts, reorder, profit analysis, etc.).
+    - STAFF may still have restricted access as before (for example, read-only or no access to configuration/analytics).
+- Remove text like:
+  - “Pro Feature – Upgrade to unlock”
+  - “Available only in Pro plan”
+- Replace with neutral/generic UI where appropriate, or just show the feature normally.
+
+3) UI cleanup of Pro messaging
+- In reports pages, expiry alerts, reorder suggestions, profit reports, etc.:
+  - Remove any Pro badges, lock icons, or upgrade CTAs.
+  - Ensure that when an OWNER/ADMIN opens these pages, they see the actual data and filters, not a Pro upsell screen.
+- If there are stub components that only show “This is a Pro feature”, replace them by the real content component or remove that wrapper logic.
+
+4) Keep role-based control intact
+- Double-check that:
+  - Critical admin-only areas (e.g. masters, user management, configuration) are still protected by role checks (ADMIN only).
+  - STAFF does not accidentally gain new admin powers just because plan_type checks were removed.
+- The high-level rule is:
+  - Owner/ADMIN: full feature set.
+  - STAFF: same permissions as before.
+  - plan_type: ignored.
+
+5) Backward compatibility
+- Do NOT remove plan_type from the type definitions or database migrations; just stop using it.
+- If any frontend code expects plan_type in the user/pharmacy object, keep it there but do not use it in conditions.
+- Make sure APIs still return the same shape (including plan_type field if it was there), to avoid breaking deserialization.
+
+6) Testing checklist
+- After changes, verify:
+  - Log in as OWNER/ADMIN: all previously PRO-only menus are visible and functional (expiry alerts, reorder suggestions, profit reports, etc.).
+  - Log in as STAFF: menus are visible/hidden based on role exactly as before (no accidental escalations).
+  - No page shows “Pro Feature” or “Upgrade to Pro” message anymore.
+  - All reports and advanced features load and operate normally without checking plan_type.
+
+Make all these changes in the minimal necessary places (middleware, guard logic, Angular components and templates) without refactoring unrelated code or changing existing business logic.
