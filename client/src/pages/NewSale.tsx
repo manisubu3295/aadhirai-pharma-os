@@ -1323,13 +1323,19 @@ export default function NewSale() {
                 </div>
               </div>
 
+              {paymentMethod === "credit" && !selectedCustomer && (
+                <div className="text-sm text-red-500 text-center mb-2" data-testid="text-credit-customer-required">
+                  Please select a customer for credit billing
+                </div>
+              )}
               <Button
                 className="w-full bg-primary hover:bg-primary/90 h-12 text-base mt-auto"
                 onClick={handleGenerateInvoice}
                 disabled={
                   items.length === 0 || 
                   createSaleMutation.isPending ||
-                  (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0)
+                  (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0) ||
+                  (paymentMethod === "credit" && !selectedCustomer)
                 }
                 data-testid="button-generate-invoice"
               >
