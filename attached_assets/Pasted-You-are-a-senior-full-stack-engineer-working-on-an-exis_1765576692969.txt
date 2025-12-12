@@ -1,0 +1,129 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app:
+
+- Backend: Node.js + Express.js
+- Frontend: React.js
+- DB: relational (e.g. PostgreSQL) with these tables (or similar):
+  - invoices: id, invoice_number, invoice_date, pharmacy_id, customer_name, customer_gstin (optional), subtotal_amount, gst_amount, total_amount, created_by_user_id, etc.
+  - invoice_items: id, invoice_id, product_id, batch_id, quantity, sale_price, gst_rate, gst_amount, line_total
+  - products: id, pharmacy_id, name, hsn_code, gst_rate, etc.
+
+The app already has basic daily sales reports. We need to add **auditor-friendly GST & sales reports**, without breaking any existing behaviour.
+
+GOAL
+Implement the following reports for a selected date range (from/to):
+
+1) Invoice-wise GST Sales Register
+2) HSN-wise GST Summary
+3) Product-wise GST Summary
+
+Each should:
+- Be filterable by date range.
+- Be visible in the React UI.
+- Be exportable as **Excel** and **PDF**.
+- Use existing data fields (hsn_code, gst_rate, gst_amount, etc.), not new schema.
+
+IMPORTANT RULES
+- Do NOT rename or remove existing fields.
+- Do NOT break existing report endpoints.
+- Only ADD new endpoints and UI or extend responses in a backward compatible way.
+- Respect pharmacy_id (multi-tenant ready): all queries should be scoped to the logged-in pharmacy.
+
+────────────────────────
+1) Backend – GST report endpoints (Express)
+────────────────────────
+
+Create a new router (or extend an existing reports router) for GST/sales reports. All endpoints must accept:
+
+- Query params:
+  - from: YYYY-MM-DD
+  - to: YYYY-MM-DD
+- Use invoice_date between [from, to], inclusive.
+- Scope by pharmacy_id from the authenticated user/session.
+
+1.1 Invoice-wise GST Sales Register
+Endpoint example:
+- GET `/api/reports/gst/invoice-register?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+For each invoice in the date range:
+- Return:
+  - invoice_id
+  - invoice_number
+  - invoice_date
+  - customer_name
+  - customer_gstin (if you have it, else null)
+  - taxable_value (sum of taxable line amounts for this invoice)
+  - cgst_amount
+  - sgst_amount
+  - total_gst = cgst_amount + sgst_amount
+  - invoice_total = total_amount from invoices table
+  - gst_rate_breakup: if multiple rates exist in same invoice, optionally aggregate per rate or leave null for now.
+
+Implementation notes:
+- Assume `invoice_items.sale_price` is EX-GST and `gst_amount` is stored per line.
+- taxable_value for invoice = sum over items of (quantity * sale_price).
+- total_gst = sum(invoice_items.gst_amount).
+- Split gst_amount into CGST and SGST: cgst_amount = gst_amount / 2, sgst_amount = gst_amount / 2 (or use existing fields if already stored separately).
+- Return a JSON array of invoice rows, plus a summary footer with total taxable, total CGST, total SGST, total invoice value.
+
+1.2 HSN-wise GST Summary
+Endpoint example:
+- GET `/api/reports/gst/hsn-summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+For each HSN present in invoice items in that period:
+- Return:
+  - hsn_code
+  - gst_rate
+  - product_count (number of distinct products under this HSN in that range)
+  - total_quantity_sold
+  - taxable_value (sum of quantity * sale_price for those items)
+  - cgst_amount (half of total gst_amount for those items, or from existing fields)
+  - sgst_amount
+  - total_gst = cgst_amount + sgst_amount
+  - total_value_incl_gst = taxable_value + total_gst
+
+Implementation notes:
+- Join invoice_items → products on product_id to get hsn_code and gst_rate.
+- Group by hsn_code and gst_rate.
+- Carefully handle null or empty hsn_code (either group under 'UNKNOWN' or exclude based on config).
+
+1.3 Product-wise GST Summary
+Endpoint example:
+- GET `/api/reports/gst/product-summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+For each product sold in the period:
+- Return:
+  - product_id
+  - product_name
+  - hsn_code
+  - gst_rate
+  - total_quantity_sold
+  - taxable_value (sum of quantity * sale_price)
+  - cgst_amount
+  - sgst_amount
+  - total_gst
+  - total_value_incl_gst
+
+Implementation notes:
+- Group by product_id, product_name, hsn_code, gst_rate.
+- Use the same calculation logic as HSN summary but at product level.
+
+1.4 Reuse / shared helper
+- Implement shared helper functions in the backend to:
+  - Calculate taxable_value and gst splits consistently.
+  - Apply date range and pharmacy scope.
+- Keep all existing report endpoints unchanged, only add these three newer ones.
+
+────────────────────────
+2) Backend – Excel & PDF export
+────────────────────────
+
+We need export URLs for each report type:
+
+- Excel:
+  - GET `/api/reports/gst/invoice-register/export/excel`
+  - GET `/api/reports/gst/hsn-summary/export/excel`
+  - GET `/api/reports/gst/product-summary/export/excel`
+
+- PDF:
+  - GET `/api/reports/gst/invoice-register/export/pdf`
+  - GET `/api/repo

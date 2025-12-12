@@ -160,8 +160,6 @@ export default function NewSale() {
   const [searchingInvoice, setSearchingInvoice] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   const customerSearchRef = useRef<HTMLButtonElement>(null);
-  const generateInvoiceNumber = () => `INV-${Date.now()}`;
-  const [invoiceNumber, setInvoiceNumber] = useState<string>(generateInvoiceNumber());
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
@@ -542,7 +540,6 @@ export default function NewSale() {
     setPrintInvoice(false);
     setSendViaEmail(false);
     setBillDiscountPercent("0");
-    setInvoiceNumber(generateInvoiceNumber());
   };
 
   const handleGenerateInvoice = () => {
@@ -555,7 +552,6 @@ export default function NewSale() {
     const customerPhone = selectedCustomer?.phone || "";
 
     const saleData = {
-      invoiceNo: invoiceNumber || `INV-${Date.now()}`,
       customerId: selectedCustomer?.id || null,
       customerName,
       customerPhone,
@@ -827,8 +823,8 @@ export default function NewSale() {
             <CardContent className="p-6 space-y-6">
               <div className="flex items-center justify-between bg-muted/50 px-4 py-2 rounded-lg mb-4">
                 <span className="text-sm text-muted-foreground">Invoice Number:</span>
-                <span className="font-mono font-semibold text-primary" data-testid="text-invoice-number">
-                  {invoiceNumber}
+                <span className="font-mono font-semibold text-muted-foreground" data-testid="text-invoice-number">
+                  Auto-generated on save
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

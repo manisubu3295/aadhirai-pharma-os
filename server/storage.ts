@@ -54,7 +54,8 @@ import {
   goodsReceiptItems,
   salesReturns,
   salesReturnItems,
-  appSettings
+  appSettings,
+  sequences
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -250,6 +251,18 @@ export async function initializeDatabase() {
         price_per_unit DECIMAL(10,2) NOT NULL,
         refund_amount DECIMAL(10,2) NOT NULL
       );
+      
+      CREATE TABLE IF NOT EXISTS sequences (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        current_value INTEGER NOT NULL DEFAULT 0,
+        prefix TEXT NOT NULL DEFAULT 'INV',
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      INSERT INTO sequences (name, current_value, prefix) 
+      VALUES ('invoice', 0, 'INV') 
+      ON CONFLICT (name) DO NOTHING;
     `);
     console.log("Database tables initialized successfully");
   } catch (error) {
@@ -289,6 +302,7 @@ export interface IStorage {
   getSaleByInvoiceNo(invoiceNo: string): Promise<Sale | undefined>;
   createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }>;
   getSaleItems(saleId: number): Promise<SaleItem[]>;
+  getNextInvoiceNumber(): Promise<string>;
   
   getDashboardStats(): Promise<{
     totalRevenue: string;
@@ -507,6 +521,20 @@ export class DatabaseStorage implements IStorage {
 
   async getSaleItems(saleId: number): Promise<SaleItem[]> {
     return await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
+  }
+
+  async getNextInvoiceNumber(): Promise<string> {
+    const result = await pool.query(`
+      INSERT INTO sequences (name, current_value, prefix, updated_at)
+      VALUES ('invoice', 1, 'INV', NOW())
+      ON CONFLICT (name) DO UPDATE 
+      SET current_value = sequences.current_value + 1,
+          updated_at = NOW()
+      RETURNING prefix, current_value
+    `);
+    
+    const row = result.rows[0];
+    return `${row.prefix}-${row.current_value}`;
   }
 
   async getDashboardStats(): Promise<{

@@ -413,3 +413,15 @@ export const appSettings = pgTable("app_settings", {
 export const insertAppSettingSchema = createInsertSchema(appSettings).omit({ id: true, updatedAt: true });
 export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
 export type AppSetting = typeof appSettings.$inferSelect;
+
+export const sequences = pgTable("sequences", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  currentValue: integer("current_value").notNull().default(0),
+  prefix: text("prefix").notNull().default("INV"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertSequenceSchema = createInsertSchema(sequences).omit({ id: true, updatedAt: true });
+export type InsertSequence = z.infer<typeof insertSequenceSchema>;
+export type Sequence = typeof sequences.$inferSelect;

@@ -661,7 +661,10 @@ export async function registerRoutes(
         });
       }
       
-      const createdSale = await storage.createSale(sale, saleItems);
+      const invoiceNo = await storage.getNextInvoiceNumber();
+      const saleWithInvoice = { ...sale, invoiceNo };
+      
+      const createdSale = await storage.createSale(saleWithInvoice, saleItems);
       res.status(201).json(createdSale);
     } catch (error) {
       if (error instanceof z.ZodError) {
