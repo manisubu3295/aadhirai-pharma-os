@@ -57,9 +57,36 @@ interface CustomerFormFieldsProps {
   formData: CustomerFormData;
   setFormData: React.Dispatch<React.SetStateAction<CustomerFormData>>;
   isPro: boolean;
+  errors?: { phone?: string; email?: string };
 }
 
-const CustomerFormFields = memo(function CustomerFormFields({ formData, setFormData, isPro }: CustomerFormFieldsProps) {
+const validateEmail = (email: string): boolean => {
+  if (!email) return true;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const validatePhone = (phone: string): { valid: boolean; error?: string } => {
+  if (!phone) return { valid: true };
+  const digitsOnly = phone.replace(/\D/g, '');
+  if (digitsOnly.length === 0) {
+    return { valid: false, error: "Please enter a valid phone number" };
+  }
+  if (digitsOnly.length !== 10) {
+    return { valid: false, error: "Phone number must be exactly 10 digits for India" };
+  }
+  return { valid: true };
+};
+
+const CustomerFormFields = memo(function CustomerFormFields({ formData, setFormData, isPro, errors }: CustomerFormFieldsProps) {
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const digitsOnly = value.replace(/\D/g, '');
+    if (digitsOnly.length <= 10) {
+      setFormData(prev => ({ ...prev, phone: digitsOnly }));
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -79,11 +106,15 @@ const CustomerFormFields = memo(function CustomerFormFields({ formData, setFormD
           <Input
             id="phone"
             value={formData.phone}
-            onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-            placeholder="+91 98765 43210"
-            className="mt-1.5"
+            onChange={handlePhoneChange}
+            placeholder="9876543210"
+            className={`mt-1.5 ${errors?.phone ? 'border-red-500' : ''}`}
             data-testid="input-phone"
           />
+          {errors?.phone && (
+            <p className="text-xs text-red-500 mt-1">{errors.phone}</p>
+          )}
+          <p className="text-xs text-muted-foreground mt-1">Max 10 digits for India</p>
         </div>
         <div>
           <Label htmlFor="email">Email</Label>
@@ -92,10 +123,13 @@ const CustomerFormFields = memo(function CustomerFormFields({ formData, setFormD
             type="email"
             value={formData.email}
             onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-            placeholder="customer@email.com"
-            className="mt-1.5"
+            placeholder="customer@domain.com"
+            className={`mt-1.5 ${errors?.email ? 'border-red-500' : ''}`}
             data-testid="input-email"
           />
+          {errors?.email && (
+            <p className="text-xs text-red-500 mt-1">{errors.email}</p>
+          )}
         </div>
       </div>
       <div>
@@ -169,6 +203,7 @@ export default function Customers() {
   const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm);
+  const [formErrors, setFormErrors] = useState<{ phone?: string; email?: string }>({});
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -260,6 +295,7 @@ export default function Customers() {
 
   const openEditDialog = (customer: Customer) => {
     setSelectedCustomer(customer);
+    setFormErrors({});
     setFormData({
       name: customer.name,
       phone: customer.phone || "",
@@ -289,12 +325,46 @@ export default function Customers() {
     return new Date() > dueDate;
   };
 
+  const validateForm = (): boolean => {
+    const errors: { phone?: string; email?: string } = {};
+    
+    if (formData.email && !validateEmail(formData.email)) {
+      errors.email = "Please enter a valid email (e.g., name@domain.com)";
+    }
+    
+    const phoneResult = validatePhone(formData.phone);
+    if (!phoneResult.valid) {
+      errors.phone = phoneResult.error;
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = () => {
     if (!formData.name.trim()) {
       toast({ title: "Please enter customer name", variant: "destructive" });
       return;
     }
+    if (!validateForm()) {
+      toast({ title: "Please fix validation errors", variant: "destructive" });
+      return;
+    }
     createMutation.mutate(formData);
+  };
+  
+  const handleUpdate = () => {
+    if (!formData.name.trim()) {
+      toast({ title: "Please enter customer name", variant: "destructive" });
+      return;
+    }
+    if (!validateForm()) {
+      toast({ title: "Please fix validation errors", variant: "destructive" });
+      return;
+    }
+    if (selectedCustomer) {
+      updateMutation.mutate({ id: selectedCustomer.id, data: formData });
+    }
   };
 
   const totalOutstanding = customers.reduce((sum, c) => sum + Number(c.outstandingBalance || 0), 0);
@@ -362,6 +432,7 @@ export default function Customers() {
             className="h-9"
             onClick={() => {
               setFormData(emptyForm);
+              setFormErrors({});
               setAddDialogOpen(true);
             }}
             data-testid="button-add-customer"
@@ -497,7 +568,7 @@ export default function Customers() {
             <DialogTitle>Add New Customer</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <CustomerFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
+            <CustomerFormFields formData={formData} setFormData={setFormData} isPro={isPro} errors={formErrors} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
@@ -518,7 +589,7 @@ export default function Customers() {
             <DialogTitle>Customer Details</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <CustomerFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
+            <CustomerFormFields formData={formData} setFormData={setFormData} isPro={isPro} errors={formErrors} />
             {selectedCustomer && Number(selectedCustomer.outstandingBalance || 0) > 0 && (
               <div className="mt-4 p-4 rounded-lg bg-red-50 border border-red-200">
                 <p className="text-sm font-medium text-red-800">Outstanding Balance</p>
@@ -531,11 +602,7 @@ export default function Customers() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
             <Button 
-              onClick={() => {
-                if (selectedCustomer) {
-                  updateMutation.mutate({ id: selectedCustomer.id, data: formData });
-                }
-              }}
+              onClick={handleUpdate}
               disabled={updateMutation.isPending}
               data-testid="button-update-customer"
             >
