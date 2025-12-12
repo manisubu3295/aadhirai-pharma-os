@@ -25,7 +25,7 @@ interface SalesReturn {
   saleId: number;
   invoiceNo: string;
   returnDate: string;
-  totalRefund: string;
+  totalRefundAmount: string;
   refundMode: string;
   reason: string;
   createdAt: string;
@@ -90,7 +90,7 @@ export default function MedicineRefund() {
       `RET-${ret.id}`,
       ret.invoiceNo,
       format(new Date(ret.createdAt), "dd/MM/yyyy HH:mm"),
-      ret.totalRefund,
+      ret.totalRefundAmount,
       ret.refundMode,
       ret.reason || ""
     ]);
@@ -143,12 +143,12 @@ export default function MedicineRefund() {
                 <td>${ret.invoiceNo}</td>
                 <td>${format(new Date(ret.createdAt), "dd/MM/yyyy HH:mm")}</td>
                 <td>${ret.refundMode}</td>
-                <td class="text-right">₹${parseFloat(ret.totalRefund).toFixed(2)}</td>
+                <td class="text-right">₹${parseFloat(ret.totalRefundAmount).toFixed(2)}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
-        <p class="total">Total Refunds: ₹${filteredReturns.reduce((sum, r) => sum + parseFloat(r.totalRefund), 0).toFixed(2)}</p>
+        <p class="total">Total Refunds: ₹${filteredReturns.reduce((sum, r) => sum + parseFloat(r.totalRefundAmount), 0).toFixed(2)}</p>
       </body>
       </html>
     `;
@@ -327,7 +327,7 @@ export default function MedicineRefund() {
                       </TableCell>
                       <TableCell>{ret.reason || "-"}</TableCell>
                       <TableCell className="text-right font-semibold text-red-600">
-                        -₹{parseFloat(ret.totalRefund).toFixed(2)}
+                        -₹{parseFloat(ret.totalRefundAmount).toFixed(2)}
                       </TableCell>
                     </TableRow>
                   ))}
