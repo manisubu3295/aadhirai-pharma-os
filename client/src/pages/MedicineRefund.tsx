@@ -38,6 +38,7 @@ export default function MedicineRefund() {
   const [dateTo, setDateTo] = useState(today);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
+  const [refundInvoiceNo, setRefundInvoiceNo] = useState("");
 
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -158,6 +159,22 @@ export default function MedicineRefund() {
     printWindow.print();
   };
 
+  const printRefundByInvoiceNo = () => {
+    const refundIdMatch = refundInvoiceNo.match(/^RET-?(\d+)$/i);
+    if (!refundIdMatch) {
+      alert("Please enter a valid refund invoice number (e.g., RET-5)");
+      return;
+    }
+    const refundId = parseInt(refundIdMatch[1]);
+    const refund = salesReturns.find(r => r.id === refundId);
+    if (!refund) {
+      alert(`Refund invoice RET-${refundId} not found`);
+      return;
+    }
+    printRefundReceipt(refund);
+    setRefundInvoiceNo("");
+  };
+
   const printRefundReceipt = (refund: SalesReturn) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -237,49 +254,87 @@ export default function MedicineRefund() {
   return (
     <AppLayout title="Medicine Refund">
       <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <RotateCcw className="w-5 h-5" />
-              Search Invoice for Refund
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="md:col-span-2">
-                <Label>Search Invoice / Customer</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <RotateCcw className="w-5 h-5" />
+                Search Invoice for Refund
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Label>Search Invoice / Customer</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Enter invoice number, customer name or phone..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                      data-testid="input-search-invoice"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>From Date</Label>
                   <Input
-                    placeholder="Enter invoice number, customer name or phone..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                    data-testid="input-search-invoice"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    data-testid="input-refund-date-from"
+                  />
+                </div>
+                <div>
+                  <Label>To Date</Label>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    data-testid="input-refund-date-to"
                   />
                 </div>
               </div>
-              <div>
-                <Label>From Date</Label>
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  data-testid="input-refund-date-from"
-                />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Printer className="w-5 h-5" />
+                Print Refund Invoice
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <Label>Refund Invoice Number</Label>
+                  <div className="relative">
+                    <Receipt className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Enter refund number (e.g., RET-5)..."
+                      value={refundInvoiceNo}
+                      onChange={(e) => setRefundInvoiceNo(e.target.value)}
+                      className="pl-10"
+                      data-testid="input-refund-invoice-no"
+                      onKeyDown={(e) => e.key === 'Enter' && printRefundByInvoiceNo()}
+                    />
+                  </div>
+                </div>
+                <Button 
+                  onClick={printRefundByInvoiceNo} 
+                  className="w-full"
+                  disabled={!refundInvoiceNo.trim()}
+                  data-testid="button-print-refund-by-no"
+                >
+                  <Printer className="w-4 h-4 mr-2" />
+                  Print Refund Receipt
+                </Button>
               </div>
-              <div>
-                <Label>To Date</Label>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  data-testid="input-refund-date-to"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card>
           <CardHeader>
