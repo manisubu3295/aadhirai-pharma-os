@@ -160,19 +160,36 @@ export default function MedicineRefund() {
   };
 
   const printRefundByInvoiceNo = () => {
-    const refundIdMatch = refundInvoiceNo.match(/^RET-?(\d+)$/i);
-    if (!refundIdMatch) {
-      alert("Please enter a valid refund invoice number (e.g., RET-5)");
+    const searchValue = refundInvoiceNo.trim();
+    if (!searchValue) {
+      alert("Please enter a refund or invoice number");
       return;
     }
-    const refundId = parseInt(refundIdMatch[1]);
-    const refund = salesReturns.find(r => r.id === refundId);
-    if (!refund) {
-      alert(`Refund invoice RET-${refundId} not found`);
+    
+    const refundIdMatch = searchValue.match(/^RET-?(\d+)$/i);
+    if (refundIdMatch) {
+      const refundId = parseInt(refundIdMatch[1]);
+      const refund = salesReturns.find(r => r.id === refundId);
+      if (!refund) {
+        alert(`Refund invoice RET-${refundId} not found`);
+        return;
+      }
+      printRefundReceipt(refund);
+      setRefundInvoiceNo("");
       return;
     }
-    printRefundReceipt(refund);
-    setRefundInvoiceNo("");
+    
+    const refundByInvoice = salesReturns.find(r => 
+      r.invoiceNo.toLowerCase() === searchValue.toLowerCase() ||
+      r.invoiceNo.toLowerCase().includes(searchValue.toLowerCase())
+    );
+    if (refundByInvoice) {
+      printRefundReceipt(refundByInvoice);
+      setRefundInvoiceNo("");
+      return;
+    }
+    
+    alert(`No refund found for "${searchValue}". Try searching by refund number (e.g., RET-5) or original invoice number.`);
   };
 
   const printRefundReceipt = (refund: SalesReturn) => {
@@ -313,7 +330,7 @@ export default function MedicineRefund() {
                   <div className="relative">
                     <Receipt className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Enter refund number (e.g., RET-5)..."
+                      placeholder="Enter RET-5 or INV-1234..."
                       value={refundInvoiceNo}
                       onChange={(e) => setRefundInvoiceNo(e.target.value)}
                       className="pl-10"
