@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useAutoLogout } from "@/hooks/useAutoLogout";
 import { setSessionExpiredHandler } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigation } from "@/contexts/NavigationContext";
 
 interface User {
   id: string;
@@ -118,9 +119,17 @@ export function useAuth() {
   return context;
 }
 
-export function ProtectedRoute({ children, allowedRoles }: { children: ReactNode; allowedRoles?: string[] }) {
+interface ProtectedRouteProps {
+  children: ReactNode;
+  allowedRoles?: string[];
+  requiredRoute?: string;
+}
+
+export function ProtectedRoute({ children, allowedRoles, requiredRoute }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth();
+  const { hasAccess, isLoading: navLoading } = useNavigation();
   const [, setLocation] = useLocation();
+  const [location] = useLocation();
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -146,6 +155,31 @@ export function ProtectedRoute({ children, allowedRoles }: { children: ReactNode
         <div className="text-center">
           <h1 className="text-2xl font-bold text-destructive mb-2">Access Denied</h1>
           <p className="text-muted-foreground">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const isPrivilegedUser = user.role === "owner" || user.role === "admin";
+  if (isPrivilegedUser) {
+    return <>{children}</>;
+  }
+
+  if (navLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  const routeToCheck = requiredRoute || location;
+  if (routeToCheck && !hasAccess(routeToCheck)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-destructive mb-2">Access Denied</h1>
+          <p className="text-muted-foreground">You don't have menu access to this page.</p>
         </div>
       </div>
     );

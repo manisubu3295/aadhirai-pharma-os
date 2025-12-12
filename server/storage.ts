@@ -1106,6 +1106,7 @@ export class DatabaseStorage implements IStorage {
       { key: 'admin.users', label: 'User Management', routePath: '/admin/users', icon: 'Users', displayOrder: 52 },
       { key: 'admin.menus', label: 'Menu Management', routePath: '/admin/menus', icon: 'Menu', displayOrder: 53 },
       { key: 'admin.groups', label: 'Menu Groups', routePath: '/admin/menu-groups', icon: 'FolderOpen', displayOrder: 54 },
+      { key: 'admin.access', label: 'User Access', routePath: '/admin/user-access', icon: 'Shield', displayOrder: 55 },
     ];
 
     for (const menu of defaultMenus) {
@@ -1129,7 +1130,7 @@ export class DatabaseStorage implements IStorage {
       { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn'] },
       { group: customersGroup[0].id, keys: ['customers.accounts', 'customers.doctors', 'customers.collections'] },
       { group: reports[0].id, keys: ['reports.sales', 'reports.analytics'] },
-      { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups'] },
+      { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups', 'admin.access'] },
     ];
 
     for (const link of groupLinks) {

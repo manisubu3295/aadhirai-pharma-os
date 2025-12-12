@@ -29,6 +29,9 @@ import GoodsReceipts from "@/pages/GoodsReceipts";
 import Profile from "@/pages/Profile";
 import CreditBilling from "@/pages/CreditBilling";
 import MedicineRefund from "@/pages/MedicineRefund";
+import MenuManagement from "@/pages/admin/MenuManagement";
+import MenuGroups from "@/pages/admin/MenuGroups";
+import UserMenuAccess from "@/pages/admin/UserMenuAccess";
 
 function Router() {
   return (
@@ -132,6 +135,21 @@ function Router() {
       <Route path="/medicine-refund">
         <ProtectedRoute>
           <MedicineRefund />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/menus">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <MenuManagement />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/menu-groups">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <MenuGroups />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/user-access">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <UserMenuAccess />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />
