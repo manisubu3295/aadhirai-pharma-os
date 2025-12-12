@@ -48,7 +48,7 @@ interface SalesReturnDialogProps {
 export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [returnQuantities, setReturnQuantities] = useState<Record<number, number>>({});
+  const [returnQuantities, setReturnQuantities] = useState<Record<number, string>>({});
   const [refundMode, setRefundMode] = useState("cash");
   const [reason, setReason] = useState("");
 
@@ -64,9 +64,9 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
 
   useEffect(() => {
     if (saleData) {
-      const initialQty: Record<number, number> = {};
+      const initialQty: Record<number, string> = {};
       saleData.items.forEach(item => {
-        initialQty[item.id] = 0;
+        initialQty[item.id] = "";
       });
       setReturnQuantities(initialQty);
       
@@ -108,19 +108,23 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
   });
 
   const handleQuantityChange = (itemId: number, value: string) => {
-    const qty = Math.max(0, parseInt(value) || 0);
-    setReturnQuantities(prev => ({ ...prev, [itemId]: qty }));
+    setReturnQuantities(prev => ({ ...prev, [itemId]: value }));
+  };
+  
+  const getReturnQty = (itemId: number): number => {
+    const val = returnQuantities[itemId];
+    return val === "" || val === undefined ? 0 : parseInt(val) || 0;
   };
 
   const handleSubmit = () => {
     if (!saleId || !saleData) return;
 
     const items: ReturnItem[] = saleData.items
-      .filter(item => (returnQuantities[item.id] || 0) > 0)
+      .filter(item => getReturnQty(item.id) > 0)
       .map(item => ({
         saleItemId: item.id,
         medicineId: item.medicineId,
-        quantityReturned: returnQuantities[item.id],
+        quantityReturned: getReturnQty(item.id),
       }));
 
     if (items.length === 0) {
@@ -151,7 +155,7 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
   };
 
   const totalRefund = saleData?.items.reduce((sum, item) => {
-    const qty = returnQuantities[item.id] || 0;
+    const qty = getReturnQty(item.id);
     return sum + qty * parseFloat(item.price);
   }, 0) || 0;
 
@@ -186,8 +190,8 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
               <TableBody>
                 {saleData.items.map((item) => {
                   const maxReturnable = item.quantity - item.returnedQty;
-                  const returnQty = returnQuantities[item.id] || 0;
-                  const lineTotal = returnQty * parseFloat(item.price);
+                  const returnQtyNum = getReturnQty(item.id);
+                  const lineTotal = returnQtyNum * parseFloat(item.price);
 
                   return (
                     <TableRow key={item.id}>
@@ -200,7 +204,7 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
                           type="number"
                           min={0}
                           max={maxReturnable}
-                          value={returnQty}
+                          value={returnQuantities[item.id] ?? ""}
                           onChange={(e) => handleQuantityChange(item.id, e.target.value)}
                           className="w-20 ml-auto text-right"
                           disabled={maxReturnable === 0}
