@@ -209,9 +209,17 @@ export function Sidebar() {
         {user && (
           <>
             <div className="flex items-center gap-3 mb-3 px-2">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">
-                {user.name?.charAt(0)?.toUpperCase() || user.username?.charAt(0)?.toUpperCase() || "U"}
-              </div>
+              {(user as any).photoUrl ? (
+                <img 
+                  src={(user as any).photoUrl} 
+                  alt={user.name || user.username} 
+                  className="w-9 h-9 rounded-full object-cover shadow-lg"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                  {user.name?.charAt(0)?.toUpperCase() || user.username?.charAt(0)?.toUpperCase() || "U"}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white truncate">{user.name || user.username}</p>
                 <p className="text-[11px] text-slate-400 capitalize">{user.role}</p>
