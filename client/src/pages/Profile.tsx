@@ -6,30 +6,48 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Camera, User, MapPin, Phone, Mail, Building, Lock, Shield, Save } from "lucide-react";
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, checkAuth } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [profileData, setProfileData] = useState({
-    name: user?.name || "",
+    name: "",
     email: "",
     phone: "",
     address: "",
     city: "",
     state: "",
     pincode: "",
-    pharmacyName: "Aadhirai Innovations",
+    pharmacyName: "",
     gstNumber: "",
     drugLicense: "",
   });
   
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        address: (user as any).address || "",
+        city: (user as any).city || "",
+        state: (user as any).state || "",
+        pincode: (user as any).pincode || "",
+        pharmacyName: (user as any).pharmacyName || "Aadhirai Innovations",
+        gstNumber: (user as any).gstNumber || "",
+        drugLicense: (user as any).drugLicense || "",
+      });
+      setProfileImage((user as any).photoUrl || null);
+    }
+  }, [user]);
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -64,9 +82,27 @@ export default function Profile() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    toast({ title: "Profile saved successfully" });
-    setIsSaving(false);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...profileData,
+          photoUrl: profileImage,
+        }),
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to save profile");
+      }
+      
+      await checkAuth();
+      toast({ title: "Profile saved successfully" });
+    } catch (error) {
+      toast({ title: "Failed to save profile", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleChangePassword = async () => {

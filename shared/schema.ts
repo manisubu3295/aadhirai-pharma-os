@@ -11,6 +11,14 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("staff"),
   email: text("email"),
   phone: text("phone"),
+  photoUrl: text("photo_url"),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  pincode: text("pincode"),
+  pharmacyName: text("pharmacy_name"),
+  gstNumber: text("gst_number"),
+  drugLicense: text("drug_license"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -24,7 +32,22 @@ export const insertUserSchema = createInsertSchema(users).pick({
   phone: true,
 });
 
+export const updateProfileSchema = createInsertSchema(users).pick({
+  name: true,
+  email: true,
+  phone: true,
+  photoUrl: true,
+  address: true,
+  city: true,
+  state: true,
+  pincode: true,
+  pharmacyName: true,
+  gstNumber: true,
+  drugLicense: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 export type User = typeof users.$inferSelect;
 
 export const medicines = pgTable("medicines", {

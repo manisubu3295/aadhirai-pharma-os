@@ -1,0 +1,158 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app (Node/Express backend, Angular + Angular Material frontend). Do NOT break any existing logic or flows. Only extend and constrain behaviour as described below. Keep backward compatibility with existing data.
+
+New requirements:
+
+1) Purchase Order (PO) edit rules
+2) Process Return – tax invoice printing + safer quantity input
+3) Prevent underpaid invoices (non-credit)
+4) New Sale – Send invoice via WhatsApp
+5) User profile photo/details must be correctly saved and retrieved
+
+Please implement each item safely:
+
+────────────────────────────────
+1) Purchase Order (PO) edit rules
+────────────────────────────────
+Business rule:
+- A PO can be edited ONLY when its status is DRAFT.
+- Once PO status is APPROVED, ISSUED, or COMPLETED, it must become read-only (no further edits, only view).
+
+Backend:
+- Locate the Purchase Order model and update API (e.g. PUT /api/purchase-orders/:id or similar).
+- Before updating a PO, load the existing record and check its `status`.
+- If `status !== 'DRAFT'`, reject the update with 400 and a clear message like:
+  "Purchase Order cannot be edited once it is approved/issued/completed."
+- Ensure any business logic that changes status (e.g. approve/issue/complete) remains unchanged.
+
+Frontend:
+- In the PO list and PO detail/edit screens:
+  - Disable or hide the Edit button when PO status is not DRAFT.
+  - On the PO form, if status !== DRAFT:
+    - Make all form fields read-only/disabled.
+    - Keep a clear label or tag (“Approved”, “Issued”, “Completed”) so the user understands why they cannot edit.
+- Do NOT remove existing PO actions. Only restrict edit based on status.
+
+────────────────────────────────
+2) Process Return – tax invoice + quantity input rules
+────────────────────────────────
+Business rules:
+- When processing a medicine return (sales return), the system must:
+  - Generate a tax invoice / credit note style document for the return, with GST breakdown (CGST/SGST) similar to a normal invoice.
+  - Allow the user to print this return tax invoice immediately.
+  - Allow re-printing later from a “Returns” history or from the original invoice.
+- On the return screen, the return quantity field should:
+  - Default to 0.
+  - Not be allowed to be empty (no blank value).
+  - Only accept numeric values >= 0.
+
+Backend:
+- Confirm there is a sales return model and API (e.g. sales_returns + sales_return_items).
+- Extend or reuse existing logic to generate a return invoice/credit note representation:
+  - Include invoice number/reference, date, original invoice reference, returned items, GST per line, CGST/SGST totals, and net refund amount.
+- Add an endpoint to fetch a specific return for printing later, e.g.:
+  - GET /api/sales-returns/:id/print or reuse an existing invoice-print endpoint that can also handle returns.
+- Ensure the return invoice/credit note object is generated consistently and can be used to render HTML/PDF for printing.
+
+Frontend:
+- In the “Process Return” UI:
+  - For each item row, the return quantity input should be initialized with value `0`.
+  - The input must not be allowed to become empty; it should always contain a numeric value (0 or more).
+    - Use Angular form validation and input type="number" with min="0".
+    - Show an error if user tries to submit with invalid/empty quantity.
+  - After a return is successfully processed:
+    - Show a success message.
+    - Open or provide a button to “Print Return Tax Invoice” (either in a new tab or via print dialog using the generated data).
+- In Returns history or Invoice detail:
+  - Add a “Print Return” action to re-open the return invoice/credit note for printing at any time.
+
+────────────────────────────────
+3) Prevent underpaid invoices (non-credit)
+────────────────────────────────
+Business rule:
+- The system must NOT allow invoice generation if the received amount is less than the net amount when payment method is NOT credit.
+- Exception: If the payment method is CREDIT, partial or zero payment at billing time is allowed (credit sale).
+
+Backend:
+- In the invoice creation endpoint (e.g. POST /api/invoices):
+  - Read `payment_mode` and `amount_received` (or equivalent fields).
+  - Calculate `net_amount` / total payable based on items, discount, GST, etc.
+  - If `payment_mode` is CASH, UPI, or CARD (any non-credit mode):
+    - If `amount_received < net_amount`, reject the request with 400 and error:
+      "Received amount cannot be less than net amount for non-credit payments."
+  - If `payment_mode` is CREDIT:
+    - Allow invoice creation even if amount_received is 0 or less than net_amount.
+- Ensure this validation does not break existing invoices already stored.
+
+Frontend:
+- In New Sale / Billing page:
+  - When the user selects payment mode (Cash/UPI/Card/Credit) and enters received amount:
+    - Optionally add client-side validation to warn the user if amount_received < net_amount for non-credit modes.
+  - Ensure that on submit, any backend validation error from above is shown clearly in a toast/snackbar/dialog.
+
+────────────────────────────────
+4) New Sale page – send invoice via WhatsApp
+────────────────────────────────
+Business rule:
+- After an invoice is generated, allow the user to send the invoice details via WhatsApp.
+- We can use the standard WhatsApp URL scheme (wa.me) and do NOT need deep integration with the official WhatsApp Business API.
+
+Frontend:
+- On the New Sale success screen (or in the invoice detail view):
+  - Add a button: “Send Invoice via WhatsApp”.
+- Behaviour:
+  - Use the customer’s mobile number if available; if not, allow user to enter a WhatsApp number.
+  - Build a WhatsApp message text including:
+    - Pharmacy name
+    - Invoice number
+    - Date
+    - Total amount
+    - Payment mode
+    - Optional short list of key items.
+  - Open a new window/tab with:
+    - `https://wa.me/<MOBILE_NUMBER>?text=<URL_ENCODED_MESSAGE>`
+- Do not block normal flow if user cancels WhatsApp send; this is optional.
+
+Backend:
+- No need to send WhatsApp from backend now.
+- Just ensure the invoice data (invoice number, total, customer details) is available to the frontend after invoice generation.
+
+────────────────────────────────
+5) User photo & details – save and retrieve correctly
+────────────────────────────────
+Problem:
+- User photo and user details are currently not being saved in DB or not being retrieved properly in the UI.
+
+Backend:
+- Locate the user/profile update endpoint (e.g. PUT /api/users/:id or /api/profile).
+- Ensure the model has fields for:
+  - photo (e.g. photo_url or photo_base64)
+  - phone, designation, or other basic details as used by the UI.
+- Fix the update logic so that:
+  - When profile update is called, these fields are persisted to the database.
+- Fix the get-profile endpoint so that:
+  - It returns all the fields required by the frontend, including photo and details.
+- If using file uploads for photos, make sure:
+  - You store and return a URL the frontend can use in an <img> tag.
+
+Frontend:
+- On the User Profile / Settings page:
+  - Bind the profile form to the correct fields (name, email, phone, photo, etc.).
+  - When user saves, call the profile update API with all fields.
+  - On profile load, call the get-profile API and populate the form.
+  - Ensure the photo is displayed correctly from the returned URL or base64.
+- Verify that:
+  - After saving, refreshing the page retains the updated photo/details.
+  - The header/user section uses the updated photo/name where applicable.
+
+────────────────────────────────
+General constraints
+────────────────────────────────
+- Do not refactor unrelated modules.
+- Do not change existing API contracts in a breaking way; only extend them in a backward-compatible manner.
+- Reuse existing services, models, and components as much as possible (e.g. invoice services, return services, user profile services).
+- After implementing, manually test:
+  - PO edit for DRAFT vs APPROVED/ISSUED/COMPLETED.
+  - A normal sale, return with tax invoice print, and reprint.
+  - Underpaid restriction for non-credit vs allowed partial for credit.
+  - Send invoice via WhatsApp button.
+  - User profile photo/details save & reload.

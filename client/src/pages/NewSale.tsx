@@ -53,7 +53,8 @@ import {
   Play,
   Clock,
   Package,
-  Printer
+  Printer,
+  Share2
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1592,6 +1593,29 @@ export default function NewSale() {
             <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>
               Close
             </Button>
+            {printSaleData?.sale.customerMobile && (
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  const phoneNumber = printSaleData.sale.customerMobile?.replace(/\D/g, '');
+                  if (!phoneNumber) return;
+                  
+                  const message = encodeURIComponent(
+                    `Invoice: ${printSaleData.sale.invoiceNo}\n` +
+                    `Amount: ${parseFloat(printSaleData.sale.grandTotal).toFixed(2)}\n` +
+                    `Date: ${new Date(printSaleData.sale.createdAt).toLocaleDateString()}\n\n` +
+                    `Thank you for your purchase at ${appSettings.storeName}!`
+                  );
+                  const whatsappUrl = `https://wa.me/91${phoneNumber}?text=${message}`;
+                  window.open(whatsappUrl, '_blank');
+                }}
+                data-testid="button-whatsapp-share"
+                className="gap-2"
+              >
+                <Share2 className="h-4 w-4" />
+                WhatsApp
+              </Button>
+            )}
             <Button 
               onClick={() => {
                 const printContent = printRef.current;

@@ -164,6 +164,40 @@ export async function registerRoutes(
     res.json({ user: userWithoutPassword });
   });
 
+  app.put("/api/profile", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const { name, email, phone, photoUrl, address, city, state, pincode, pharmacyName, gstNumber, drugLicense } = req.body;
+      
+      const updatedUser = await storage.updateUser(req.session.userId, {
+        name,
+        email,
+        phone,
+        photoUrl,
+        address,
+        city,
+        state,
+        pincode,
+        pharmacyName,
+        gstNumber,
+        drugLicense,
+      });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      res.json({ user: userWithoutPassword });
+    } catch (error) {
+      console.error("Profile update error:", error);
+      res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
   app.post("/api/auth/reset-passwords", async (req, res) => {
     try {
       const users = await storage.getUsers();
@@ -490,6 +524,16 @@ export async function registerRoutes(
       const { items, ...saleData } = req.body;
       const sale = insertSaleSchema.parse(saleData);
       const saleItems = z.array(createSaleItemSchema).parse(items);
+      
+      const paymentMethod = (sale.paymentMethod || "").toLowerCase();
+      const netAmount = parseFloat(String(sale.total || 0));
+      const receivedAmount = parseFloat(String(sale.receivedAmount || 0));
+      
+      if (paymentMethod !== "credit" && receivedAmount < netAmount) {
+        return res.status(400).json({ 
+          error: "Received amount cannot be less than net amount for non-credit payments." 
+        });
+      }
       
       const createdSale = await storage.createSale(sale, saleItems);
       res.status(201).json(createdSale);
@@ -1061,11 +1105,20 @@ export async function registerRoutes(
   app.patch("/api/purchase-orders/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const data = insertPurchaseOrderSchema.partial().parse(req.body);
-      const po = await storage.updatePurchaseOrder(id, data);
-      if (!po) {
+      
+      const existingPO = await storage.getPurchaseOrder(id);
+      if (!existingPO) {
         return res.status(404).json({ error: "Purchase order not found" });
       }
+      
+      if (existingPO.status !== "Draft") {
+        return res.status(400).json({ 
+          error: "Purchase Order cannot be edited once it is approved/issued/completed." 
+        });
+      }
+      
+      const data = insertPurchaseOrderSchema.partial().parse(req.body);
+      const po = await storage.updatePurchaseOrder(id, data);
       res.json(po);
     } catch (error) {
       if (error instanceof z.ZodError) {
