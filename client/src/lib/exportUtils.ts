@@ -34,6 +34,46 @@ export function exportToCSV(data: Record<string, any>[], filename: string) {
   downloadFile(csv, `${filename}.csv`, "text/csv;charset=utf-8;");
 }
 
+export function parseCSV(csvText: string): { headers: string[]; rows: string[][] } {
+  const lines = csvText.trim().split('\n');
+  if (lines.length === 0) return { headers: [], rows: [] };
+  
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+  
+  const headers = parseCSVLine(lines[0]);
+  const rows = lines.slice(1).filter(line => line.trim()).map(parseCSVLine);
+  
+  return { headers, rows };
+}
+
+export function downloadTemplate(headers: string[], sampleData: string[][], filename: string) {
+  const csv = generateCSV(headers, sampleData);
+  downloadFile(csv, `${filename}_template.csv`, "text/csv;charset=utf-8;");
+}
+
 export function printElement(elementId: string, title: string) {
   const element = document.getElementById(elementId);
   if (!element) return;

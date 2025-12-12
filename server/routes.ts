@@ -371,6 +371,49 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/medicines/import", async (req, res) => {
+    try {
+      const { medicines } = req.body;
+      if (!Array.isArray(medicines)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+      
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const med of medicines) {
+        try {
+          const data = insertMedicineSchema.parse({
+            name: med.name,
+            genericName: med.genericName || null,
+            manufacturer: med.manufacturer || null,
+            batchNumber: med.batchNumber || `BATCH-${Date.now()}`,
+            expiryDate: med.expiryDate || "",
+            quantity: parseInt(med.quantity) || 0,
+            price: med.price || "0",
+            costPrice: med.costPrice || med.price || "0",
+            mrp: med.mrp || med.price || "0",
+            gstRate: med.gstRate || "12",
+            hsnCode: med.hsnCode || null,
+            category: med.category || null,
+            schedule: med.schedule || null,
+            reorderLevel: parseInt(med.reorderLevel) || 10,
+            packSize: parseInt(med.packSize) || 1,
+            unitType: med.unitType || "STRIP",
+          });
+          await storage.createMedicine(data);
+          results.success++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`Row ${results.success + results.failed}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to import medicines" });
+    }
+  });
+
   app.get("/api/customers", async (req, res) => {
     try {
       const customers = await storage.getCustomers();
@@ -425,6 +468,38 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/customers/import", async (req, res) => {
+    try {
+      const { customers } = req.body;
+      if (!Array.isArray(customers)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+      
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const cust of customers) {
+        try {
+          const data = insertCustomerSchema.parse({
+            name: cust.name,
+            phone: cust.phone || null,
+            email: cust.email || null,
+            address: cust.address || null,
+            creditLimit: cust.creditLimit || "0",
+          });
+          await storage.createCustomer(data);
+          results.success++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`Row ${results.success + results.failed}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to import customers" });
+    }
+  });
+
   app.get("/api/doctors", async (req, res) => {
     try {
       const doctors = await storage.getDoctors();
@@ -476,6 +551,39 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete doctor" });
+    }
+  });
+
+  app.post("/api/doctors/import", async (req, res) => {
+    try {
+      const { doctors } = req.body;
+      if (!Array.isArray(doctors)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+      
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const doc of doctors) {
+        try {
+          const data = insertDoctorSchema.parse({
+            name: doc.name,
+            specialization: doc.specialization || null,
+            phone: doc.phone || null,
+            email: doc.email || null,
+            registrationNo: doc.registrationNo || null,
+            address: doc.address || null,
+          });
+          await storage.createDoctor(data);
+          results.success++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`Row ${results.success + results.failed}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to import doctors" });
     }
   });
 
@@ -766,6 +874,37 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/locations/import", async (req, res) => {
+    try {
+      const { locations } = req.body;
+      if (!Array.isArray(locations)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+      
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const loc of locations) {
+        try {
+          const data = insertLocationSchema.parse({
+            rack: loc.rack,
+            row: loc.row,
+            bin: loc.bin,
+            description: loc.description || null,
+          });
+          await storage.createLocation(data);
+          results.success++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`Row ${results.success + results.failed}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to import locations" });
+    }
+  });
+
   app.get("/api/audit-logs", requireRole("owner"), async (req, res) => {
     try {
       const from = req.query.from ? new Date(req.query.from as string) : undefined;
@@ -983,6 +1122,42 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete supplier" });
+    }
+  });
+
+  app.post("/api/suppliers/import", async (req, res) => {
+    try {
+      const { suppliers } = req.body;
+      if (!Array.isArray(suppliers)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+      
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const sup of suppliers) {
+        try {
+          const data = insertSupplierSchema.parse({
+            name: sup.name,
+            code: sup.code || `SUP-${Date.now()}`,
+            contact: sup.contact || null,
+            phone: sup.phone || null,
+            email: sup.email || null,
+            address: sup.address || null,
+            gstNo: sup.gstNo || null,
+            drugLicenseNo: sup.drugLicenseNo || null,
+            paymentTerms: sup.paymentTerms || null,
+          });
+          await storage.createSupplier(data);
+          results.success++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`Row ${results.success + results.failed}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to import suppliers" });
     }
   });
 
