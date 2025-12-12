@@ -1259,11 +1259,24 @@ export default function NewSale() {
                       value={parseFloat(receivedAmount) || 0}
                       onChange={(value) => setReceivedAmount(String(value))}
                       placeholder="0"
-                      className="w-24 text-right"
+                      className={cn(
+                        "w-24 text-right",
+                        paymentMethod !== "credit" && 
+                        calculations.received < calculations.netAmount && 
+                        calculations.netAmount > 0 &&
+                        "border-red-500 focus:border-red-500 focus:ring-red-500"
+                      )}
                       data-testid="input-received"
                     />
                   </div>
                 </div>
+                {paymentMethod !== "credit" && 
+                 calculations.received < calculations.netAmount && 
+                 calculations.netAmount > 0 && (
+                  <div className="text-sm text-red-500 text-right" data-testid="text-underpaid-error">
+                    Should be paid all the amount
+                  </div>
+                )}
                 {calculations.change > 0 && (
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Change</span>
@@ -1302,7 +1315,11 @@ export default function NewSale() {
               <Button
                 className="w-full bg-primary hover:bg-primary/90 h-12 text-base mt-auto"
                 onClick={handleGenerateInvoice}
-                disabled={items.length === 0 || createSaleMutation.isPending}
+                disabled={
+                  items.length === 0 || 
+                  createSaleMutation.isPending ||
+                  (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0)
+                }
                 data-testid="button-generate-invoice"
               >
                 {createSaleMutation.isPending ? "Generating..." : "Generate Invoice"}
@@ -1593,16 +1610,16 @@ export default function NewSale() {
             <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>
               Close
             </Button>
-            {printSaleData?.sale.customerMobile && (
+            {printSaleData?.sale.customerPhone && (
               <Button 
                 variant="outline"
                 onClick={() => {
-                  const phoneNumber = printSaleData.sale.customerMobile?.replace(/\D/g, '');
+                  const phoneNumber = printSaleData.sale.customerPhone?.replace(/\D/g, '');
                   if (!phoneNumber) return;
                   
                   const message = encodeURIComponent(
                     `Invoice: ${printSaleData.sale.invoiceNo}\n` +
-                    `Amount: ${parseFloat(printSaleData.sale.grandTotal).toFixed(2)}\n` +
+                    `Amount: ${parseFloat(printSaleData.sale.total).toFixed(2)}\n` +
                     `Date: ${new Date(printSaleData.sale.createdAt).toLocaleDateString()}\n\n` +
                     `Thank you for your purchase at ${appSettings.storeName}!`
                   );
