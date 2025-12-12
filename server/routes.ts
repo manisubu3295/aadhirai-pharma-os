@@ -1117,8 +1117,17 @@ export async function registerRoutes(
         });
       }
       
-      const data = insertPurchaseOrderSchema.partial().parse(req.body);
+      const { items, ...poData } = req.body;
+      const data = insertPurchaseOrderSchema.partial().parse(poData);
       const po = await storage.updatePurchaseOrder(id, data);
+      
+      if (items && Array.isArray(items)) {
+        await storage.deletePurchaseOrderItems(id);
+        const poItems = z.array(insertPurchaseOrderItemSchema.omit({ poId: true })).parse(items);
+        const itemsWithPoId = poItems.map(item => ({ ...item, poId: id }));
+        await storage.createPurchaseOrderItems(itemsWithPoId);
+      }
+      
       res.json(po);
     } catch (error) {
       if (error instanceof z.ZodError) {

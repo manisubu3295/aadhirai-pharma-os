@@ -333,6 +333,8 @@ export interface IStorage {
   createPurchaseOrder(po: InsertPurchaseOrder, items: InsertPurchaseOrderItem[]): Promise<PurchaseOrder>;
   updatePurchaseOrder(id: number, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
   getPurchaseOrderItems(poId: number): Promise<PurchaseOrderItem[]>;
+  deletePurchaseOrderItems(poId: number): Promise<void>;
+  createPurchaseOrderItems(items: InsertPurchaseOrderItem[]): Promise<void>;
   updatePurchaseOrderItemReceivedQty(id: number, receivedQty: number): Promise<PurchaseOrderItem | undefined>;
   
   getGoodsReceipts(): Promise<GoodsReceipt[]>;
@@ -689,6 +691,16 @@ export class DatabaseStorage implements IStorage {
 
   async getPurchaseOrderItems(poId: number): Promise<PurchaseOrderItem[]> {
     return await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.poId, poId));
+  }
+
+  async deletePurchaseOrderItems(poId: number): Promise<void> {
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.poId, poId));
+  }
+
+  async createPurchaseOrderItems(items: InsertPurchaseOrderItem[]): Promise<void> {
+    if (items.length > 0) {
+      await db.insert(purchaseOrderItems).values(items);
+    }
   }
 
   async updatePurchaseOrderItemReceivedQty(id: number, receivedQty: number): Promise<PurchaseOrderItem | undefined> {

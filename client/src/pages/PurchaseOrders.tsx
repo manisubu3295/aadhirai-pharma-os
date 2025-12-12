@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send, Printer, Download, Calendar } from "lucide-react";
+import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send, Printer, Download, Calendar, Pencil } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
@@ -69,6 +69,8 @@ export default function PurchaseOrders() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [poItems, setPOItems] = useState<PurchaseOrderItem[]>([]);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
   
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [poMode, setPOMode] = useState<"direct" | "rates">("direct");
@@ -185,6 +187,53 @@ export default function PurchaseOrders() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async (data: { id: number; supplierId: number; supplierName: string; notes: string; items: POItem[] }) => {
+      const subtotal = data.items.reduce((sum, item) => sum + (parseFloat(item.rate) * item.quantity), 0);
+      const taxAmount = data.items.reduce((sum, item) => {
+        const lineTotal = parseFloat(item.rate) * item.quantity;
+        return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+      }, 0);
+      
+      const res = await fetch(`/api/purchase-orders/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierId: data.supplierId,
+          supplierName: data.supplierName,
+          notes: data.notes,
+          subtotal: subtotal.toFixed(2),
+          taxAmount: taxAmount.toFixed(2),
+          totalAmount: (subtotal + taxAmount).toFixed(2),
+          items: data.items.map(item => ({
+            medicineId: item.medicineId,
+            medicineName: item.medicineName,
+            quantity: item.quantity,
+            rate: item.rate,
+            mrp: item.mrp || null,
+            gstRate: item.gstRate || "18",
+            discountPercent: item.discountPercent || "0",
+            supplierRateId: item.supplierRateId || null,
+            taxAmount: ((parseFloat(item.rate) * item.quantity) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
+            totalAmount: (parseFloat(item.rate) * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2),
+          })),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to update purchase order");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setEditDialogOpen(false);
+      setEditingPO(null);
+      resetForm();
+      toast({ title: "Purchase order updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setSelectedSupplierId("");
     setPOMode("direct");
@@ -268,6 +317,50 @@ export default function PurchaseOrders() {
       setPOItems(items);
     }
     setViewDialogOpen(true);
+  };
+
+  const editPO = async (po: PurchaseOrder) => {
+    setEditingPO(po);
+    setSelectedSupplierId(po.supplierId.toString());
+    setNotes(po.notes || "");
+    setPOMode("direct");
+    
+    const res = await fetch(`/api/purchase-orders/${po.id}/items`);
+    if (res.ok) {
+      const poItems: PurchaseOrderItem[] = await res.json();
+      const editItems: POItem[] = poItems.map(item => ({
+        medicineId: item.medicineId,
+        medicineName: item.medicineName,
+        quantity: item.quantity,
+        rate: item.rate,
+        mrp: item.mrp || "",
+        gstRate: item.gstRate || "18",
+        discountPercent: item.discountPercent || "0",
+        supplierRateId: item.supplierRateId || undefined,
+      }));
+      setItems(editItems);
+    }
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateSubmit = () => {
+    if (!editingPO) return;
+    if (!selectedSupplierId) {
+      toast({ title: "Please select a supplier", variant: "destructive" });
+      return;
+    }
+    if (items.length === 0) {
+      toast({ title: "Please add at least one item", variant: "destructive" });
+      return;
+    }
+    const supplier = suppliers.find(s => s.id === parseInt(selectedSupplierId));
+    updateMutation.mutate({
+      id: editingPO.id,
+      supplierId: parseInt(selectedSupplierId),
+      supplierName: supplier?.name || "",
+      notes,
+      items,
+    });
   };
 
   const filteredOrders = purchaseOrders.filter((po) => {
@@ -493,14 +586,26 @@ export default function PurchaseOrders() {
                             <Eye className="h-4 w-4" />
                           </Button>
                           {po.status === "Draft" && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => issueMutation.mutate(po.id)}
-                              data-testid={`button-issue-po-${po.id}`}
-                            >
-                              <Send className="h-4 w-4" />
-                            </Button>
+                            <>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => editPO(po)}
+                                data-testid={`button-edit-po-${po.id}`}
+                                title="Edit"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => issueMutation.mutate(po.id)}
+                                data-testid={`button-issue-po-${po.id}`}
+                                title="Issue"
+                              >
+                                <Send className="h-4 w-4" />
+                              </Button>
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -837,6 +942,165 @@ export default function PurchaseOrders() {
             }} data-testid="button-print-po">
               <Printer className="h-4 w-4 mr-2" />
               Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editDialogOpen} onOpenChange={(open) => {
+        setEditDialogOpen(open);
+        if (!open) {
+          setEditingPO(null);
+          resetForm();
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Purchase Order - {editingPO?.poNumber}</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Supplier *</Label>
+                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                  <SelectTrigger data-testid="select-edit-po-supplier">
+                    <SelectValue placeholder="Select supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
+                        {supplier.name} ({supplier.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Input 
+                  value={notes} 
+                  onChange={(e) => setNotes(e.target.value)} 
+                  placeholder="Optional notes"
+                  data-testid="input-edit-po-notes"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <h4 className="font-medium">Items</h4>
+              <Button variant="outline" size="sm" onClick={addDirectItem} data-testid="button-edit-add-item">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Item
+              </Button>
+            </div>
+
+            {items.length > 0 && (
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Medicine</TableHead>
+                      <TableHead className="w-24">Qty</TableHead>
+                      <TableHead className="w-28">Rate</TableHead>
+                      <TableHead className="w-24">GST %</TableHead>
+                      <TableHead className="w-28 text-right">Total</TableHead>
+                      <TableHead className="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <Select
+                            value={item.medicineId.toString()}
+                            onValueChange={(v) => updateItem(index, "medicineId", parseInt(v))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select medicine" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {medicines.map((m) => (
+                                <SelectItem key={m.id} value={m.id.toString()}>
+                                  {m.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={1}
+                            value={item.quantity}
+                            onChange={(value) => updateItem(index, "quantity", value)}
+                            className="w-20"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.rate) || 0}
+                            onChange={(value) => updateItem(index, "rate", String(value))}
+                            className="w-24"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.gstRate}
+                            onValueChange={(v) => updateItem(index, "gstRate", v)}
+                          >
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">0%</SelectItem>
+                              <SelectItem value="5">5%</SelectItem>
+                              <SelectItem value="12">12%</SelectItem>
+                              <SelectItem value="18">18%</SelectItem>
+                              <SelectItem value="28">28%</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          ₹{(parseFloat(item.rate || "0") * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
+                            <XCircle className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {items.length > 0 && (
+              <div className="flex justify-end">
+                <div className="w-64 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span className="font-mono">₹{totals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Tax:</span>
+                    <span className="font-mono">₹{totals.tax.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-lg border-t pt-2">
+                    <span>Total:</span>
+                    <span className="font-mono">₹{totals.total.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdateSubmit} disabled={updateMutation.isPending} data-testid="button-update-po">
+              {updateMutation.isPending ? "Updating..." : "Update PO"}
             </Button>
           </DialogFooter>
         </DialogContent>
