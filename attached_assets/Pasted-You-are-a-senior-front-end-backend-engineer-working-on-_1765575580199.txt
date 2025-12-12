@@ -1,0 +1,219 @@
+You are a senior front-end + backend engineer working on an existing Pharmacy POS app:
+
+- Frontend: React.js (SPA)
+- Backend: Node.js + Express.js
+- There is already a working “New Sale / POS” page with:
+  - Customer name / mobile fields
+  - Medicine search input
+  - Line items grid (product, batch, qty, price, etc.)
+  - Discount / totals summary
+  - Payment section (payment mode, amount received, etc.)
+  - Actions: Hold Bill, Resume Bill, Complete / Generate Invoice
+
+GOAL
+Make the New Sale page truly **keyboard-first**, so staff can do a full bill almost without touching the mouse.
+
+Keyboard behaviour required:
+
+1) When user clicks “New Sale” menu:
+   - As soon as the New Sale page loads, the cursor must go directly to the **Customer Name** field.
+
+2) User should be able to move through the entire flow using only keyboard:
+   - Fill customer name, phone
+   - Add medicines via search
+   - Adjust quantities
+   - Apply discount (if used)
+   - Choose payment mode + received amount
+   - Complete the invoice
+
+3) Global POS shortcuts (on New Sale page only):
+   - F2 – Focus medicine search input
+   - F3 – Focus quantity input (for the current selected line or open a new line if none)
+   - F4 – Focus payment section (payment mode / amount received)
+   - F5 – Hold bill
+   - F6 – Open “Resume Bill” (list of held bills) and allow selection via keyboard
+
+IMPORTANT RULES
+- Do NOT break existing functionality.
+- Do NOT remove any buttons or features; just enhance with keyboard support.
+- All shortcuts must only be active on the New Sale page, not globally across the entire app.
+- Where browser default behaviour conflicts (e.g. F5 reload), call `event.preventDefault()` and `stopPropagation()` for those keys while on the New Sale page.
+
+────────────────────────
+1) Focus management on New Sale page
+────────────────────────
+
+Frontend (React):
+
+1.1 Auto-focus Customer Name on page entry
+- In the New Sale component, add a `ref` to the Customer Name input, e.g. `customerNameRef`.
+- On component mount (`useEffect` with empty deps):
+  - Call `customerNameRef.current?.focus()` so the cursor goes there automatically when New Sale loads.
+
+1.2 Define all key focus targets with refs
+- Add `useRef` refs for:
+  - Customer name input
+  - Customer mobile input
+  - Medicine search input
+  - Current line item quantity input
+  - Discount input (if present)
+  - Payment mode select
+  - Amount received input
+  - Complete Invoice (“Generate Invoice”) button
+  - Hold Bill button
+- Ensure these refs are correctly attached to the right DOM elements.
+
+1.3 Logical Tab / Enter order
+- Set a logical focus/tab order (tabIndex or natural DOM order) for fields:
+  - Customer Name → Customer Mobile → Medicine Search → Items grid → Discount → Payment mode → Amount Received → Complete Invoice.
+- In the items grid, pressing Enter or Tab should move to:
+  - From search → first line item qty
+  - From qty → next column or next line as needed.
+
+────────────────────────
+2) Global keyboard shortcuts (New Sale scope)
+────────────────────────
+
+2.1 Keydown handler on New Sale page
+- In the New Sale component, set up a `useEffect` that:
+  - Attaches a `keydown` event listener on `window`.
+  - Cleans it up on unmount.
+- The handler should:
+  - ONLY act when the New Sale route is active (this component is mounted).
+  - Check for function key codes:
+    - F2 (key: 'F2')
+    - F3 (key: 'F3')
+    - F4 (key: 'F4')
+    - F5 (key: 'F5')
+    - F6 (key: 'F6')
+  - For these keys, call `event.preventDefault()` so browser does not take over (especially for F5).
+
+2.2 Implement shortcut behaviour
+- F2 – Focus medicine search
+  - On F2: focus the medicine search input.
+  - Preserve whatever text is currently there; user can start typing immediately.
+
+- F3 – Focus quantity
+  - On F3:
+    - If there is a currently “selected” line item:
+      - Focus its quantity input.
+    - Else:
+      - If at least one line exists, choose the last line and focus quantity.
+      - If no lines yet, focus medicine search first (F2 behaviour) to add an item.
+  - This assumes you track a “selected line” in state for keyboard navigation.
+
+- F4 – Payment
+  - On F4:
+    - Focus the payment mode field first (dropdown/select).
+    - After payment mode is chosen, pressing Enter should move to Amount Received.
+    - If payment mode is CREDIT, amount received can be optional; otherwise we will enforce validation (see requirement 4 from previous prompt).
+
+- F5 – Hold bill
+  - On F5:
+    - Prevent default (block browser reload).
+    - Trigger the existing “Hold Bill” action:
+      - Validate minimal required fields (e.g. at least one item).
+      - Call the backend as usual.
+    - Upon success, show the snackbar/snack message, clear the form, and then move focus back to Customer Name ready for the next sale.
+
+- F6 – Resume bill
+  - On F6:
+    - Open the existing “Resume Bill / Held Bills” dialog or panel.
+    - In that dialog, ensure:
+      - The first held bill row is focused.
+      - Arrow Up/Down keys navigate through the list.
+      - Enter picks the selected held bill and loads it into the New Sale form.
+    - After loading a held bill, focus:
+      - Either Customer Name (if you want them to confirm) or the items grid, depending on UX preference.
+
+────────────────────────
+3) Table navigation (line items) improvements
+────────────────────────
+
+3.1 Arrow key navigation
+- For the items grid (table of medicine lines):
+  - Allow Up/Down arrow keys to move between rows.
+  - Allow Left/Right to move between editable fields in a row (e.g. qty, discount, etc. if applicable).
+- Make sure this does not conflict with native input left/right inside the field:
+  - Only apply grid navigation when focus is on the row container or a non-input cell.
+  - For inputs, standard behaviour should remain (left/right to move cursor inside the input).
+
+3.2 Enter key behaviour in the grid
+- When focus is on the quantity input:
+  - Pressing Enter should:
+    - Save the current quantity change.
+    - Move focus back to the medicine search input (for quick next item).
+    - OR move to next row’s quantity if that fits your workflow.
+- Make this logic explicit in the New Sale component so that billing feels fast for keyboard-only users.
+
+────────────────────────
+4) Validation + UX with keyboard-only journey
+────────────────────────
+
+4.1 Prevent invoice generation with incomplete payment (non-credit)
+- Ensure backend still enforces:
+  - For payment modes other than CREDIT, `amount_received >= net_amount` is required.
+- On the frontend:
+  - When user presses Enter on the payment section or presses the “Generate Invoice” button via keyboard:
+    - If validation fails due to underpayment:
+      - Show a clear error message (snackbar).
+      - Return focus to the Amount Received field.
+
+4.2 Error focus
+- Any validation error on:
+  - Customer Name, Medicine list, Payment mode, Amount Received
+  - Must bring keyboard focus back to the problematic field so the user can fix it without mouse.
+
+────────────────────────
+5) Accessibility & roles
+────────────────────────
+
+- Ensure inputs and buttons have meaningful labels or `aria-label` attributes:
+  - “Customer name”, “Medicine search”, “Hold bill (F5)”, “Resume bill (F6)” etc.
+- Optionally show hints at the bottom of the screen:
+  - “F2: Search medicine | F3: Quantity | F4: Payment | F5: Hold | F6: Resume”
+- This can be a subtle text strip that reminds staff of available shortcuts.
+
+────────────────────────
+6) Backend (Express) – no major changes
+────────────────────────
+
+- No major backend changes are needed for shortcuts themselves.
+- Only ensure that:
+  - Invoice generation, hold/resume bill endpoints behave as before.
+  - Errors like “underpayment not allowed” return clear JSON messages that the frontend can display when triggered via keyboard.
+
+────────────────────────
+7) Testing checklist
+────────────────────────
+
+After implementing, manually test the full New Sale flow **using only keyboard**:
+
+1. From main menu:
+   - Click “New Sale” (mouse just once) → ensure Customer Name auto-focused.
+
+2. Fill:
+   - Customer Name → Tab → Customer Mobile → Enter / Tab → Medicine Search.
+
+3. Use F2 to return to search at any time.
+   - Search and select medicine via keyboard.
+   - Confirm quantity using F3 and Enter.
+
+4. Press F4:
+   - Move to Payment mode + Amount Received.
+   - Complete invoice with Enter on “Generate Invoice” button.
+
+5. Use F5:
+   - Hold bill via keyboard only.
+   - Confirm the bill is held and screen reset.
+
+6. Use F6:
+   - Open resume bill dialog.
+   - Navigate held bills with arrow keys.
+   - Press Enter to resume a bill into New Sale.
+
+7. Confirm that:
+   - Mouse is not required at any step in the primary flow.
+   - Existing mouse interactions still work if someone prefers mouse.
+
+Implement all of these behaviours in the New Sale (POS) page and related components, keeping the existing logic intact, and make sure shortcuts are only active when this page is active.

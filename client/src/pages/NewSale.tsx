@@ -56,7 +56,7 @@ import {
   Printer,
   Share2
 } from "lucide-react";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -159,6 +159,7 @@ export default function NewSale() {
   const [invoiceSearchInput, setInvoiceSearchInput] = useState("");
   const [searchingInvoice, setSearchingInvoice] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
+  const customerSearchRef = useRef<HTMLButtonElement>(null);
   const generateInvoiceNumber = () => `INV-${Date.now()}`;
   const [invoiceNumber, setInvoiceNumber] = useState<string>(generateInvoiceNumber());
 
@@ -723,6 +724,66 @@ export default function NewSale() {
     });
   };
 
+  const handleKeyboardShortcuts = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'F2') {
+      e.preventDefault();
+      setMedicineOpen(true);
+      setTimeout(() => {
+        const medicineInput = document.querySelector('[data-testid="input-medicine-search"]') as HTMLInputElement;
+        medicineInput?.focus();
+      }, 100);
+    } else if (e.key === 'F3') {
+      e.preventDefault();
+      if (items.length > 0) {
+        const lastItemQtyInput = document.querySelector(`[data-testid="input-qty-${items[items.length - 1].id}"]`) as HTMLInputElement;
+        lastItemQtyInput?.focus();
+        lastItemQtyInput?.select();
+      }
+    } else if (e.key === 'F4') {
+      e.preventDefault();
+      const receivedInput = document.querySelector('[data-testid="input-received"]') as HTMLInputElement;
+      receivedInput?.focus();
+      receivedInput?.select();
+    } else if (e.key === 'F5') {
+      e.preventDefault();
+      if (items.length > 0) {
+        handleHoldBill();
+      }
+    } else if (e.key === 'F6') {
+      e.preventDefault();
+      setHeldBillsDialogOpen(true);
+    } else if (e.key === 'F7') {
+      e.preventDefault();
+      setCustomerOpen(true);
+      setTimeout(() => {
+        const customerInput = document.querySelector('[data-testid="input-customer-search"]') as HTMLInputElement;
+        customerInput?.focus();
+      }, 100);
+    } else if (e.key === 'F8') {
+      e.preventDefault();
+      const isDisabled = items.length === 0 || 
+        createSaleMutation.isPending ||
+        (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0) ||
+        (paymentMethod === "credit" && !selectedCustomer);
+      if (!isDisabled) {
+        handleGenerateInvoice();
+      }
+    }
+  }, [items, paymentMethod, calculations, selectedCustomer, createSaleMutation.isPending]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyboardShortcuts);
+    return () => {
+      document.removeEventListener('keydown', handleKeyboardShortcuts);
+    };
+  }, [handleKeyboardShortcuts]);
+
+  useEffect(() => {
+    setTimeout(() => {
+      customerSearchRef.current?.focus();
+    }, 100);
+  }, []);
+
   return (
     <AppLayout title="New Sale / Invoice">
       <div className="flex flex-col lg:flex-row gap-6 h-full">
@@ -777,6 +838,7 @@ export default function NewSale() {
                     <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
                       <PopoverTrigger asChild>
                         <Button
+                          ref={customerSearchRef}
                           variant="outline"
                           role="combobox"
                           aria-expanded={customerOpen}
@@ -1704,6 +1766,39 @@ export default function NewSale() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-muted/95 border-t backdrop-blur-sm py-2 px-4 z-50">
+        <div className="flex justify-center gap-6 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F2</kbd>
+            <span>Medicine</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F3</kbd>
+            <span>Qty</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F4</kbd>
+            <span>Payment</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F5</kbd>
+            <span>Hold</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F6</kbd>
+            <span>Resume</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F7</kbd>
+            <span>Customer</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-background border rounded text-[10px] font-mono">F8</kbd>
+            <span>Complete</span>
+          </span>
+        </div>
+      </div>
     </AppLayout>
   );
 }
