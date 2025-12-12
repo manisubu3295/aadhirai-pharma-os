@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RotateCcw } from "lucide-react";
+import { format } from "date-fns";
 
 interface SaleItem {
   id: number;
@@ -51,6 +53,83 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
   const [returnQuantities, setReturnQuantities] = useState<Record<number, string>>({});
   const [refundMode, setRefundMode] = useState("cash");
   const [reason, setReason] = useState("");
+  const [autoPrint, setAutoPrint] = useState(true);
+
+  const printRefundReceipt = (refundId: number, invoiceNo: string, refundAmount: number, refundModeUsed: string, reasonText: string) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Refund Receipt - RET-${refundId}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+          .header h1 { margin: 0; font-size: 18px; }
+          .header p { margin: 5px 0; font-size: 12px; color: #666; }
+          .details { margin-bottom: 20px; }
+          .details table { width: 100%; }
+          .details td { padding: 5px 0; font-size: 14px; }
+          .details td:first-child { font-weight: bold; width: 40%; }
+          .amount { text-align: center; padding: 15px; background: #f5f5f5; border-radius: 8px; margin: 20px 0; }
+          .amount .label { font-size: 12px; color: #666; }
+          .amount .value { font-size: 24px; font-weight: bold; color: #dc2626; }
+          .footer { text-align: center; font-size: 11px; color: #999; margin-top: 30px; border-top: 1px dashed #ccc; padding-top: 10px; }
+          @media print {
+            body { margin: 0; padding: 10mm; }
+            @page { margin: 10mm; size: 80mm auto; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>REFUND RECEIPT</h1>
+          <p>RET-${refundId}</p>
+        </div>
+        <div class="details">
+          <table>
+            <tr>
+              <td>Original Invoice:</td>
+              <td>${invoiceNo}</td>
+            </tr>
+            <tr>
+              <td>Date:</td>
+              <td>${format(new Date(), "dd MMM yyyy, hh:mm a")}</td>
+            </tr>
+            <tr>
+              <td>Refund Mode:</td>
+              <td>${refundModeUsed}</td>
+            </tr>
+            ${reasonText ? `
+            <tr>
+              <td>Reason:</td>
+              <td>${reasonText}</td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+        <div class="amount">
+          <div class="label">REFUND AMOUNT</div>
+          <div class="value">₹${refundAmount.toFixed(2)}</div>
+        </div>
+        <div class="footer">
+          <p>Thank you for your business!</p>
+          <p>Printed on: ${format(new Date(), "dd MMM yyyy, hh:mm a")}</p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
+  };
 
   const { data: saleData, isLoading } = useQuery<SaleWithReturns>({
     queryKey: [`/api/sales/${saleId}/with-returns`],
@@ -91,12 +170,23 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales-returns"] });
       queryClient.invalidateQueries({ queryKey: [`/api/sales/${saleId}/with-returns`] });
       toast({ title: "Return saved, stock updated" });
+      
+      if (autoPrint && data?.id && saleData?.sale?.invoiceNo) {
+        printRefundReceipt(
+          data.id,
+          saleData.sale.invoiceNo || `INV-${saleData.sale.id}`,
+          totalRefund,
+          refundMode,
+          reason
+        );
+      }
+      
       onOpenChange(false);
       setReturnQuantities({});
       setReason("");
@@ -265,6 +355,21 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
                 className="mt-1"
                 data-testid="input-return-reason"
               />
+            </div>
+
+            <div className="flex items-center space-x-2 pt-2">
+              <Checkbox
+                id="auto-print"
+                checked={autoPrint}
+                onCheckedChange={(checked) => setAutoPrint(checked === true)}
+                data-testid="checkbox-auto-print"
+              />
+              <label
+                htmlFor="auto-print"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Print refund receipt after processing
+              </label>
             </div>
           </div>
         ) : (

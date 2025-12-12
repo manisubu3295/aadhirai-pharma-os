@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RotateCcw, Search, Receipt, FileSpreadsheet, FileText } from "lucide-react";
+import { RotateCcw, Search, Receipt, FileSpreadsheet, FileText, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { SalesReturnDialog } from "@/components/SalesReturnDialog";
 
@@ -156,6 +156,82 @@ export default function MedicineRefund() {
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.print();
+  };
+
+  const printRefundReceipt = (refund: SalesReturn) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Refund Receipt - RET-${refund.id}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+          .header h1 { margin: 0; font-size: 18px; }
+          .header p { margin: 5px 0; font-size: 12px; color: #666; }
+          .details { margin-bottom: 20px; }
+          .details table { width: 100%; }
+          .details td { padding: 5px 0; font-size: 14px; }
+          .details td:first-child { font-weight: bold; width: 40%; }
+          .amount { text-align: center; padding: 15px; background: #f5f5f5; border-radius: 8px; margin: 20px 0; }
+          .amount .label { font-size: 12px; color: #666; }
+          .amount .value { font-size: 24px; font-weight: bold; color: #dc2626; }
+          .footer { text-align: center; font-size: 11px; color: #999; margin-top: 30px; border-top: 1px dashed #ccc; padding-top: 10px; }
+          @media print {
+            body { margin: 0; padding: 10mm; }
+            @page { margin: 10mm; size: 80mm auto; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>REFUND RECEIPT</h1>
+          <p>RET-${refund.id}</p>
+        </div>
+        <div class="details">
+          <table>
+            <tr>
+              <td>Original Invoice:</td>
+              <td>${refund.invoiceNo}</td>
+            </tr>
+            <tr>
+              <td>Date:</td>
+              <td>${format(new Date(refund.createdAt), "dd MMM yyyy, hh:mm a")}</td>
+            </tr>
+            <tr>
+              <td>Refund Mode:</td>
+              <td>${refund.refundMode}</td>
+            </tr>
+            ${refund.reason ? `
+            <tr>
+              <td>Reason:</td>
+              <td>${refund.reason}</td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+        <div class="amount">
+          <div class="label">REFUND AMOUNT</div>
+          <div class="value">₹${parseFloat(refund.totalRefundAmount).toFixed(2)}</div>
+        </div>
+        <div class="footer">
+          <p>Thank you for your business!</p>
+          <p>Printed on: ${format(new Date(), "dd MMM yyyy, hh:mm a")}</p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
   };
 
   return (
@@ -310,6 +386,7 @@ export default function MedicineRefund() {
                     <TableHead>Refund Mode</TableHead>
                     <TableHead>Reason</TableHead>
                     <TableHead className="text-right">Refund Amount</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -328,6 +405,17 @@ export default function MedicineRefund() {
                       <TableCell>{ret.reason || "-"}</TableCell>
                       <TableCell className="text-right font-semibold text-red-600">
                         -₹{parseFloat(ret.totalRefundAmount).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => printRefundReceipt(ret)}
+                          data-testid={`button-print-refund-${ret.id}`}
+                        >
+                          <Printer className="w-4 h-4 mr-1" />
+                          Print
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
