@@ -36,6 +36,17 @@ import {
   type SalesReturnItem,
   type InsertSalesReturnItem,
   type AppSetting,
+  type Menu,
+  type InsertMenu,
+  type MenuGroup,
+  type InsertMenuGroup,
+  type MenuGroupMenu,
+  type InsertMenuGroupMenu,
+  type UserMenu,
+  type InsertUserMenu,
+  type UserMenuGroup,
+  type InsertUserMenuGroup,
+  type MenuWithPermissions,
   users,
   medicines,
   customers,
@@ -55,7 +66,12 @@ import {
   salesReturns,
   salesReturnItems,
   appSettings,
-  sequences
+  sequences,
+  menus,
+  menuGroups,
+  menuGroupMenus,
+  userMenus,
+  userMenuGroups
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -362,6 +378,31 @@ export interface IStorage {
   createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn>;
   getSalesReturnItems(returnId: number): Promise<SalesReturnItem[]>;
   getTotalReturnsForPeriod(startDate: Date, endDate: Date): Promise<string>;
+  
+  // Menu Management
+  getMenus(): Promise<Menu[]>;
+  getMenu(id: number): Promise<Menu | undefined>;
+  createMenu(menu: InsertMenu): Promise<Menu>;
+  updateMenu(id: number, menu: Partial<InsertMenu>): Promise<Menu | undefined>;
+  deleteMenu(id: number): Promise<boolean>;
+  
+  getMenuGroups(): Promise<MenuGroup[]>;
+  getMenuGroup(id: number): Promise<MenuGroup | undefined>;
+  createMenuGroup(group: InsertMenuGroup): Promise<MenuGroup>;
+  updateMenuGroup(id: number, group: Partial<InsertMenuGroup>): Promise<MenuGroup | undefined>;
+  deleteMenuGroup(id: number): Promise<boolean>;
+  
+  getMenuGroupMenus(groupId: number): Promise<MenuGroupMenu[]>;
+  setMenuGroupMenus(groupId: number, menuIds: number[]): Promise<void>;
+  
+  getUserMenus(userId: string): Promise<UserMenu[]>;
+  setUserMenus(userId: string, permissions: { menuId: number; canView: boolean; canEdit: boolean }[]): Promise<void>;
+  
+  getUserMenuGroups(userId: string): Promise<UserMenuGroup[]>;
+  setUserMenuGroups(userId: string, groupIds: number[]): Promise<void>;
+  
+  getUserNavigation(userId: string, role: string): Promise<MenuWithPermissions[]>;
+  seedDefaultMenus(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -885,6 +926,220 @@ export class DatabaseStorage implements IStorage {
       results.push(result);
     }
     return results;
+  }
+
+  // Menu Management Implementation
+  async getMenus(): Promise<Menu[]> {
+    return await db.select().from(menus).orderBy(menus.displayOrder);
+  }
+
+  async getMenu(id: number): Promise<Menu | undefined> {
+    const result = await db.select().from(menus).where(eq(menus.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createMenu(menu: InsertMenu): Promise<Menu> {
+    const result = await db.insert(menus).values(menu).returning();
+    return result[0];
+  }
+
+  async updateMenu(id: number, menu: Partial<InsertMenu>): Promise<Menu | undefined> {
+    const result = await db.update(menus).set({ ...menu, updatedAt: new Date() }).where(eq(menus.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteMenu(id: number): Promise<boolean> {
+    const result = await db.update(menus).set({ isActive: false, updatedAt: new Date() }).where(eq(menus.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getMenuGroups(): Promise<MenuGroup[]> {
+    return await db.select().from(menuGroups).orderBy(menuGroups.name);
+  }
+
+  async getMenuGroup(id: number): Promise<MenuGroup | undefined> {
+    const result = await db.select().from(menuGroups).where(eq(menuGroups.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createMenuGroup(group: InsertMenuGroup): Promise<MenuGroup> {
+    const result = await db.insert(menuGroups).values(group).returning();
+    return result[0];
+  }
+
+  async updateMenuGroup(id: number, group: Partial<InsertMenuGroup>): Promise<MenuGroup | undefined> {
+    const result = await db.update(menuGroups).set({ ...group, updatedAt: new Date() }).where(eq(menuGroups.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteMenuGroup(id: number): Promise<boolean> {
+    const result = await db.update(menuGroups).set({ isActive: false, updatedAt: new Date() }).where(eq(menuGroups.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getMenuGroupMenus(groupId: number): Promise<MenuGroupMenu[]> {
+    return await db.select().from(menuGroupMenus).where(eq(menuGroupMenus.menuGroupId, groupId));
+  }
+
+  async setMenuGroupMenus(groupId: number, menuIds: number[]): Promise<void> {
+    await db.delete(menuGroupMenus).where(eq(menuGroupMenus.menuGroupId, groupId));
+    if (menuIds.length > 0) {
+      const values = menuIds.map(menuId => ({ menuGroupId: groupId, menuId }));
+      await db.insert(menuGroupMenus).values(values);
+    }
+  }
+
+  async getUserMenus(userId: string): Promise<UserMenu[]> {
+    return await db.select().from(userMenus).where(eq(userMenus.userId, userId));
+  }
+
+  async setUserMenus(userId: string, permissions: { menuId: number; canView: boolean; canEdit: boolean }[]): Promise<void> {
+    await db.delete(userMenus).where(eq(userMenus.userId, userId));
+    if (permissions.length > 0) {
+      const values = permissions.map(p => ({ userId, menuId: p.menuId, canView: p.canView, canEdit: p.canEdit }));
+      await db.insert(userMenus).values(values);
+    }
+  }
+
+  async getUserMenuGroups(userId: string): Promise<UserMenuGroup[]> {
+    return await db.select().from(userMenuGroups).where(eq(userMenuGroups.userId, userId));
+  }
+
+  async setUserMenuGroups(userId: string, groupIds: number[]): Promise<void> {
+    await db.delete(userMenuGroups).where(eq(userMenuGroups.userId, userId));
+    if (groupIds.length > 0) {
+      const values = groupIds.map(menuGroupId => ({ userId, menuGroupId }));
+      await db.insert(userMenuGroups).values(values);
+    }
+  }
+
+  async getUserNavigation(userId: string, role: string): Promise<MenuWithPermissions[]> {
+    const allMenus = await db.select().from(menus).where(eq(menus.isActive, true)).orderBy(menus.displayOrder);
+    
+    if (allMenus.length === 0) {
+      return [];
+    }
+    
+    // If owner or admin, return all menus with full permissions
+    if (role === 'owner' || role === 'admin') {
+      return allMenus.map(menu => ({ ...menu, canView: true, canEdit: true }));
+    }
+    
+    // Get user's direct menu permissions
+    const directMenus = await db.select().from(userMenus).where(eq(userMenus.userId, userId));
+    
+    // Get user's menu groups
+    const userGroups = await db.select().from(userMenuGroups).where(eq(userMenuGroups.userId, userId));
+    
+    // Get all menus from user's groups
+    const groupMenuIds: number[] = [];
+    for (const ug of userGroups) {
+      const groupMenus = await db.select().from(menuGroupMenus).where(eq(menuGroupMenus.menuGroupId, ug.menuGroupId));
+      groupMenuIds.push(...groupMenus.map(gm => gm.menuId));
+    }
+    
+    // If user has no explicit assignments, use defaults based on role
+    if (directMenus.length === 0 && userGroups.length === 0) {
+      // Default: staff gets view access to common menus
+      return allMenus
+        .filter(m => !m.key.startsWith('admin.') && !m.key.includes('settings') && !m.key.includes('audit'))
+        .map(menu => ({ ...menu, canView: true, canEdit: false }));
+    }
+    
+    // Build permissions map
+    const permissionsMap: Map<number, { canView: boolean; canEdit: boolean }> = new Map();
+    
+    // Add group menu permissions (view only by default for groups)
+    for (const menuId of groupMenuIds) {
+      if (!permissionsMap.has(menuId)) {
+        permissionsMap.set(menuId, { canView: true, canEdit: false });
+      }
+    }
+    
+    // Override with direct permissions
+    for (const dm of directMenus) {
+      const existing = permissionsMap.get(dm.menuId) || { canView: false, canEdit: false };
+      permissionsMap.set(dm.menuId, {
+        canView: existing.canView || dm.canView,
+        canEdit: existing.canEdit || dm.canEdit
+      });
+    }
+    
+    // Return menus with permissions
+    const result: MenuWithPermissions[] = [];
+    for (const menu of allMenus) {
+      const perms = permissionsMap.get(menu.id);
+      if (perms && perms.canView) {
+        result.push({ ...menu, canView: perms.canView, canEdit: perms.canEdit });
+      }
+    }
+    
+    return result;
+  }
+
+  async seedDefaultMenus(): Promise<void> {
+    const existingMenus = await db.select().from(menus);
+    if (existingMenus.length > 0) {
+      return; // Already seeded
+    }
+
+    const defaultMenus: InsertMenu[] = [
+      { key: 'dashboard', label: 'Dashboard', routePath: '/', icon: 'LayoutDashboard', displayOrder: 1 },
+      { key: 'sales.new', label: 'New Sale (POS)', routePath: '/new-sale', icon: 'Plus', displayOrder: 2 },
+      { key: 'sales.pos', label: 'Point of Sale', routePath: '/pos', icon: 'ShoppingCart', displayOrder: 3 },
+      { key: 'sales.credit', label: 'Credit Billing', routePath: '/credit-billing', icon: 'Receipt', displayOrder: 4 },
+      { key: 'sales.refund', label: 'Medicine Refund', routePath: '/medicine-refund', icon: 'RotateCcw', displayOrder: 5 },
+      { key: 'inventory.medicines', label: 'Medicines / Products', routePath: '/inventory', icon: 'Package', displayOrder: 10 },
+      { key: 'inventory.suppliers', label: 'Suppliers', routePath: '/suppliers', icon: 'Truck', displayOrder: 11 },
+      { key: 'inventory.rates', label: 'Rate Master', routePath: '/supplier-rates', icon: 'Tags', displayOrder: 12 },
+      { key: 'inventory.po', label: 'Purchase Orders', routePath: '/purchase-orders', icon: 'ClipboardList', displayOrder: 13 },
+      { key: 'inventory.grn', label: 'Goods Receipt (GRN)', routePath: '/goods-receipts', icon: 'PackageCheck', displayOrder: 14 },
+      { key: 'customers.accounts', label: 'Customer Accounts', routePath: '/customers', icon: 'Users', displayOrder: 20 },
+      { key: 'customers.doctors', label: 'Doctors', routePath: '/doctors', icon: 'Stethoscope', displayOrder: 21 },
+      { key: 'customers.collections', label: 'Collections', routePath: '/collections', icon: 'CreditCard', displayOrder: 22 },
+      { key: 'reports.sales', label: 'Sales Reports', routePath: '/reports', icon: 'FileText', displayOrder: 30 },
+      { key: 'reports.analytics', label: 'Owner Analytics', routePath: '/owner-dashboard', icon: 'BarChart3', displayOrder: 31 },
+      { key: 'admin.audit', label: 'Audit Log', routePath: '/audit-log', icon: 'Shield', displayOrder: 40 },
+      { key: 'admin.tally', label: 'Tally Export', routePath: '/tally-export', icon: 'Calculator', displayOrder: 41 },
+      { key: 'admin.locations', label: 'Storage Locations', routePath: '/locations', icon: 'MapPin', displayOrder: 50 },
+      { key: 'admin.settings', label: 'Settings', routePath: '/settings', icon: 'Settings', displayOrder: 51 },
+      { key: 'admin.users', label: 'User Management', routePath: '/admin/users', icon: 'Users', displayOrder: 52 },
+      { key: 'admin.menus', label: 'Menu Management', routePath: '/admin/menus', icon: 'Menu', displayOrder: 53 },
+      { key: 'admin.groups', label: 'Menu Groups', routePath: '/admin/menu-groups', icon: 'FolderOpen', displayOrder: 54 },
+    ];
+
+    for (const menu of defaultMenus) {
+      await db.insert(menus).values(menu);
+    }
+
+    // Create default menu groups
+    const operations = await db.insert(menuGroups).values({ name: 'Operations', description: 'Day-to-day operations' }).returning();
+    const inventory = await db.insert(menuGroups).values({ name: 'Inventory & Purchase', description: 'Stock and purchasing' }).returning();
+    const customersGroup = await db.insert(menuGroups).values({ name: 'Customers & Credit', description: 'Customer management' }).returning();
+    const reports = await db.insert(menuGroups).values({ name: 'Reports & Analytics', description: 'Business insights' }).returning();
+    const admin = await db.insert(menuGroups).values({ name: 'Administration', description: 'System administration' }).returning();
+
+    // Get inserted menus to link
+    const insertedMenus = await db.select().from(menus);
+    const menuByKey = new Map(insertedMenus.map(m => [m.key, m.id]));
+
+    // Link menus to groups
+    const groupLinks = [
+      { group: operations[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit', 'sales.refund'] },
+      { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn'] },
+      { group: customersGroup[0].id, keys: ['customers.accounts', 'customers.doctors', 'customers.collections'] },
+      { group: reports[0].id, keys: ['reports.sales', 'reports.analytics'] },
+      { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups'] },
+    ];
+
+    for (const link of groupLinks) {
+      for (const key of link.keys) {
+        const menuId = menuByKey.get(key);
+        if (menuId) {
+          await db.insert(menuGroupMenus).values({ menuGroupId: link.group, menuId });
+        }
+      }
+    }
   }
 }
 

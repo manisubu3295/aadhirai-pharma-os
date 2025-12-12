@@ -425,3 +425,77 @@ export const sequences = pgTable("sequences", {
 export const insertSequenceSchema = createInsertSchema(sequences).omit({ id: true, updatedAt: true });
 export type InsertSequence = z.infer<typeof insertSequenceSchema>;
 export type Sequence = typeof sequences.$inferSelect;
+
+// Menu Management Tables
+export const menus = pgTable("menus", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  label: text("label").notNull(),
+  routePath: text("route_path").notNull(),
+  icon: text("icon"),
+  parentId: integer("parent_id"),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const menuGroups = pgTable("menu_groups", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const menuGroupMenus = pgTable("menu_group_menus", {
+  id: serial("id").primaryKey(),
+  menuGroupId: integer("menu_group_id").notNull(),
+  menuId: integer("menu_id").notNull(),
+});
+
+export const userMenus = pgTable("user_menus", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  menuId: integer("menu_id").notNull(),
+  canView: boolean("can_view").notNull().default(true),
+  canEdit: boolean("can_edit").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const userMenuGroups = pgTable("user_menu_groups", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  menuGroupId: integer("menu_group_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertMenuSchema = createInsertSchema(menus).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMenuGroupSchema = createInsertSchema(menuGroups).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMenuGroupMenuSchema = createInsertSchema(menuGroupMenus).omit({ id: true });
+export const insertUserMenuSchema = createInsertSchema(userMenus).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserMenuGroupSchema = createInsertSchema(userMenuGroups).omit({ id: true, createdAt: true, updatedAt: true });
+
+export type InsertMenu = z.infer<typeof insertMenuSchema>;
+export type Menu = typeof menus.$inferSelect;
+
+export type InsertMenuGroup = z.infer<typeof insertMenuGroupSchema>;
+export type MenuGroup = typeof menuGroups.$inferSelect;
+
+export type InsertMenuGroupMenu = z.infer<typeof insertMenuGroupMenuSchema>;
+export type MenuGroupMenu = typeof menuGroupMenus.$inferSelect;
+
+export type InsertUserMenu = z.infer<typeof insertUserMenuSchema>;
+export type UserMenu = typeof userMenus.$inferSelect;
+
+export type InsertUserMenuGroup = z.infer<typeof insertUserMenuGroupSchema>;
+export type UserMenuGroup = typeof userMenuGroups.$inferSelect;
+
+// Combined type for navigation with permissions
+export type MenuWithPermissions = Menu & {
+  canView: boolean;
+  canEdit: boolean;
+};

@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import * as LucideIcons from "lucide-react";
 import { 
   LayoutDashboard, 
   Package, 
@@ -22,13 +23,45 @@ import {
   RotateCcw,
   LogOut,
   User,
-  ChevronRight
+  ChevronRight,
+  Menu,
+  FolderOpen
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
 import { useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { useNavigation, groupMenusBySection } from "@/contexts/NavigationContext";
 
 const NAV_SCROLL_KEY = "nav-scroll-position";
+
+const iconMap: { [key: string]: React.ElementType } = {
+  LayoutDashboard,
+  Package,
+  ShoppingCart,
+  Users,
+  FileText,
+  Settings,
+  Plus,
+  CreditCard,
+  MapPin,
+  Shield,
+  Calculator,
+  BarChart3,
+  Stethoscope,
+  Truck,
+  Tags,
+  ClipboardList,
+  PackageCheck,
+  Receipt,
+  RotateCcw,
+  Menu,
+  FolderOpen,
+};
+
+function getIcon(iconName: string | null): React.ElementType {
+  if (!iconName) return Package;
+  return iconMap[iconName] || (LucideIcons as any)[iconName] || Package;
+}
 
 interface MenuItem {
   icon: React.ElementType;
@@ -45,6 +78,7 @@ interface MenuSection {
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const { menus, isLoading: isNavigationLoading } = useNavigation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNavigatingRef = useRef(false);
 
@@ -86,7 +120,7 @@ export function Sidebar() {
     }, 100);
   }, [saveScrollPosition]);
 
-  const menuSections: MenuSection[] = [
+  const fallbackMenuSections: MenuSection[] = [
     {
       title: "OPERATIONS",
       items: [
@@ -132,6 +166,18 @@ export function Sidebar() {
       ]
     }
   ];
+
+  const dynamicSections = groupMenusBySection(menus);
+  const menuSections: MenuSection[] = dynamicSections.length > 0
+    ? dynamicSections.map(section => ({
+        title: section.section,
+        items: section.items.map(item => ({
+          icon: getIcon(item.icon),
+          label: item.label,
+          href: item.routePath,
+        }))
+      }))
+    : fallbackMenuSections;
 
   const isOwner = user?.role === "owner";
 

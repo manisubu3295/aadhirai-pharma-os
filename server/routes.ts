@@ -1559,5 +1559,190 @@ export async function registerRoutes(
     }
   });
 
+  // Menu Management Admin APIs
+  app.get("/api/admin/menus", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const menus = await storage.getMenus();
+      res.json(menus);
+    } catch (error) {
+      console.error("Error fetching menus:", error);
+      res.status(500).json({ error: "Failed to fetch menus" });
+    }
+  });
+
+  app.post("/api/admin/menus", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const menu = await storage.createMenu(req.body);
+      res.status(201).json(menu);
+    } catch (error) {
+      console.error("Error creating menu:", error);
+      res.status(500).json({ error: "Failed to create menu" });
+    }
+  });
+
+  app.put("/api/admin/menus/:id", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const menu = await storage.updateMenu(id, req.body);
+      if (!menu) {
+        return res.status(404).json({ error: "Menu not found" });
+      }
+      res.json(menu);
+    } catch (error) {
+      console.error("Error updating menu:", error);
+      res.status(500).json({ error: "Failed to update menu" });
+    }
+  });
+
+  app.delete("/api/admin/menus/:id", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteMenu(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Menu not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting menu:", error);
+      res.status(500).json({ error: "Failed to delete menu" });
+    }
+  });
+
+  // Menu Groups Admin APIs
+  app.get("/api/admin/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const groups = await storage.getMenuGroups();
+      res.json(groups);
+    } catch (error) {
+      console.error("Error fetching menu groups:", error);
+      res.status(500).json({ error: "Failed to fetch menu groups" });
+    }
+  });
+
+  app.post("/api/admin/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const group = await storage.createMenuGroup(req.body);
+      res.status(201).json(group);
+    } catch (error) {
+      console.error("Error creating menu group:", error);
+      res.status(500).json({ error: "Failed to create menu group" });
+    }
+  });
+
+  app.put("/api/admin/menu-groups/:id", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const group = await storage.updateMenuGroup(id, req.body);
+      if (!group) {
+        return res.status(404).json({ error: "Menu group not found" });
+      }
+      res.json(group);
+    } catch (error) {
+      console.error("Error updating menu group:", error);
+      res.status(500).json({ error: "Failed to update menu group" });
+    }
+  });
+
+  app.delete("/api/admin/menu-groups/:id", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteMenuGroup(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Menu group not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting menu group:", error);
+      res.status(500).json({ error: "Failed to delete menu group" });
+    }
+  });
+
+  app.get("/api/admin/menu-groups/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const menuLinks = await storage.getMenuGroupMenus(id);
+      res.json(menuLinks);
+    } catch (error) {
+      console.error("Error fetching menu group menus:", error);
+      res.status(500).json({ error: "Failed to fetch menu group menus" });
+    }
+  });
+
+  app.put("/api/admin/menu-groups/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { menuIds } = req.body;
+      if (!Array.isArray(menuIds)) {
+        return res.status(400).json({ error: "menuIds must be an array" });
+      }
+      await storage.setMenuGroupMenus(id, menuIds);
+      res.json({ message: "Menu group menus updated" });
+    } catch (error) {
+      console.error("Error setting menu group menus:", error);
+      res.status(500).json({ error: "Failed to set menu group menus" });
+    }
+  });
+
+  // User Menu Access Admin APIs
+  app.get("/api/admin/users/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const [directMenus, userGroups] = await Promise.all([
+        storage.getUserMenus(userId),
+        storage.getUserMenuGroups(userId)
+      ]);
+      res.json({ menus: directMenus, groups: userGroups });
+    } catch (error) {
+      console.error("Error fetching user menus:", error);
+      res.status(500).json({ error: "Failed to fetch user menus" });
+    }
+  });
+
+  app.put("/api/admin/users/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const { permissions, groupIds } = req.body;
+      
+      if (permissions && Array.isArray(permissions)) {
+        await storage.setUserMenus(userId, permissions);
+      }
+      
+      if (groupIds && Array.isArray(groupIds)) {
+        await storage.setUserMenuGroups(userId, groupIds);
+      }
+      
+      res.json({ message: "User menu access updated" });
+    } catch (error) {
+      console.error("Error updating user menus:", error);
+      res.status(500).json({ error: "Failed to update user menus" });
+    }
+  });
+
+  // Current user navigation endpoint
+  app.get("/api/me/menus", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      const navigation = await storage.getUserNavigation(user.id, user.role);
+      res.json(navigation);
+    } catch (error) {
+      console.error("Error fetching user navigation:", error);
+      res.status(500).json({ error: "Failed to fetch navigation" });
+    }
+  });
+
+  // Seed menus endpoint (for initial setup)
+  app.post("/api/admin/seed-menus", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      await storage.seedDefaultMenus();
+      res.json({ message: "Default menus seeded successfully" });
+    } catch (error) {
+      console.error("Error seeding menus:", error);
+      res.status(500).json({ error: "Failed to seed menus" });
+    }
+  });
+
   return httpServer;
 }
