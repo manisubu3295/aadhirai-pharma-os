@@ -1,0 +1,158 @@
+You are a senior full-stack engineer working on an existing Inventory / Pharmacy Management app using:
+
+- Backend: Node.js + Express.js
+- Frontend: React.js
+- There is already inventory (products / batches / stock) working and in use.
+
+IMPORTANT RULES
+- Do NOT break any existing behaviour or APIs.
+- Do NOT rename or remove existing fields or endpoints.
+- All changes must be backwards-compatible:
+  - Existing inventory items without locations must still work exactly as today.
+- Only extend the data model, API, and UI to support rack/row/bin locations.
+
+GOAL
+Enable functionality to manage **rack, row, and bin locations** for inventory, including:
+- A master “Location” management screen (CRUD).
+- Ability to assign a location (rack/row/bin) to stock/batches.
+- Ability to view and optionally filter inventory by location.
+- All without breaking any existing logic.
+
+────────────────────────
+1) Data model – Location & inventory link
+────────────────────────
+Backend (Express + DB):
+
+1.1 Add a new “locations” table/collection:
+- Fields (example, adapt to your DB — SQL or Mongo):
+  - id (primary key)
+  - rack_code (string) – e.g. “R1”, “Rack A”
+  - row_code (string) – e.g. “Row 3”
+  - bin_code (string) – e.g. “Bin 5”
+  - display_name (string) – a combined human-readable name like “R1 / Row 3 / Bin 5”
+  - description (optional string)
+  - active (boolean, default true)
+  - created_at, updated_at
+- Enforce uniqueness on (rack_code, row_code, bin_code) combination if possible, so the same slot is not duplicated.
+
+1.2 Link inventory/batch to locations:
+- Identify your existing inventory storage entity (e.g. `batches`, `stock`, or similar).
+- Add a new optional foreign key field:
+  - location_id (nullable)
+- This field should be OPTIONAL:
+  - For existing records, location_id is NULL/undefined.
+  - Treat NULL as “no specific location / not assigned”.
+
+Do NOT change or remove existing quantity, product, or batch fields.
+
+────────────────────────
+2) Backend APIs – Location management + inventory association
+────────────────────────
+
+2.1 Location CRUD endpoints
+Add a small set of REST endpoints for location management:
+
+- `GET /api/locations`
+  - Return list of active locations, with optional filters (rack, row, bin, search by display_name).
+
+- `POST /api/locations`
+  - Create a new location with rack_code, row_code, bin_code, display_name, description, active.
+  - Validate uniqueness of (rack_code, row_code, bin_code).
+  - Return the created location.
+
+- `PUT /api/locations/:id`
+  - Update rack/row/bin codes, display_name, description, active.
+  - If you change rack/row/bin, still enforce uniqueness.
+  - Do not delete or change links from inventory records; keep backwards-compatible.
+
+- `DELETE /api/locations/:id`
+  - Soft delete: mark `active=false` instead of hard delete.
+  - If there are inventory records referencing this location_id, do NOT break them.
+    - Either allow soft delete but keep foreign key, or reject delete with a clear error and require the user to reassign inventory first.
+
+2.2 Extend existing inventory APIs to expose location
+- For inventory/batch listing endpoints (e.g. `GET /api/stock`, `GET /api/batches` etc.):
+  - JOIN or populate the `location` based on location_id.
+  - Return extra fields in JSON response, like:
+    - location_id
+    - location_display_name
+    - rack_code, row_code, bin_code
+- DO NOT change the existing response field names; only ADD new optional fields so existing frontend code doesn’t break.
+
+2.3 Endpoint to assign/update location for inventory
+- Add or extend an endpoint to assign/update location of a batch/stock entry, for example:
+  - `PUT /api/batches/:id/location`
+    - body: { location_id: <nullable> }
+    - If location_id is null, this means “no location” / unassigned.
+- Validation:
+  - Check that location_id exists and is active if not null.
+  - Keep all other batch logic unchanged.
+
+────────────────────────
+3) Frontend – React UI for managing rack/row/bin
+────────────────────────
+
+3.1 “Location Management” page (new menu)
+- Add a new menu item in the main navigation, e.g. under Inventory:
+  - Label: “Locations” or “Rack / Row / Bin”
+- New React page/component, e.g. `LocationManagementPage`:
+  - Display a table of locations:
+    - Columns: Rack, Row, Bin, Display Name, Active, Actions (Edit/Deactivate).
+  - Provide a form (modal or side panel) to:
+    - Add new location:
+      - Inputs: rack_code, row_code, bin_code, display_name, description.
+    - Edit existing location:
+      - Same fields.
+  - Filter/search bar:
+    - Search by display_name or rack/row/bin.
+
+3.2 Integrate with existing Inventory / Stock screens
+- On stock or batch listing screens:
+  - Add a column “Location” showing:
+    - display_name or “Rack / Row / Bin” in a compact format.
+    - If no location: show “–” or “Unassigned”.
+- In stock/batch details or purchase/GRN screen (where stock is created):
+  - Add a dropdown/select for Location:
+    - Data from `GET /api/locations` (active=true).
+    - Allows assigning or changing location for that batch/stock.
+  - This field must be optional:
+    - If user does not pick a location, keep location_id null.
+    - Existing flows without location must still work.
+
+3.3 Optional: filter by location
+- On Inventory / Stock list page:
+  - Add filters for rack/row/bin or location:
+    - A dropdown for location, or separate inputs for rack_code, row_code, bin_code.
+  - When filter is applied, call existing inventory API with query params (e.g. `?location_id=` or `?rack=`) if easy to implement.
+  - If backend filtering is not yet available, do simple client-side filtering of the loaded data without breaking anything.
+
+────────────────────────
+4) UX and safety
+────────────────────────
+
+- Do NOT make location a required field in any existing form. It is an enhancement, not a breaking change.
+- Ensure that:
+  - Existing inventory entries with no location_id behave exactly as before.
+  - Reports and stock calculations do not change — location is just an extra dimension for viewing, not a factor in quantity math.
+- In the UI:
+  - Clearly label the new fields as “Rack”, “Row”, “Bin”.
+  - Show location in a small but readable manner (e.g. `R1 / Row 3 / Bin 5`) so staff can quickly find items.
+
+────────────────────────
+5) testing checklist
+────────────────────────
+
+After implementing, manually test:
+
+- Create a few locations (different rack/row/bin combinations).
+- Create or update stock/batches and assign each to a different location.
+- Verify:
+  - Inventory list shows locations correctly.
+  - Filtering by location works (if implemented).
+  - Removing/changing location does not break any existing behaviour.
+- Existing stock and sales with no locations still behave exactly as they did before.
+
+Implement all of this in clean, modular code:
+- Backend: add a dedicated locations router/controller and integrate with existing inventory logic.
+- Frontend: add a new Locations page and extend existing inventory components in React.
+- Do not refactor unrelated areas of the codebase.

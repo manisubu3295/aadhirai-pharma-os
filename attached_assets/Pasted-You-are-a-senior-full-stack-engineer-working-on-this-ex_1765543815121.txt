@@ -1,0 +1,59 @@
+You are a senior full-stack engineer working on this existing React + Express pharmacy app.
+
+Context:
+- We already added support for inventory locations (rack/row/bin) and linked them to batches/stock via location_id.
+- There is an existing “medicine search” feature used on the New Sale / Billing page to search and select a medicine (and its batch/price/stock).
+
+New requirement:
+When searching for a medicine:
+- The search results must include the **location info** for each batch.
+- The frontend should display a single, user-friendly line combining:
+  - medicine name
+  - batch number
+  - price
+  - stock
+  - location (rack/row/bin)
+- Format: pipe-separated, e.g.
+  `Paracetamol 500mg | Batch: B123 | Price: ₹25.00 | Stock: 120 | Location: R1/Row 3/Bin 5`
+- If no location is assigned, display `Location: -`.
+
+IMPORTANT:
+- Do NOT break existing search behaviour (filtering, API shape, etc.).
+- Only extend responses and UI.
+- All existing code that uses the search API must continue to work.
+
+1) Backend (Express) – extend medicine search result with location
+- Find the existing medicine search endpoint (e.g. GET /api/medicines/search, /api/products/search, or similar).
+- It currently returns data for:
+  - product/medicine
+  - batch
+  - price
+  - stock
+- Extend the query to LEFT JOIN (or populate) the related `location` using location_id on the batch/stock record.
+- In the JSON response for each search result item, ADD (do not replace) fields:
+  - location_id
+  - rack_code
+  - row_code
+  - bin_code
+  - location_display_name (e.g. "R1 / Row 3 / Bin 5"), computed in backend if convenient.
+- Keep all existing fields exactly as they are, so existing frontend code does not break.
+
+2) Frontend (React) – show pipe-separated info in search results
+- Locate the component that renders the medicine search dropdown / autocomplete for the New Sale / Billing page.
+- For each result item, build a display string that follows this format:
+  - `<medicine_name> | Batch: <batch_number> | Price: <price> | Stock: <stock> | Location: <location>`
+- For the Location part:
+  - If location_display_name exists, use that.
+  - Else, if rack/row/bin exist individually, concatenate them like: `R1/Row 3/Bin 5`.
+  - If there is no location info at all, display `Location: -`.
+- Use this formatted string as the visible label in the search dropdown/autocomplete, but keep the underlying value (id, product reference, etc.) the same as before to avoid breaking logic.
+
+3) Behaviour checks
+- Ensure that selecting a medicine from the search still works exactly as before:
+  - The correct product/batch/price/stock are bound to the line item.
+  - Only the display text is enhanced with location info.
+- Test with:
+  - A product with location set.
+  - A product with NO location set (should show `Location: -` instead of failing).
+
+Do not refactor unrelated parts; just extend the existing search endpoint and React search component to include and show location along with batch, price, and stock in a pipe-separated format.
