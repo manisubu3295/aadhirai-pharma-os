@@ -1,0 +1,251 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management SaaS app:
+
+- Backend: Node.js + Express.js
+- Frontend: React.js
+- Auth: already implemented (login, roles like ADMIN/OWNER, STAFF)
+- There is already a static menu/sidebar in the React app driven by config or hardcoded items.
+
+NEW REQUIREMENT
+Implement DB-driven menu mapping and access control:
+
+1) Menus must be loaded from the database (not hardcoded).
+2) ADMIN can:
+   - Create/manage users
+   - Create/manage menu groups (role-like bundles of menus)
+   - Assign menus and/or menu groups to users
+   - Set per-menu access level for each user: VIEW or EDIT (or at least a boolean can_view, can_edit)
+3) Based on this mapping, each user only sees the menus they are allowed to see, and frontend should respect view/edit permissions for pages.
+
+IMPORTANT RULES
+- Do NOT break existing login/auth flows.
+- Do NOT rename or remove existing user-related tables/fields; only extend.
+- Default behaviour for existing users should remain as close as possible:
+  - Existing ADMIN/OWNER should initially have full access to all menus.
+  - Existing STAFF should retain current accesses until you migrate them into the new system.
+- Changes must be backward compatible.
+
+────────────────────────
+1) Database schema – menus, groups, user mappings
+────────────────────────
+
+Add the following tables (or equivalent, adapted to your DB):
+
+1.1 menus
+- Purpose: master list of all possible menu items / routes in the app.
+- Fields:
+  - id (PK)
+  - key (string, unique) – e.g. "dashboard", "sales.new", "inventory.products"
+  - label (string) – e.g. "Dashboard", "New Sale (POS)", "Products"
+  - route_path (string) – e.g. "/dashboard", "/sales/new", "/inventory/products"
+  - icon (string, optional) – e.g. "dashboard", "point_of_sale"
+  - parent_id (nullable FK to menus.id) – for nested menu structure
+  - display_order (integer, for sorting)
+  - is_active (boolean, default true)
+  - created_at, updated_at
+
+1.2 menu_groups
+- Purpose: logical bundles of menus, like “Operations”, “Inventory & Purchase”, “Reports”.
+- Fields:
+  - id (PK)
+  - name (string, unique) – e.g. "Operations", "Inventory & Purchase", "Reports"
+  - description (optional)
+  - is_active (boolean, default true)
+  - created_at, updated_at
+
+1.3 menu_group_menus (many-to-many relation)
+- Purpose: link menus into groups.
+- Fields:
+  - id (PK)
+  - menu_group_id (FK to menu_groups.id)
+  - menu_id (FK to menus.id)
+
+1.4 user_menus (direct user → menu mapping)
+- Purpose: direct assignment of menus to users, plus per-menu access level.
+- Fields:
+  - id (PK)
+  - user_id (FK to users.id)
+  - menu_id (FK to menus.id)
+  - can_view (boolean, default true)
+  - can_edit (boolean, default false)  // treat as "edit/modify access" for that menu
+  - created_at, updated_at
+- This must allow overriding or adding specific menu permissions for a user beyond group-level defaults.
+
+1.5 user_menu_groups (user → menu_group mapping)
+- Purpose: assign groups to users.
+- Fields:
+  - id (PK)
+  - user_id (FK to users.id)
+  - menu_group_id (FK to menu_groups.id)
+  - created_at, updated_at
+
+Notes:
+- Do NOT remove or change existing role field on users (e.g. role = ADMIN/STAFF). Use this role to determine who can use the admin access screens.
+
+────────────────────────
+2) Backend – menu & access APIs (Express)
+────────────────────────
+
+2.1 Menu master management (ADMIN-only)
+Create endpoints (only accessible to ADMIN/OWNER):
+
+- GET `/api/admin/menus`
+  - Return all menus with their metadata (id, key, label, route_path, parent_id, icon, display_order, is_active).
+
+- POST `/api/admin/menus`
+  - Create a new menu record.
+  - Input: key, label, route_path, icon (optional), parent_id (optional), display_order, is_active.
+
+- PUT `/api/admin/menus/:id`
+  - Update an existing menu.
+
+- (Optional) DELETE `/api/admin/menus/:id`
+  - Soft delete: set is_active=false.
+  - Do not hard delete if mapped to groups/users.
+
+2.2 Menu group management (ADMIN-only)
+- GET `/api/admin/menu-groups`
+  - Return all menu groups plus their associated menus (if convenient).
+
+- POST `/api/admin/menu-groups`
+  - Create a new menu group with name, description, is_active.
+  - Additionally accept a list of menu_ids to associate initially.
+
+- PUT `/api/admin/menu-groups/:id`
+  - Update group details and its menu associations (menu_group_menus).
+  - Ensure that when updating menus, you reconcile the mapping table (add/remove as necessary).
+
+2.3 User management & menu mapping (ADMIN-only)
+Assuming you have a users table and maybe basic user CRUD already.
+
+Extend/add endpoints:
+
+- GET `/api/admin/users`
+  - List users (id, name, email/username, role, active, etc.)
+
+- POST `/api/admin/users`
+  - Create a new user with:
+    - name, email, role, password (if you handle password here), active.
+  - Optionally accept initial menu_group_ids and/or menu_ids with can_view/can_edit flags.
+
+- PUT `/api/admin/users/:id`
+  - Edit user details (name, role, active, etc.)
+  - Update which menu groups and menus are assigned:
+    - Accept:
+      - menu_group_ids: number[]
+      - menu_permissions: array of { menu_id, can_view, can_edit }
+    - Update user_menu_groups and user_menus accordingly.
+
+- GET `/api/admin/users/:id/menus`
+  - Return full view of a user’s access:
+    - Direct menus (from user_menus)
+    - Menu groups (user_menu_groups)
+    - Resolved effective permissions (combined from groups + direct assignments).
+
+2.4 Load effective menu for logged-in user
+Create a separate endpoint for the application shell:
+
+- GET `/api/me/menus`
+- Behaviour:
+  - Determine `user_id` and `role` from auth (session/JWT).
+  - Aggregate menu access from:
+    - All menu_groups assigned to user → via menu_group_menus → menus.
+    - Plus direct user_menus assignments.
+  - Compute effective permissions per menu:
+    - can_view = true if ANY mapping (group or direct) grants view.
+    - can_edit = true if ANY mapping grants edit.
+  - Optionally include the `role` (ADMIN/STAFF) for the frontend to handle admin UI.
+  - Return:
+    - A list of menu objects with:
+      - id, key, label, route_path, icon, parent_id, display_order
+      - can_view, can_edit
+  - Sort menus by parent_id and display_order so the frontend can easily build a nested tree.
+
+- IMPORTANT:
+  - For existing behaviour, if a user has no explicit mappings yet:
+    - ADMIN: return all menus with can_view = true, can_edit = true as default.
+    - STAFF: return a reasonable default (e.g. current static menu behaviour) or at minimum not an empty list; handle via initial data seeding.
+
+────────────────────────
+3) Frontend – React: load menu from API & build sidebar
+────────────────────────
+
+3.1 Replace hardcoded menu with API-driven menu
+- In the main app shell / layout component (where sidebar/nav is rendered):
+  - On app load or after login, call `/api/me/menus`.
+  - Store the resulting menu list in a global state (e.g. context, Redux, or a top-level state).
+  - Build the sidebar/menu structure from the returned menus:
+    - Group by parent_id to form a tree (top-level menus + child menus).
+    - Filter where `can_view === true` so that only allowed items show.
+  - Keep route paths unchanged; route definitions stay in React Router, but visibility is controlled by what menus are returned.
+
+3.2 Respect can_view and can_edit on pages
+- For each module/page in React:
+  - Accept a permission object (e.g. { canView, canEdit }) determined from the menu mapping.
+  - If `can_view === false`:
+    - Do NOT render the page or redirect to a “No access” / 403 page.
+  - If `can_edit === false`:
+    - Render the page in read-only mode:
+      - Hide or disable create/edit/delete buttons.
+- You can map this using the menu key or route_path to find the corresponding permission from the `/api/me/menus` result.
+
+3.3 Admin screens for user/menu config
+Add/extend an **Admin > User & Access Management** area:
+
+- Users list page:
+  - Show user list with action “Edit Access”.
+- User access edit page/dialog:
+  - Left side: list of all menu groups with checkboxes (assigned/unassigned).
+  - Right side: list of individual menus with:
+    - Checkbox for “View”
+    - Checkbox for “Edit”
+  - On save:
+    - Send menu_group_ids and menu_permissions to `PUT /api/admin/users/:id`.
+
+- Menu groups management page:
+  - Table of menu groups.
+  - Form/dialog to create/edit group and select which menus belong to it.
+
+- Menus management page:
+  - Table of menus (key, label, path, icon, active).
+  - Form/dialog to add or edit menu entries.
+
+Admin UI MUST be visible only to ADMIN/OWNER, based on either user.role or a specific permission.
+
+────────────────────────
+4) Migration & defaults
+────────────────────────
+
+- Seed initial data in menus table for all the current routes/screens.
+- Seed a few default menu_groups such as:
+  - "Operations" (New Sale, Hold/Resume, Daily Sales)
+  - "Inventory & Purchase" (Products, Stock, Purchase)
+  - "Reports" (Sales, GST, Stock)
+  - "Admin" (User Management, Menu Management, Settings)
+- For existing ADMIN users:
+  - Create default user_menu_groups linking them to all groups OR mark all menus with can_view=true, can_edit=true.
+- For existing STAFF:
+  - Option 1: Manually configure using the new admin screens.
+  - Option 2: Seed a “Staff default group” with current allowed menus.
+
+Ensure that until configuration is done, existing users do not lose access unexpectedly.
+
+────────────────────────
+5) Testing checklist
+────────────────────────
+
+- Log in as ADMIN:
+  - Verify that Admin > Users, Menus, Menu Groups pages are visible.
+  - Create a new menu group, assign some menus.
+  - Create a new user and assign that group.
+  - Log in as that user:
+    - Only group-assigned menus appear in sidebar.
+    - Attempt to access hidden routes directly: should redirect or show “No access”.
+
+- Edit a user:
+  - Add a menu with view-only: can_view=true, can_edit=false.
+  - Verify: user can open page but cannot create/edit/delete.
+
+- Disable a menu or group:
+  - Check that it disappears from the sidebar for affected users.
+
+Implement all of the above in a clean, modular way, reusing existing auth and user models, and without breaking existing login or routing.

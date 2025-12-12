@@ -254,7 +254,12 @@ export default function NewSale() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
-      toast({ title: "Invoice generated successfully!" });
+      
+      const invoiceNo = saleResult.sale?.invoiceNo || "Generated";
+      toast({ 
+        title: `Invoice ${invoiceNo} created!`,
+        description: `Total: ₹${Number(saleResult.sale?.total || 0).toFixed(2)}`
+      });
       
       const shouldPrint = variables.printInvoice || appSettings.printOnSave;
       if (shouldPrint && saleResult.sale && saleResult.items) {
@@ -782,55 +787,58 @@ export default function NewSale() {
 
   return (
     <AppLayout title="New Sale / Invoice">
-      <div className="flex flex-col lg:flex-row gap-6 h-full">
-        <div className="flex-1 space-y-6">
-          <div className="flex justify-end gap-2 mb-4">
-            <Button 
-              variant="outline" 
-              className="h-9"
-              onClick={handleHoldBill}
-              disabled={items.length === 0 || holdBillMutation.isPending}
-              data-testid="button-hold-bill"
-            >
-              <Pause className="h-4 w-4 mr-1.5" />
-              {holdBillMutation.isPending ? "Holding..." : "Hold Bill"}
-            </Button>
-            <Button 
-              variant="outline" 
-              className="h-9"
-              onClick={() => setHeldBillsDialogOpen(true)}
-              data-testid="button-resume-bill"
-            >
-              <Play className="h-4 w-4 mr-1.5" />
-              Resume Bill
-              {heldBills.length > 0 && (
-                <span className="ml-1.5 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded-full">
-                  {heldBills.length}
-                </span>
-              )}
-            </Button>
-            <Button 
-              variant="outline" 
-              className="h-9 text-destructive hover:text-destructive"
-              onClick={resetForm}
-              data-testid="button-cancel"
-            >
-              Cancel
-            </Button>
+      <div className="flex flex-col lg:flex-row gap-3 h-[calc(100vh-120px)]">
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="flex justify-between items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded text-sm">
+              <span className="text-muted-foreground">Invoice:</span>
+              <span className="font-mono font-semibold text-muted-foreground" data-testid="text-invoice-number">
+                Auto on save
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleHoldBill}
+                disabled={items.length === 0 || holdBillMutation.isPending}
+                data-testid="button-hold-bill"
+              >
+                <Pause className="h-3.5 w-3.5 mr-1" />
+                Hold
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setHeldBillsDialogOpen(true)}
+                data-testid="button-resume-bill"
+              >
+                <Play className="h-3.5 w-3.5 mr-1" />
+                Resume
+                {heldBills.length > 0 && (
+                  <span className="ml-1 bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full">
+                    {heldBills.length}
+                  </span>
+                )}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={resetForm}
+                data-testid="button-cancel"
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
 
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-6 space-y-6">
-              <div className="flex items-center justify-between bg-muted/50 px-4 py-2 rounded-lg mb-4">
-                <span className="text-sm text-muted-foreground">Invoice Number:</span>
-                <span className="font-mono font-semibold text-muted-foreground" data-testid="text-invoice-number">
-                  Auto-generated on save
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card className="border-0 shadow-sm flex-1 flex flex-col min-h-0">
+            <CardContent className="p-4 flex flex-col flex-1 min-h-0 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-base font-medium">Customer</Label>
-                  <div className="flex gap-2 mt-1.5">
+                  <Label className="text-sm font-medium">Customer</Label>
+                  <div className="flex gap-2 mt-1">
                     <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
                       <PopoverTrigger asChild>
                         <Button
@@ -928,14 +936,14 @@ export default function NewSale() {
                 </div>
 
                 <div>
-                  <Label className="text-base font-medium">Doctor (Optional)</Label>
+                  <Label className="text-sm font-medium">Doctor (Optional)</Label>
                   <Popover open={doctorOpen} onOpenChange={setDoctorOpen}>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
                         role="combobox"
                         aria-expanded={doctorOpen}
-                        className="w-full justify-between font-normal mt-1.5"
+                        className="w-full justify-between font-normal mt-1 h-9"
                         data-testid="select-doctor"
                       >
                         {selectedDoctor
@@ -986,9 +994,9 @@ export default function NewSale() {
                 </div>
               </div>
 
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-base font-medium">Add/Search Medicine</Label>
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-medium">Add/Search Medicine</Label>
                   <div className="flex gap-2">
                     <Button 
                       variant="outline" 
@@ -1050,24 +1058,24 @@ export default function NewSale() {
                   </div>
                 </div>
 
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border rounded-lg overflow-auto flex-1 min-h-0">
                   <Table>
-                    <TableHeader className="bg-muted/30">
+                    <TableHeader className="bg-muted/30 sticky top-0">
                       <TableRow>
-                        <TableHead className="w-[20%]">Item</TableHead>
-                        <TableHead>Batch</TableHead>
-                        <TableHead>Expiry</TableHead>
-                        <TableHead className="w-[100px]">Unit</TableHead>
-                        <TableHead className="text-right">Price</TableHead>
-                        <TableHead className="w-[80px] text-center">Qty</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead className="w-[50px]"></TableHead>
+                        <TableHead className="w-[20%] py-2">Item</TableHead>
+                        <TableHead className="py-2">Batch</TableHead>
+                        <TableHead className="py-2">Expiry</TableHead>
+                        <TableHead className="w-[90px] py-2">Unit</TableHead>
+                        <TableHead className="text-right py-2">Price</TableHead>
+                        <TableHead className="w-[70px] text-center py-2">Qty</TableHead>
+                        <TableHead className="text-right py-2">Total</TableHead>
+                        <TableHead className="w-[40px] py-2"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {items.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={8} className="text-center py-4 text-muted-foreground">
                             No items added. Search and add medicines above.
                           </TableCell>
                         </TableRow>
@@ -1080,18 +1088,18 @@ export default function NewSale() {
 
                           return (
                             <TableRow key={item.id} data-testid={`sale-item-${item.id}`}>
-                              <TableCell className="font-medium py-3">
-                                <div>{item.name}</div>
+                              <TableCell className="font-medium py-2">
+                                <div className="text-sm">{item.name}</div>
                                 {item.packSize > 1 && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {item.packSize} units/strip
+                                  <div className="text-[10px] text-muted-foreground">
+                                    {item.packSize}/strip
                                   </div>
                                 )}
                               </TableCell>
-                              <TableCell className="py-3">
+                              <TableCell className="py-2 text-sm">
                                 {item.batchNumber}
                               </TableCell>
-                              <TableCell className="py-3">
+                              <TableCell className="py-2 text-sm">
                                 <span
                                   className={cn(
                                     isExpired(item.expiryDate) && "text-red-600 font-medium",
@@ -1104,15 +1112,15 @@ export default function NewSale() {
                                   <AlertTriangle className="h-3 w-3 text-orange-500 inline ml-1" />
                                 )}
                               </TableCell>
-                              <TableCell className="py-3">
+                              <TableCell className="py-2">
                                 {isLiquidCategory(item.category) ? (
-                                  <span className="text-sm font-medium px-2 py-1 bg-muted rounded">Bottle</span>
+                                  <span className="text-xs font-medium px-1.5 py-0.5 bg-muted rounded">Bottle</span>
                                 ) : (
                                   <Select
                                     value={item.unitType}
                                     onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
                                   >
-                                    <SelectTrigger className="h-8 w-[90px]" data-testid={`select-unit-${item.id}`}>
+                                    <SelectTrigger className="h-7 w-[80px] text-xs" data-testid={`select-unit-${item.id}`}>
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1122,7 +1130,7 @@ export default function NewSale() {
                                   </Select>
                                 )}
                               </TableCell>
-                              <TableCell className="text-right py-3">
+                              <TableCell className="text-right py-2">
                                 {isOwnerOrAdmin ? (
                                   <NumericInput
                                     min={0}
@@ -1138,7 +1146,7 @@ export default function NewSale() {
                                   <span>₹{item.price.toFixed(2)}</span>
                                 )}
                               </TableCell>
-                              <TableCell className="py-3">
+                              <TableCell className="py-2">
                                 <QuantityInput
                                   value={item.displayQty}
                                   max={maxDisplayQty}
@@ -1146,18 +1154,18 @@ export default function NewSale() {
                                   testId={`input-qty-${item.id}`}
                                 />
                               </TableCell>
-                              <TableCell className="text-right py-3 font-medium">
+                              <TableCell className="text-right py-2 font-medium text-sm">
                                 ₹{itemTotal.toFixed(2)}
                               </TableCell>
-                              <TableCell className="py-3">
+                              <TableCell className="py-2">
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                  className="h-6 w-6 text-destructive hover:text-destructive"
                                   onClick={() => removeItem(item.id)}
                                   data-testid={`button-remove-${item.id}`}
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                               </TableCell>
                             </TableRow>
@@ -1169,16 +1177,13 @@ export default function NewSale() {
                 </div>
 
                 {items.length > 0 && (
-                  <div className="flex justify-between items-center pt-2 px-2">
-                    <span className="text-sm font-medium">
+                  <div className="flex justify-between items-center pt-1 px-1 text-sm">
+                    <span className="font-medium">
                       {items.length} item{items.length > 1 ? "s" : ""}
                     </span>
-                    <div className="flex gap-8 text-sm">
-                      <span className="text-muted-foreground">Subtotal</span>
-                      <span className="font-bold" data-testid="text-subtotal">
-                        ₹{calculations.subtotal.toFixed(2)}
-                      </span>
-                    </div>
+                    <span className="font-bold" data-testid="text-subtotal">
+                      Subtotal: ₹{calculations.subtotal.toFixed(2)}
+                    </span>
                   </div>
                 )}
               </div>
@@ -1186,69 +1191,41 @@ export default function NewSale() {
           </Card>
         </div>
 
-        <div className="w-full lg:w-[380px]">
-          <Card className="border-0 shadow-sm h-full">
-            <CardContent className="p-6 flex flex-col h-full">
-              <h3 className="text-lg font-semibold mb-6">Bill Summary</h3>
+        <div className="w-full lg:w-[340px] flex flex-col min-h-0">
+          <Card className="border-0 shadow-sm flex-1 flex flex-col min-h-0 overflow-auto">
+            <CardContent className="p-4 flex flex-col h-full">
+              <h3 className="text-base font-semibold mb-3">Bill Summary</h3>
 
-              <div className="space-y-4 mb-6 pb-6 border-b border-dashed">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total MRP</span>
-                  <span className="font-medium" data-testid="text-total-mrp">
-                    ₹{calculations.totalMRP.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
+              <div className="space-y-2 mb-3 pb-3 border-b border-dashed text-sm">
+                <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-medium" data-testid="text-summary-subtotal">
                     ₹{calculations.subtotal.toFixed(2)}
                   </span>
                 </div>
-                {calculations.totalItemDiscount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Item Discount</span>
-                    <span className="font-medium text-green-600" data-testid="text-item-discount">
-                      -₹{calculations.totalItemDiscount.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">Bill Discount (%)</span>
-                  <div className="flex items-center gap-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Discount</span>
+                  <div className="flex items-center gap-1">
                     <NumericInput
                       min={0}
                       max={100}
                       allowDecimal={true}
                       value={parseFloat(billDiscountPercent) || 0}
                       onChange={(value) => setBillDiscountPercent(String(value))}
-                      className="w-16 h-7 text-right text-sm"
+                      className="w-14 h-6 text-right text-xs"
                       data-testid="input-discount-percent"
                     />
-                    <span>%</span>
+                    <span className="text-xs">%</span>
                   </div>
                 </div>
-                {calculations.discount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Bill Discount Amount</span>
-                    <span className="font-medium text-green-600" data-testid="text-discount-amount">
-                      -₹{calculations.discount.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">CGST</span>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">CGST + SGST</span>
                   <span className="font-medium" data-testid="text-cgst">
-                    ₹{calculations.cgst.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">SGST</span>
-                  <span className="font-medium" data-testid="text-sgst">
-                    ₹{calculations.sgst.toFixed(2)}
+                    ₹{(calculations.cgst + calculations.sgst).toFixed(2)}
                   </span>
                 </div>
                 {calculations.roundOff !== 0 && (
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between">
                     <span className="text-muted-foreground">Round Off</span>
                     <span className="font-medium" data-testid="text-roundoff">
                       ₹{calculations.roundOff.toFixed(2)}
@@ -1257,72 +1234,54 @@ export default function NewSale() {
                 )}
               </div>
 
-              <div className="flex justify-between items-center mb-8">
-                <span className="font-semibold text-lg">Net Amount</span>
-                <span className="font-bold text-2xl" data-testid="text-net-amount">
+              <div className="flex justify-between items-center mb-4 bg-primary/10 p-2 rounded">
+                <span className="font-semibold">Net Amount</span>
+                <span className="font-bold text-xl" data-testid="text-net-amount">
                   ₹{calculations.netAmount.toFixed(2)}
                 </span>
               </div>
 
-              <div className="space-y-4 mb-8">
-                <Label className="text-base font-medium">Payment Method</Label>
+              <div className="space-y-3 mb-4">
+                <Label className="text-sm font-medium">Payment</Label>
                 <RadioGroup
                   value={paymentMethod}
                   onValueChange={setPaymentMethod}
-                  className="grid grid-cols-2 gap-4"
+                  className="grid grid-cols-4 gap-2"
                 >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="cash" id="cash" data-testid="radio-cash" />
-                    <Label htmlFor="cash" className="font-normal cursor-pointer">
-                      Cash
-                    </Label>
+                  <div className="flex items-center space-x-1">
+                    <RadioGroupItem value="cash" id="cash" data-testid="radio-cash" className="h-3.5 w-3.5" />
+                    <Label htmlFor="cash" className="font-normal cursor-pointer text-xs">Cash</Label>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="upi" id="upi" data-testid="radio-upi" />
-                    <Label htmlFor="upi" className="font-normal cursor-pointer">
-                      UPI / QR
-                    </Label>
+                  <div className="flex items-center space-x-1">
+                    <RadioGroupItem value="upi" id="upi" data-testid="radio-upi" className="h-3.5 w-3.5" />
+                    <Label htmlFor="upi" className="font-normal cursor-pointer text-xs">UPI</Label>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="card" id="card" data-testid="radio-card" />
-                    <Label htmlFor="card" className="font-normal cursor-pointer">
-                      Card
-                    </Label>
+                  <div className="flex items-center space-x-1">
+                    <RadioGroupItem value="card" id="card" data-testid="radio-card" className="h-3.5 w-3.5" />
+                    <Label htmlFor="card" className="font-normal cursor-pointer text-xs">Card</Label>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="credit" id="credit" data-testid="radio-credit" />
-                    <Label htmlFor="credit" className="font-normal cursor-pointer">
-                      Credit
-                    </Label>
+                  <div className="flex items-center space-x-1">
+                    <RadioGroupItem value="credit" id="credit" data-testid="radio-credit" className="h-3.5 w-3.5" />
+                    <Label htmlFor="credit" className="font-normal cursor-pointer text-xs">Credit</Label>
                   </div>
                 </RadioGroup>
 
                 {(paymentMethod === "upi" || paymentMethod === "card" || paymentMethod === "credit") && (
-                  <div className="mt-4">
-                    <Label htmlFor="paymentRef" className="text-sm text-muted-foreground">
-                      Reference (Optional)
-                    </Label>
-                    <Input
-                      id="paymentRef"
-                      value={paymentReference}
-                      onChange={(e) => setPaymentReference(e.target.value)}
-                      placeholder={
-                        paymentMethod === "upi" ? "UPI Transaction ID" :
-                        paymentMethod === "card" ? "Card approval code" :
-                        "Credit reference"
-                      }
-                      className="mt-1.5"
-                      data-testid="input-payment-reference"
-                    />
-                  </div>
+                  <Input
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    placeholder="Reference (optional)"
+                    className="h-8 text-sm"
+                    data-testid="input-payment-reference"
+                  />
                 )}
               </div>
 
-              <div className="mb-8 space-y-3">
+              <div className="mb-4 space-y-2">
                 <div className="flex justify-between items-center">
-                  <Label className="font-medium">Received Amount</Label>
+                  <Label className="font-medium text-sm">Received</Label>
                   <div className="flex items-center gap-1">
-                    <span>₹</span>
+                    <span className="text-sm">₹</span>
                     <NumericInput
                       min={0}
                       allowDecimal={true}
@@ -1330,11 +1289,11 @@ export default function NewSale() {
                       onChange={(value) => setReceivedAmount(String(value))}
                       placeholder="0"
                       className={cn(
-                        "w-24 text-right",
+                        "w-20 h-8 text-right",
                         paymentMethod !== "credit" && 
                         calculations.received < calculations.netAmount && 
                         calculations.netAmount > 0 &&
-                        "border-red-500 focus:border-red-500 focus:ring-red-500"
+                        "border-red-500"
                       )}
                       data-testid="input-received"
                     />
@@ -1343,8 +1302,8 @@ export default function NewSale() {
                 {paymentMethod !== "credit" && 
                  calculations.received < calculations.netAmount && 
                  calculations.netAmount > 0 && (
-                  <div className="text-sm text-red-500 text-right" data-testid="text-underpaid-error">
-                    Should be paid all the amount
+                  <div className="text-xs text-red-500 text-right" data-testid="text-underpaid-error">
+                    Pay full amount
                   </div>
                 )}
                 {calculations.change > 0 && (
@@ -1357,38 +1316,36 @@ export default function NewSale() {
                 )}
               </div>
 
-              <div className="space-y-3 mb-8">
-                <div className="flex items-center space-x-2">
+              <div className="flex gap-4 mb-4 text-xs">
+                <div className="flex items-center space-x-1.5">
                   <Checkbox
                     id="print"
                     checked={printInvoice}
                     onCheckedChange={(checked) => setPrintInvoice(checked as boolean)}
                     data-testid="checkbox-print"
+                    className="h-3.5 w-3.5"
                   />
-                  <Label htmlFor="print" className="font-normal text-sm cursor-pointer">
-                    Print invoice
-                  </Label>
+                  <Label htmlFor="print" className="font-normal cursor-pointer">Print</Label>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1.5">
                   <Checkbox
                     id="email"
                     checked={sendViaEmail}
                     onCheckedChange={(checked) => setSendViaEmail(checked as boolean)}
                     data-testid="checkbox-email"
+                    className="h-3.5 w-3.5"
                   />
-                  <Label htmlFor="email" className="font-normal text-sm cursor-pointer">
-                    Send via Email or WhatsApp
-                  </Label>
+                  <Label htmlFor="email" className="font-normal cursor-pointer">Email/WhatsApp</Label>
                 </div>
               </div>
 
               {paymentMethod === "credit" && !selectedCustomer && (
-                <div className="text-sm text-red-500 text-center mb-2" data-testid="text-credit-customer-required">
-                  Please select a customer for credit billing
+                <div className="text-xs text-red-500 text-center mb-2" data-testid="text-credit-customer-required">
+                  Select customer for credit
                 </div>
               )}
               <Button
-                className="w-full bg-primary hover:bg-primary/90 h-12 text-base mt-auto"
+                className="w-full bg-primary hover:bg-primary/90 h-10 text-sm mt-auto"
                 onClick={handleGenerateInvoice}
                 disabled={
                   items.length === 0 || 
@@ -1398,114 +1355,12 @@ export default function NewSale() {
                 }
                 data-testid="button-generate-invoice"
               >
-                {createSaleMutation.isPending ? "Generating..." : "Generate Invoice"}
+                {createSaleMutation.isPending ? "Generating..." : "Generate Invoice (F8)"}
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
-
-      <Card className="border-0 shadow-sm mt-6">
-        <CardContent className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Reprint Invoice</h3>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Enter invoice number (e.g., INV-1234567890)"
-              value={invoiceSearchInput}
-              onChange={(e) => setInvoiceSearchInput(e.target.value)}
-              className="max-w-md"
-              data-testid="input-invoice-search"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleInvoiceSearch();
-                }
-              }}
-            />
-            <Button 
-              onClick={handleInvoiceSearch}
-              disabled={!invoiceSearchInput.trim() || searchingInvoice}
-              data-testid="button-search-invoice"
-            >
-              {searchingInvoice ? "Searching..." : (
-                <>
-                  <Search className="h-4 w-4 mr-2" />
-                  Search & Print
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {recentSales.length > 0 && (
-        <Card className="border-0 shadow-sm mt-6">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Recent Sales</h3>
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader className="bg-muted/30">
-                  <TableRow>
-                    <TableHead>Invoice No</TableHead>
-                    <TableHead>Date/Time</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead>Payment</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentSales.slice(0, 10).map((sale) => (
-                    <TableRow key={sale.id} data-testid={`recent-sale-${sale.id}`}>
-                      <TableCell className="font-medium">
-                        {sale.invoiceNo}
-                      </TableCell>
-                      <TableCell>
-                        {new Date(sale.createdAt).toLocaleString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </TableCell>
-                      <TableCell className="max-w-[150px] truncate">
-                        {sale.customerName || 'Walk-in Customer'}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        ₹{Number(sale.total).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="capitalize">
-                        {sale.paymentMethod}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(`/api/sales/${sale.id}/items`);
-                              if (res.ok) {
-                                const items = await res.json();
-                                setPrintSaleData({ sale, items });
-                                setPrintDialogOpen(true);
-                              }
-                            } catch (error) {
-                              console.error("Failed to fetch sale items:", error);
-                            }
-                          }}
-                          data-testid={`button-reprint-${sale.id}`}
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <Dialog open={newCustomerDialog} onOpenChange={setNewCustomerDialog}>
         <DialogContent>
