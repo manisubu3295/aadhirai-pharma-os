@@ -27,8 +27,9 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Building2, Phone, Mail, CheckCircle2, XCircle } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Building2, Phone, Mail, CheckCircle2, XCircle, FileDown, Upload, Download } from "lucide-react";
 import { useState, memo } from "react";
+import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Supplier } from "@shared/schema";
 
@@ -199,6 +200,7 @@ export default function Suppliers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [formData, setFormData] = useState<SupplierFormData>(emptyForm);
 
@@ -373,10 +375,16 @@ export default function Suppliers() {
                   data-testid="input-search-suppliers"
                 />
               </div>
-              <Button onClick={() => { setFormData(emptyForm); setAddDialogOpen(true); }} data-testid="button-add-supplier">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Supplier
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="button-import-suppliers">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import
+                </Button>
+                <Button onClick={() => { setFormData(emptyForm); setAddDialogOpen(true); }} data-testid="button-add-supplier">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Supplier
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -511,6 +519,37 @@ export default function Suppliers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Suppliers"
+        templateHeaders={["Name", "Code", "Contact", "Phone", "Email", "Address", "GSTNo", "DrugLicenseNo"]}
+        templateSampleData={[["ABC Pharma", "SUP001", "John", "9876543210", "abc@pharma.com", "Mumbai", "22AAAAA0000A1Z5", "DL-12345"]]}
+        templateFilename="suppliers_import"
+        entityName="suppliers"
+        onImport={async (data) => {
+          const suppliers = data.map(row => ({
+            name: row.name || 'Unknown',
+            code: row.code || `SUP-${Date.now()}`,
+            contact: row.contact || null,
+            phone: row.phone || null,
+            email: row.email || null,
+            address: row.address || null,
+            gstNo: row.gstno || null,
+            drugLicenseNo: row.druglicenseno || null,
+            paymentTerms: null,
+          }));
+          const res = await fetch('/api/suppliers/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ suppliers }),
+          });
+          if (!res.ok) throw new Error('Import failed');
+          return res.json();
+        }}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] })}
+      />
     </AppLayout>
   );
 }

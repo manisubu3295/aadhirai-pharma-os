@@ -30,6 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ImportDialog } from "@/components/ui/import-dialog";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -43,8 +44,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download, MapPin } from "lucide-react";
-import { downloadFile, generateCSV } from "@/lib/exportUtils";
+import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download, MapPin, Upload } from "lucide-react";
+import { downloadFile, generateCSV, parseCSV } from "@/lib/exportUtils";
 import { useState, memo, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
@@ -333,6 +334,8 @@ export default function Inventory() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
   const [formData, setFormData] = useState<MedicineFormData>(emptyForm);
   const [sortField, setSortField] = useState<SortField>('name');
@@ -660,6 +663,9 @@ export default function Inventory() {
                 <DropdownMenuItem onClick={downloadImportTemplate} data-testid="menu-download-template">
                   <Download className="mr-2 h-4 w-4" /> Download Import Template
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setImportDialogOpen(true)} data-testid="menu-import-csv">
+                  <Upload className="mr-2 h-4 w-4" /> Import from CSV
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button 
@@ -891,6 +897,42 @@ export default function Inventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Medicines"
+        templateHeaders={["Name", "BatchNumber", "Manufacturer", "Category", "ExpiryDate", "Quantity", "ReorderLevel", "CostPrice", "Price", "MRP", "GSTRate", "HSNCode"]}
+        templateSampleData={[["Paracetamol 500mg", "BT2024001", "XYZ Pharma", "Tablets", "2025-12-31", "100", "50", "8.50", "10.00", "12.00", "12", "30049099"]]}
+        templateFilename="medicines_import"
+        entityName="medicines"
+        onImport={async (data) => {
+          const medicines = data.map(row => ({
+            name: row.name || '',
+            batchNumber: row.batchnumber || `BATCH-${Date.now()}`,
+            manufacturer: row.manufacturer || null,
+            category: row.category || 'Tablets',
+            expiryDate: row.expirydate || new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
+            quantity: parseInt(row.quantity) || 0,
+            reorderLevel: parseInt(row.reorderlevel) || 50,
+            costPrice: row.costprice || '0',
+            price: row.price || '0',
+            mrp: row.mrp || row.price || '0',
+            gstRate: row.gstrate || '12',
+            hsnCode: row.hsncode || null,
+            packSize: 1,
+            unitType: 'STRIP',
+          }));
+          const res = await fetch('/api/medicines/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ medicines }),
+          });
+          if (!res.ok) throw new Error('Import failed');
+          return res.json();
+        }}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/medicines"] })}
+      />
     </AppLayout>
   );
 }

@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, MapPin, Edit, Trash2, LayoutGrid } from "lucide-react";
+import { Plus, MapPin, Edit, Trash2, LayoutGrid, FileDown, Upload, Download } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
+import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -25,6 +26,7 @@ export default function LocationMaster() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [formData, setFormData] = useState({
     rack: "",
@@ -134,19 +136,24 @@ export default function LocationMaster() {
             <h2 className="text-2xl font-bold">Storage Locations</h2>
             <p className="text-muted-foreground">Manage rack, row, and bin locations for inventory</p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) {
-              setEditingLocation(null);
-              resetForm();
-            }
-          }}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-add-location">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Location
-              </Button>
-            </DialogTrigger>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="button-import-locations">
+              <Upload className="w-4 h-4 mr-2" />
+              Import
+            </Button>
+            <Dialog open={isDialogOpen} onOpenChange={(open) => {
+              setIsDialogOpen(open);
+              if (!open) {
+                setEditingLocation(null);
+                resetForm();
+              }
+            }}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-add-location">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Location
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editingLocation ? "Edit Location" : "Add New Location"}</DialogTitle>
@@ -207,7 +214,8 @@ export default function LocationMaster() {
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         </div>
 
         <Card>
@@ -274,6 +282,32 @@ export default function LocationMaster() {
           </CardContent>
         </Card>
       </div>
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Locations"
+        templateHeaders={["Rack", "Row", "Bin", "Description"]}
+        templateSampleData={[["A", "1", "01", "First shelf section"]]}
+        templateFilename="locations_import"
+        entityName="locations"
+        onImport={async (data) => {
+          const locations = data.map(row => ({
+            rack: row.rack || 'A',
+            row: row.row || '1',
+            bin: row.bin || '01',
+            description: row.description || null,
+          }));
+          const res = await fetch('/api/locations/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locations }),
+          });
+          if (!res.ok) throw new Error('Import failed');
+          return res.json();
+        }}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/locations"] })}
+      />
     </AppLayout>
   );
 }

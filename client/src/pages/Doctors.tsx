@@ -25,8 +25,9 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Stethoscope, Phone, BadgeCheck, Crown, Lock } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Stethoscope, Phone, BadgeCheck, Crown, Lock, FileDown, Upload, Download } from "lucide-react";
 import { useState, memo } from "react";
+import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Doctor } from "@shared/schema";
@@ -101,6 +102,7 @@ export default function Doctors() {
   const [searchTerm, setSearchTerm] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [formData, setFormData] = useState<DoctorFormData>(emptyForm);
 
@@ -281,10 +283,16 @@ export default function Doctors() {
                   data-testid="input-search-doctors"
                 />
               </div>
-              <Button onClick={() => { setFormData(emptyForm); setAddDialogOpen(true); }} data-testid="button-add-doctor">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Doctor
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="button-import-doctors">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import
+                </Button>
+                <Button onClick={() => { setFormData(emptyForm); setAddDialogOpen(true); }} data-testid="button-add-doctor">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Doctor
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -393,6 +401,34 @@ export default function Doctors() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Doctors"
+        templateHeaders={["Name", "Specialization", "Phone", "RegistrationNo"]}
+        templateSampleData={[["Dr. Smith", "General Physician", "9876543210", "MCI12345"]]}
+        templateFilename="doctors_import"
+        entityName="doctors"
+        onImport={async (data) => {
+          const doctors = data.map(row => ({
+            name: row.name || 'Unknown',
+            specialization: row.specialization || null,
+            phone: row.phone || null,
+            registrationNo: row.registrationno || null,
+            email: null,
+            address: null,
+          }));
+          const res = await fetch('/api/doctors/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ doctors }),
+          });
+          if (!res.ok) throw new Error('Import failed');
+          return res.json();
+        }}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/doctors"] })}
+      />
     </AppLayout>
   );
 }

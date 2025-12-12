@@ -27,8 +27,9 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Users, Phone, Mail, CreditCard, Clock, History, Crown, Receipt } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Users, Phone, Mail, CreditCard, Clock, History, Crown, Receipt, FileDown, Upload, Download } from "lucide-react";
 import { useState, memo } from "react";
+import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Customer, CreditPayment, Sale } from "@shared/schema";
@@ -201,6 +202,7 @@ export default function Customers() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm);
   const [formErrors, setFormErrors] = useState<{ phone?: string; email?: string }>({});
@@ -427,18 +429,29 @@ export default function Customers() {
               Manage your pharmacy's customer database and credit accounts.
             </CardDescription>
           </div>
-          <Button 
-            size="sm" 
-            className="h-9"
-            onClick={() => {
-              setFormData(emptyForm);
-              setFormErrors({});
-              setAddDialogOpen(true);
-            }}
-            data-testid="button-add-customer"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add Customer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline"
+              size="sm" 
+              className="h-9"
+              onClick={() => setImportDialogOpen(true)}
+              data-testid="button-import-customers"
+            >
+              <Upload className="mr-2 h-4 w-4" /> Import
+            </Button>
+            <Button 
+              size="sm" 
+              className="h-9"
+              onClick={() => {
+                setFormData(emptyForm);
+                setFormErrors({});
+                setAddDialogOpen(true);
+              }}
+              data-testid="button-add-customer"
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add Customer
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4 mb-6">
@@ -731,6 +744,33 @@ export default function Customers() {
           </DialogContent>
         </Dialog>
       )}
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Customers"
+        templateHeaders={["Name", "Phone", "Email", "Address", "CreditLimit"]}
+        templateSampleData={[["John Doe", "9876543210", "john@example.com", "123 Main St", "5000"]]}
+        templateFilename="customers_import"
+        entityName="customers"
+        onImport={async (data) => {
+          const customers = data.map(row => ({
+            name: row.name || 'Unknown',
+            phone: row.phone || null,
+            email: row.email || null,
+            address: row.address || null,
+            creditLimit: row.creditlimit || '0',
+          }));
+          const res = await fetch('/api/customers/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customers }),
+          });
+          if (!res.ok) throw new Error('Import failed');
+          return res.json();
+        }}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/customers"] })}
+      />
     </AppLayout>
   );
 }
