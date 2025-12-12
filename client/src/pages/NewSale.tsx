@@ -158,6 +158,8 @@ export default function NewSale() {
   const [printSaleData, setPrintSaleData] = useState<{sale: Sale; items: SaleItemSchema[]} | null>(null);
   const [invoiceSearchInput, setInvoiceSearchInput] = useState("");
   const [searchingInvoice, setSearchingInvoice] = useState(false);
+  const [reprintDialogOpen, setReprintDialogOpen] = useState(false);
+  const [lastSavedInvoiceNo, setLastSavedInvoiceNo] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
   const customerSearchRef = useRef<HTMLButtonElement>(null);
 
@@ -254,8 +256,10 @@ export default function NewSale() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/recent"] });
       
       const invoiceNo = saleResult.sale?.invoiceNo || "Generated";
+      setLastSavedInvoiceNo(invoiceNo);
       toast({ 
         title: `Invoice ${invoiceNo} created!`,
         description: `Total: ₹${Number(saleResult.sale?.total || 0).toFixed(2)}`
@@ -797,6 +801,15 @@ export default function NewSale() {
               </span>
             </div>
             <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setReprintDialogOpen(true)}
+                data-testid="button-reprint-bill"
+              >
+                <Printer className="h-3.5 w-3.5 mr-1" />
+                Reprint Bill
+              </Button>
               <Button 
                 variant="outline" 
                 size="sm"
