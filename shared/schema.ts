@@ -340,6 +340,7 @@ export const goodsReceiptItems = pgTable("goods_receipt_items", {
   packSize: integer("pack_size").default(1),
   unitType: text("unit_type").default("STRIP"),
   displayQty: integer("display_qty"),
+  locationId: integer("location_id"),
 });
 
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });

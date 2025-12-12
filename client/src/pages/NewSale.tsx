@@ -189,6 +189,17 @@ export default function NewSale() {
     },
   });
 
+  const { data: locations = [] } = useQuery<{ id: number; rack: string; row: string; bin: string }[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  const getLocationDisplay = (locationId: number | null | undefined): string => {
+    if (!locationId) return "-";
+    const loc = locations.find(l => l.id === locationId);
+    if (!loc) return "-";
+    return `${loc.rack}/${loc.row}/${loc.bin}`;
+  };
+
   const { data: heldBills = [] } = useQuery<HeldBill[]>({
     queryKey: ["/api/held-bills"],
     queryFn: async () => {
@@ -964,7 +975,7 @@ export default function NewSale() {
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     Batch: {medicine.batchNumber} | Exp: {medicine.expiryDate} | 
-                                    Stock: {medicine.quantity}
+                                    Stock: {medicine.quantity} | Loc: {getLocationDisplay((medicine as any).locationId)}
                                   </div>
                                 </div>
                                 <div className="text-right">

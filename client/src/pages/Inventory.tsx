@@ -43,12 +43,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download } from "lucide-react";
+import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download, MapPin } from "lucide-react";
 import { downloadFile, generateCSV } from "@/lib/exportUtils";
 import { useState, memo, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Medicine } from "@shared/schema";
+
+interface Location {
+  id: number;
+  rack: string;
+  row: string;
+  bin: string;
+  description: string | null;
+}
 
 const CATEGORIES = ["Tablets", "Capsules", "Syrups", "Injections", "Drops", "Ointments", "Creams", "Powders", "Other"];
 const GST_RATES = ["5", "12", "18"];
@@ -97,9 +105,10 @@ interface MedicineFormFieldsProps {
   formData: MedicineFormData;
   setFormData: React.Dispatch<React.SetStateAction<MedicineFormData>>;
   isPro: boolean;
+  locations: Location[];
 }
 
-const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormData, isPro }: MedicineFormFieldsProps) {
+const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormData, isPro, locations }: MedicineFormFieldsProps) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
@@ -250,6 +259,26 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           data-testid="input-hsn-code"
         />
       </div>
+      <div>
+        <Label htmlFor="locationId">Storage Location</Label>
+        <Select 
+          value={formData.locationId ? String(formData.locationId) : "none"} 
+          onValueChange={(v) => setFormData(prev => ({ ...prev, locationId: v === "none" ? null : parseInt(v) }))}
+        >
+          <SelectTrigger className="mt-1.5" data-testid="select-location">
+            <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
+            <SelectValue placeholder="Select location" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No location</SelectItem>
+            {locations.map((loc) => (
+              <SelectItem key={loc.id} value={String(loc.id)}>
+                {loc.rack} / {loc.row} / {loc.bin}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {isPro && (
         <>
           <div className="col-span-2 pt-2 border-t">
@@ -346,6 +375,17 @@ export default function Inventory() {
       return response.json();
     },
   });
+
+  const { data: locations = [] } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  const getLocationDisplay = (locationId: number | null | undefined): string => {
+    if (!locationId) return "-";
+    const loc = locations.find(l => l.id === locationId);
+    if (!loc) return "-";
+    return `${loc.rack}/${loc.row}/${loc.bin}`;
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: MedicineFormData) => {
@@ -682,6 +722,7 @@ export default function Inventory() {
                     <SortableHeader field="quantity" align="right">Stock</SortableHeader>
                     <SortableHeader field="price" align="right">Price</SortableHeader>
                     <TableHead className="text-center">GST</TableHead>
+                    <TableHead>Location</TableHead>
                     <SortableHeader field="status">Status</SortableHeader>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -733,6 +774,12 @@ export default function Inventory() {
                       </TableCell>
                       <TableCell className="text-right">₹{parseFloat(String(item.price)).toFixed(2)}</TableCell>
                       <TableCell className="text-center text-xs">{item.gstRate}%</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-xs">
+                          <MapPin className="h-3 w-3 text-muted-foreground" />
+                          {getLocationDisplay((item as any).locationId)}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-center">
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${
                           item.status === "In Stock" 
@@ -788,7 +835,7 @@ export default function Inventory() {
             <DialogTitle>Add New Medicine</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
+            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} locations={locations} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
@@ -809,7 +856,7 @@ export default function Inventory() {
             <DialogTitle>Edit Medicine</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} />
+            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} locations={locations} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>

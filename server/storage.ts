@@ -715,6 +715,9 @@ export class DatabaseStorage implements IStorage {
       
       for (const item of items) {
         await this.updateMedicineStock(item.medicineId, item.quantity);
+        if (item.locationId) {
+          await db.update(medicines).set({ locationId: item.locationId }).where(eq(medicines.id, item.medicineId));
+        }
         if (item.poItemId) {
           const poItem = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.id, item.poItemId)).limit(1);
           if (poItem[0]) {

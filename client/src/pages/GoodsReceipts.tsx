@@ -46,6 +46,7 @@ interface GRNItem {
   mrp: string;
   gstRate: string;
   pendingQty?: number;
+  locationId?: number;
 }
 
 export default function GoodsReceipts() {
@@ -93,6 +94,10 @@ export default function GoodsReceipts() {
       if (!response.ok) throw new Error("Failed to fetch goods receipts");
       return response.json();
     },
+  });
+
+  const { data: locations = [] } = useQuery<{ id: number; rack: string; row: string; bin: string }[]>({
+    queryKey: ["/api/locations"],
   });
 
   const openPOs = purchaseOrders.filter(po => 
@@ -143,6 +148,7 @@ export default function GoodsReceipts() {
             gstRate: item.gstRate || "18",
             taxAmount: ((parseFloat(item.rate) * item.quantity) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
             totalAmount: (parseFloat(item.rate) * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2),
+            locationId: item.locationId || null,
           })),
         }),
       });
@@ -522,6 +528,7 @@ export default function GoodsReceipts() {
                       <TableHead className="w-32">Expiry *</TableHead>
                       <TableHead className="w-24">Qty</TableHead>
                       <TableHead className="w-24">Rate</TableHead>
+                      <TableHead className="w-32">Location</TableHead>
                       <TableHead className="w-28 text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -569,6 +576,23 @@ export default function GoodsReceipts() {
                             onChange={(value) => updateItem(index, "rate", String(value))}
                             className="w-24"
                           />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.locationId?.toString() || ""}
+                            onValueChange={(v) => updateItem(index, "locationId", v ? parseInt(v) : undefined)}
+                          >
+                            <SelectTrigger className="w-28">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {locations.map(loc => (
+                                <SelectItem key={loc.id} value={loc.id.toString()}>
+                                  {loc.rack}/{loc.row}/{loc.bin}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell className="text-right font-mono">
                           ₹{(parseFloat(item.rate || "0") * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2)}
