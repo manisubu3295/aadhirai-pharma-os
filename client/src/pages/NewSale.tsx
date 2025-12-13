@@ -1081,7 +1081,7 @@ export default function NewSale() {
                         <TableHead className="w-[90px] py-2">Unit</TableHead>
                         <TableHead className="text-right py-2">Price</TableHead>
                         <TableHead className="w-[70px] text-center py-2">Qty</TableHead>
-                        <TableHead className="text-right py-2">Total</TableHead>
+                        <TableHead className="text-right py-2">Amount</TableHead>
                         <TableHead className="w-[40px] py-2"></TableHead>
                       </TableRow>
                     </TableHeader>
