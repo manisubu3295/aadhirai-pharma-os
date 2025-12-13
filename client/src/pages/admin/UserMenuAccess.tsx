@@ -220,76 +220,96 @@ export default function UserMenuAccess() {
                 </TabsList>
 
                 <TabsContent value="menus" className="mt-4">
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-1">
-                      <div className="grid grid-cols-[1fr,80px,80px] gap-2 px-3 py-2 font-medium text-sm text-muted-foreground border-b">
-                        <span>Menu</span>
-                        <span className="text-center">View</span>
-                        <span className="text-center">Edit</span>
-                      </div>
-                      {allMenus
-                        .filter(m => m.isActive)
-                        .sort((a, b) => a.displayOrder - b.displayOrder)
-                        .map(menu => {
-                          const perms = menuPermissions.get(menu.id) || { canView: false, canEdit: false };
-                          return (
-                            <div
-                              key={menu.id}
-                              className="grid grid-cols-[1fr,80px,80px] gap-2 px-3 py-2 rounded hover:bg-muted items-center"
-                            >
-                              <div>
-                                <span className="text-sm">{menu.label}</span>
-                                <span className="text-xs text-muted-foreground ml-2">({menu.key})</span>
-                              </div>
-                              <div className="flex justify-center">
-                                <Checkbox
-                                  checked={perms.canView}
-                                  onCheckedChange={() => toggleMenuPermission(menu.id, "canView")}
-                                  data-testid={`checkbox-view-${menu.id}`}
-                                />
-                              </div>
-                              <div className="flex justify-center">
-                                <Checkbox
-                                  checked={perms.canEdit}
-                                  onCheckedChange={() => toggleMenuPermission(menu.id, "canEdit")}
-                                  data-testid={`checkbox-edit-${menu.id}`}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
+                  <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+                    <div className="grid grid-cols-[1fr,100px,100px] bg-gradient-to-r from-muted/80 to-muted/40 border-b">
+                      <div className="px-5 py-3.5 font-semibold text-sm tracking-wide">Menu Item</div>
+                      <div className="px-4 py-3.5 font-semibold text-sm text-center tracking-wide">View</div>
+                      <div className="px-4 py-3.5 font-semibold text-sm text-center tracking-wide">Edit</div>
                     </div>
-                  </ScrollArea>
+                    <ScrollArea className="h-[380px]">
+                      <div className="divide-y divide-border/50">
+                        {allMenus
+                          .filter(m => m.isActive)
+                          .sort((a, b) => a.displayOrder - b.displayOrder)
+                          .map((menu, index) => {
+                            const perms = menuPermissions.get(menu.id) || { canView: false, canEdit: false };
+                            return (
+                              <div
+                                key={menu.id}
+                                className={`grid grid-cols-[1fr,100px,100px] items-center transition-colors duration-150 hover:bg-primary/5 ${
+                                  index % 2 === 0 ? 'bg-background' : 'bg-muted/20'
+                                }`}
+                              >
+                                <div className="px-5 py-3.5">
+                                  <div className="font-medium text-sm">{menu.label}</div>
+                                  <div className="text-xs text-muted-foreground mt-0.5 font-mono">{menu.key}</div>
+                                </div>
+                                <div className="px-4 py-3.5 flex justify-center">
+                                  <div className={`p-2 rounded-lg transition-colors ${perms.canView ? 'bg-primary/10' : 'hover:bg-muted'}`}>
+                                    <Checkbox
+                                      checked={perms.canView}
+                                      onCheckedChange={() => toggleMenuPermission(menu.id, "canView")}
+                                      className="h-5 w-5"
+                                      data-testid={`checkbox-view-${menu.id}`}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="px-4 py-3.5 flex justify-center">
+                                  <div className={`p-2 rounded-lg transition-colors ${perms.canEdit ? 'bg-primary/10' : 'hover:bg-muted'}`}>
+                                    <Checkbox
+                                      checked={perms.canEdit}
+                                      onCheckedChange={() => toggleMenuPermission(menu.id, "canEdit")}
+                                      className="h-5 w-5"
+                                      data-testid={`checkbox-edit-${menu.id}`}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </ScrollArea>
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="groups" className="mt-4">
                   <p className="text-sm text-muted-foreground mb-4">
                     Assign menu groups to give the user access to all menus in that group.
                   </p>
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-2">
-                      {allGroups
-                        .filter(g => g.isActive)
-                        .map(group => (
-                          <div
-                            key={group.id}
-                            className="flex items-center gap-3 p-3 rounded hover:bg-muted"
-                          >
-                            <Checkbox
-                              checked={selectedGroupIds.includes(group.id)}
-                              onCheckedChange={() => toggleGroupSelection(group.id)}
-                              data-testid={`checkbox-group-${group.id}`}
-                            />
-                            <div>
-                              <span className="font-medium">{group.name}</span>
-                              {group.description && (
-                                <p className="text-xs text-muted-foreground">{group.description}</p>
+                  <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+                    <ScrollArea className="h-[380px]">
+                      <div className="divide-y divide-border/50">
+                        {allGroups
+                          .filter(g => g.isActive)
+                          .map((group, index) => (
+                            <div
+                              key={group.id}
+                              className={`flex items-center gap-4 px-5 py-4 transition-colors duration-150 hover:bg-primary/5 ${
+                                index % 2 === 0 ? 'bg-background' : 'bg-muted/20'
+                              }`}
+                            >
+                              <div className={`p-2 rounded-lg transition-colors ${selectedGroupIds.includes(group.id) ? 'bg-primary/10' : 'hover:bg-muted'}`}>
+                                <Checkbox
+                                  checked={selectedGroupIds.includes(group.id)}
+                                  onCheckedChange={() => toggleGroupSelection(group.id)}
+                                  className="h-5 w-5"
+                                  data-testid={`checkbox-group-${group.id}`}
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{group.name}</div>
+                                {group.description && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">{group.description}</p>
+                                )}
+                              </div>
+                              {selectedGroupIds.includes(group.id) && (
+                                <Badge variant="secondary" className="text-xs">Assigned</Badge>
                               )}
                             </div>
-                          </div>
-                        ))}
-                    </div>
-                  </ScrollArea>
+                          ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
                 </TabsContent>
               </Tabs>
             )}
