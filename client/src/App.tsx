@@ -26,6 +26,8 @@ import Suppliers from "@/pages/Suppliers";
 import SupplierRates from "@/pages/SupplierRates";
 import PurchaseOrders from "@/pages/PurchaseOrders";
 import GoodsReceipts from "@/pages/GoodsReceipts";
+import PurchaseReturns from "@/pages/PurchaseReturns";
+import DayClosing from "@/pages/DayClosing";
 import Profile from "@/pages/Profile";
 import CreditBilling from "@/pages/CreditBilling";
 import MedicineRefund from "@/pages/MedicineRefund";
@@ -120,6 +122,16 @@ function Router() {
       <Route path="/goods-receipts">
         <ProtectedRoute>
           <GoodsReceipts />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/purchase-returns">
+        <ProtectedRoute>
+          <PurchaseReturns />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/day-closing">
+        <ProtectedRoute>
+          <DayClosing />
         </ProtectedRoute>
       </Route>
       <Route path="/profile">

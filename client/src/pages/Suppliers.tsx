@@ -27,7 +27,7 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Building2, Phone, Mail, CheckCircle2, XCircle, FileDown, Upload, Download } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Building2, Phone, Mail, CheckCircle2, XCircle, FileDown, Upload, Download, BookOpen, CreditCard, IndianRupee } from "lucide-react";
 import { useState, memo } from "react";
 import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -196,13 +196,43 @@ const SupplierFormFields = memo(function SupplierFormFields({ formData, setFormD
   );
 });
 
+interface SupplierTransaction {
+  id: number;
+  supplierId: number;
+  transactionDate: string;
+  transactionType: string;
+  referenceType: string;
+  referenceId: number | null;
+  referenceNumber: string | null;
+  description: string | null;
+  debitAmount: string;
+  creditAmount: string;
+  balance: string;
+}
+
+interface SupplierBalance {
+  supplierId: number;
+  supplierName: string;
+  totalDebit: string;
+  totalCredit: string;
+  balance: string;
+}
+
 export default function Suppliers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [formData, setFormData] = useState<SupplierFormData>(emptyForm);
+  const [ledgerTransactions, setLedgerTransactions] = useState<SupplierTransaction[]>([]);
+  const [supplierBalance, setSupplierBalance] = useState<SupplierBalance | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMode, setPaymentMode] = useState("Cash");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -303,6 +333,78 @@ export default function Suppliers() {
   const handleUpdate = () => {
     if (!formData.name.trim() || !selectedSupplier) return;
     updateMutation.mutate({ ...formData, id: selectedSupplier.id });
+  };
+
+  const openLedgerDialog = async (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    try {
+      const [ledgerRes, balanceRes] = await Promise.all([
+        fetch(`/api/suppliers/${supplier.id}/ledger`),
+        fetch(`/api/suppliers/${supplier.id}/balance`)
+      ]);
+      if (ledgerRes.ok) {
+        setLedgerTransactions(await ledgerRes.json());
+      }
+      if (balanceRes.ok) {
+        setSupplierBalance(await balanceRes.json());
+      }
+      setLedgerDialogOpen(true);
+    } catch (error) {
+      toast({ title: "Failed to load ledger", variant: "destructive" });
+    }
+  };
+
+  const openPaymentDialog = (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setPaymentAmount("");
+    setPaymentMode("Cash");
+    setPaymentReference("");
+    setPaymentNotes("");
+    setPaymentDialogOpen(true);
+  };
+
+  const paymentMutation = useMutation({
+    mutationFn: async (data: { supplierId: number; amount: string; paymentMode: string; referenceNumber: string; notes: string }) => {
+      const res = await fetch("/api/supplier-payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplierId: data.supplierId,
+          amount: data.amount,
+          paymentMode: data.paymentMode,
+          referenceNumber: data.referenceNumber || null,
+          notes: data.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create payment");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      setPaymentDialogOpen(false);
+      toast({ title: "Payment recorded successfully" });
+      if (selectedSupplier) {
+        openLedgerDialog(selectedSupplier);
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message, variant: "destructive" });
+    },
+  });
+
+  const handlePaymentSubmit = () => {
+    if (!selectedSupplier) return;
+    if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
+      toast({ title: "Please enter a valid amount", variant: "destructive" });
+      return;
+    }
+    paymentMutation.mutate({
+      supplierId: selectedSupplier.id,
+      amount: paymentAmount,
+      paymentMode,
+      referenceNumber: paymentReference,
+      notes: paymentNotes,
+    });
   };
 
   const activeSuppliers = suppliers.filter(s => s.isActive);
@@ -474,6 +576,12 @@ export default function Suppliers() {
                             <DropdownMenuItem onClick={() => openEditDialog(supplier)} data-testid={`menu-edit-supplier-${supplier.id}`}>
                               <Edit className="h-4 w-4 mr-2" /> Edit
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openLedgerDialog(supplier)} data-testid={`menu-ledger-supplier-${supplier.id}`}>
+                              <BookOpen className="h-4 w-4 mr-2" /> View Ledger
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openPaymentDialog(supplier)} data-testid={`menu-payment-supplier-${supplier.id}`}>
+                              <CreditCard className="h-4 w-4 mr-2" /> Make Payment
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -515,6 +623,154 @@ export default function Suppliers() {
             </Button>
             <Button onClick={handleUpdate} disabled={updateMutation.isPending} data-testid="button-update-supplier">
               {updateMutation.isPending ? "Updating..." : "Update Supplier"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ledgerDialogOpen} onOpenChange={setLedgerDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Supplier Ledger - {selectedSupplier?.name}</DialogTitle>
+          </DialogHeader>
+          {supplierBalance && (
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-sm text-muted-foreground">Total Debit (Payments)</p>
+                  <p className="text-xl font-bold text-green-600" data-testid="text-ledger-total-debit">₹{parseFloat(supplierBalance.totalDebit || "0").toLocaleString()}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-sm text-muted-foreground">Total Credit (Purchases)</p>
+                  <p className="text-xl font-bold text-red-600" data-testid="text-ledger-total-credit">₹{parseFloat(supplierBalance.totalCredit || "0").toLocaleString()}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-sm text-muted-foreground">Outstanding Balance</p>
+                  <p className={`text-xl font-bold ${parseFloat(supplierBalance.balance) > 0 ? "text-red-600" : "text-green-600"}`} data-testid="text-ledger-balance">
+                    ₹{parseFloat(supplierBalance.balance || "0").toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          {ledgerTransactions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <BookOpen className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No transactions found for this supplier</p>
+            </div>
+          ) : (
+            <div className="border rounded-md overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Debit</TableHead>
+                    <TableHead className="text-right">Credit</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ledgerTransactions.map((txn) => (
+                    <TableRow key={txn.id} data-testid={`row-ledger-txn-${txn.id}`}>
+                      <TableCell className="whitespace-nowrap" data-testid={`text-txn-date-${txn.id}`}>{new Date(txn.transactionDate).toLocaleDateString()}</TableCell>
+                      <TableCell>
+                        <Badge variant={txn.transactionType === "Payment" ? "default" : "secondary"}>
+                          {txn.transactionType}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{txn.referenceNumber || "-"}</TableCell>
+                      <TableCell className="text-sm">{txn.description || "-"}</TableCell>
+                      <TableCell className="text-right font-mono text-green-600">
+                        {parseFloat(txn.debitAmount) > 0 ? `₹${parseFloat(txn.debitAmount).toLocaleString()}` : "-"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-red-600">
+                        {parseFloat(txn.creditAmount) > 0 ? `₹${parseFloat(txn.creditAmount).toLocaleString()}` : "-"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium">
+                        ₹{parseFloat(txn.balance).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLedgerDialogOpen(false)} data-testid="button-close-ledger">Close</Button>
+            <Button onClick={() => selectedSupplier && openPaymentDialog(selectedSupplier)} data-testid="button-make-payment-from-ledger">
+              <CreditCard className="h-4 w-4 mr-2" /> Make Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Make Payment to {selectedSupplier?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Amount *</Label>
+              <div className="relative">
+                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="pl-9"
+                  data-testid="input-payment-amount"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Payment Mode</Label>
+              <select
+                value={paymentMode}
+                onChange={(e) => setPaymentMode(e.target.value)}
+                className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                data-testid="select-payment-mode"
+              >
+                <option value="Cash">Cash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Cheque">Cheque</option>
+                <option value="UPI">UPI</option>
+                <option value="Card">Card</option>
+              </select>
+            </div>
+            <div>
+              <Label>Reference Number</Label>
+              <Input
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                placeholder="Cheque/Transaction number"
+                data-testid="input-payment-reference"
+              />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input
+                value={paymentNotes}
+                onChange={(e) => setPaymentNotes(e.target.value)}
+                placeholder="Optional notes"
+                data-testid="input-payment-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)} data-testid="button-cancel-payment">Cancel</Button>
+            <Button onClick={handlePaymentSubmit} disabled={paymentMutation.isPending} data-testid="button-submit-payment">
+              {paymentMutation.isPending ? "Processing..." : "Record Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

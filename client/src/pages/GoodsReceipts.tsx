@@ -145,6 +145,8 @@ export default function GoodsReceipts() {
             batchNumber: item.batchNumber,
             expiryDate: item.expiryDate,
             quantity: item.quantity,
+            freeQuantity: item.freeQuantity || 0,
+            schemeDescription: item.schemeDescription || null,
             rate: item.rate,
             mrp: item.mrp || null,
             gstRate: item.gstRate || "18",
@@ -523,17 +525,19 @@ export default function GoodsReceipts() {
             </div>
 
             {items.length > 0 && (
-              <div className="border rounded-md">
+              <div className="border rounded-md overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Medicine</TableHead>
-                      <TableHead className="w-28">Batch No. *</TableHead>
-                      <TableHead className="w-32">Expiry *</TableHead>
-                      <TableHead className="w-24">Qty</TableHead>
-                      <TableHead className="w-24">Rate</TableHead>
-                      <TableHead className="w-32">Location</TableHead>
-                      <TableHead className="w-28 text-right">Total</TableHead>
+                      <TableHead className="w-24">Batch No. *</TableHead>
+                      <TableHead className="w-28">Expiry *</TableHead>
+                      <TableHead className="w-16">Qty</TableHead>
+                      <TableHead className="w-16">Free</TableHead>
+                      <TableHead className="w-20">Rate</TableHead>
+                      <TableHead className="w-28">Scheme</TableHead>
+                      <TableHead className="w-28">Location</TableHead>
+                      <TableHead className="w-24 text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -541,9 +545,9 @@ export default function GoodsReceipts() {
                       <TableRow key={index}>
                         <TableCell>
                           <div>
-                            <span className="font-medium">{item.medicineName}</span>
+                            <span className="font-medium text-sm">{item.medicineName}</span>
                             {item.pendingQty && (
-                              <span className="text-xs text-muted-foreground ml-2">(Pending: {item.pendingQty})</span>
+                              <span className="text-xs text-muted-foreground ml-1">(Pnd: {item.pendingQty})</span>
                             )}
                           </div>
                         </TableCell>
@@ -552,7 +556,7 @@ export default function GoodsReceipts() {
                             value={item.batchNumber}
                             onChange={(e) => updateItem(index, "batchNumber", e.target.value)}
                             placeholder="Batch"
-                            className="w-24"
+                            className="w-20"
                           />
                         </TableCell>
                         <TableCell>
@@ -560,7 +564,7 @@ export default function GoodsReceipts() {
                             type="month"
                             value={item.expiryDate}
                             onChange={(e) => updateItem(index, "expiryDate", e.target.value)}
-                            className="w-32"
+                            className="w-28"
                           />
                         </TableCell>
                         <TableCell>
@@ -569,7 +573,15 @@ export default function GoodsReceipts() {
                             max={item.pendingQty}
                             value={item.quantity}
                             onChange={(value) => updateItem(index, "quantity", value)}
-                            className="w-20"
+                            className="w-14"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            value={item.freeQuantity || 0}
+                            onChange={(value) => updateItem(index, "freeQuantity", value)}
+                            className="w-14"
                           />
                         </TableCell>
                         <TableCell>
@@ -578,6 +590,14 @@ export default function GoodsReceipts() {
                             allowDecimal={true}
                             value={parseFloat(item.rate) || 0}
                             onChange={(value) => updateItem(index, "rate", String(value))}
+                            className="w-18"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={item.schemeDescription || ""}
+                            onChange={(e) => updateItem(index, "schemeDescription", e.target.value)}
+                            placeholder="e.g. 10+2"
                             className="w-24"
                           />
                         </TableCell>
@@ -586,7 +606,7 @@ export default function GoodsReceipts() {
                             value={item.locationId?.toString() || ""}
                             onValueChange={(v) => updateItem(index, "locationId", v ? parseInt(v) : undefined)}
                           >
-                            <SelectTrigger className="w-28">
+                            <SelectTrigger className="w-24">
                               <SelectValue placeholder="Select" />
                             </SelectTrigger>
                             <SelectContent>
@@ -598,7 +618,7 @@ export default function GoodsReceipts() {
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-right font-mono text-sm">
                           ₹{(parseFloat(item.rate || "0") * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2)}
                         </TableCell>
                       </TableRow>
