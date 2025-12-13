@@ -504,9 +504,9 @@ export default function NewSale() {
 
     items.forEach((item) => {
       const mrpValue = item.mrp || item.price;
-      totalMRP += mrpValue * item.quantity;
+      totalMRP += mrpValue * item.displayQty;
       totalItemDiscount += item.discount;
-      const itemTotal = item.price * item.quantity - item.discount;
+      const itemTotal = item.price * item.displayQty - item.discount;
       subtotal += itemTotal;
       const gstAmount = (itemTotal * item.gstRate) / 100;
       totalCgst += gstAmount / 2;
@@ -583,7 +583,7 @@ export default function NewSale() {
       printInvoice,
       sendViaEmail,
       items: items.map((item) => {
-        const itemTotal = item.price * item.quantity - item.discount;
+        const itemTotal = item.price * item.displayQty - item.discount;
         const gstAmount = (itemTotal * item.gstRate) / 100;
         return {
           medicineId: item.medicineId,
