@@ -47,6 +47,18 @@ import {
   type UserMenuGroup,
   type InsertUserMenuGroup,
   type MenuWithPermissions,
+  type SupplierTransaction,
+  type InsertSupplierTransaction,
+  type SupplierPayment,
+  type InsertSupplierPayment,
+  type PurchaseReturn,
+  type InsertPurchaseReturn,
+  type PurchaseReturnItem,
+  type InsertPurchaseReturnItem,
+  type DayClosing,
+  type InsertDayClosing,
+  type ActivityLog,
+  type InsertActivityLog,
   users,
   medicines,
   customers,
@@ -71,7 +83,13 @@ import {
   menuGroups,
   menuGroupMenus,
   userMenus,
-  userMenuGroups
+  userMenuGroups,
+  supplierTransactions,
+  supplierPayments,
+  purchaseReturns,
+  purchaseReturnItems,
+  dayClosings,
+  activityLogs as activityLogsTable
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -498,6 +516,31 @@ export interface IStorage {
   
   getUserNavigation(userId: string, role: string): Promise<MenuWithPermissions[]>;
   seedDefaultMenus(): Promise<void>;
+  
+  // Supplier Ledger & Payments
+  getSupplierLedger(supplierId: number): Promise<SupplierTransaction[]>;
+  getSupplierBalance(supplierId: number): Promise<string>;
+  createSupplierTransaction(txn: InsertSupplierTransaction): Promise<SupplierTransaction>;
+  getSupplierPayments(supplierId?: number): Promise<SupplierPayment[]>;
+  createSupplierPayment(payment: InsertSupplierPayment): Promise<SupplierPayment>;
+  
+  // Purchase Returns
+  getPurchaseReturns(): Promise<PurchaseReturn[]>;
+  getPurchaseReturn(id: number): Promise<PurchaseReturn | undefined>;
+  createPurchaseReturn(returnData: InsertPurchaseReturn, items: Omit<InsertPurchaseReturnItem, 'purchaseReturnId'>[]): Promise<PurchaseReturn>;
+  getPurchaseReturnItems(returnId: number): Promise<PurchaseReturnItem[]>;
+  getNextPurchaseReturnNumber(): Promise<string>;
+  
+  // Day Closing
+  getDayClosing(businessDate: string): Promise<DayClosing | undefined>;
+  getDayClosings(limit?: number): Promise<DayClosing[]>;
+  openDay(data: { businessDate: string; openingCash: string; openedByUserId: string }): Promise<DayClosing>;
+  closeDay(businessDate: string, data: { actualCash: string; notes?: string; closedByUserId: string }): Promise<DayClosing | undefined>;
+  computeExpectedCash(businessDate: string, openingCash: string): Promise<string>;
+  
+  // Activity Logs (Enhanced)
+  getActivityLogs(filters?: { userId?: string; entityType?: string; action?: string; from?: Date; to?: Date }): Promise<ActivityLog[]>;
+  createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1236,6 +1279,246 @@ export class DatabaseStorage implements IStorage {
         }
       }
     }
+  }
+
+  // Supplier Ledger & Payments Implementation
+  async getSupplierLedger(supplierId: number): Promise<SupplierTransaction[]> {
+    return await db.select().from(supplierTransactions)
+      .where(eq(supplierTransactions.supplierId, supplierId))
+      .orderBy(desc(supplierTransactions.txnDate));
+  }
+
+  async getSupplierBalance(supplierId: number): Promise<string> {
+    const result = await db.select({
+      balance: sql<string>`COALESCE(SUM(${supplierTransactions.creditAmount}) - SUM(${supplierTransactions.debitAmount}), 0)`
+    }).from(supplierTransactions)
+      .where(eq(supplierTransactions.supplierId, supplierId));
+    return result[0]?.balance || "0";
+  }
+
+  async createSupplierTransaction(txn: InsertSupplierTransaction): Promise<SupplierTransaction> {
+    const result = await db.insert(supplierTransactions).values(txn).returning();
+    return result[0];
+  }
+
+  async getSupplierPayments(supplierId?: number): Promise<SupplierPayment[]> {
+    if (supplierId) {
+      return await db.select().from(supplierPayments)
+        .where(eq(supplierPayments.supplierId, supplierId))
+        .orderBy(desc(supplierPayments.paymentDate));
+    }
+    return await db.select().from(supplierPayments).orderBy(desc(supplierPayments.paymentDate));
+  }
+
+  async createSupplierPayment(payment: InsertSupplierPayment): Promise<SupplierPayment> {
+    const result = await db.insert(supplierPayments).values(payment).returning();
+    const createdPayment = result[0];
+    
+    // Also create a corresponding supplier transaction (debit entry for payment)
+    await this.createSupplierTransaction({
+      supplierId: payment.supplierId,
+      type: 'PAYMENT',
+      referenceId: createdPayment.id,
+      referenceNumber: payment.referenceNo || `PAY-${createdPayment.id}`,
+      txnDate: payment.paymentDate,
+      debitAmount: payment.amount,
+      creditAmount: "0",
+      remarks: payment.remarks || 'Payment to supplier',
+      createdByUserId: payment.createdByUserId
+    });
+    
+    return createdPayment;
+  }
+
+  // Purchase Returns Implementation
+  async getPurchaseReturns(): Promise<PurchaseReturn[]> {
+    return await db.select().from(purchaseReturns).orderBy(desc(purchaseReturns.returnDate));
+  }
+
+  async getPurchaseReturn(id: number): Promise<PurchaseReturn | undefined> {
+    const result = await db.select().from(purchaseReturns).where(eq(purchaseReturns.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createPurchaseReturn(
+    returnData: InsertPurchaseReturn, 
+    items: Omit<InsertPurchaseReturnItem, 'purchaseReturnId'>[]
+  ): Promise<PurchaseReturn> {
+    const returnResult = await db.insert(purchaseReturns).values(returnData).returning();
+    const createdReturn = returnResult[0];
+    
+    // Insert return items
+    const itemsWithReturnId = items.map(item => ({ ...item, purchaseReturnId: createdReturn.id }));
+    await db.insert(purchaseReturnItems).values(itemsWithReturnId);
+    
+    // Decrease medicine stock for each returned item
+    for (const item of items) {
+      await this.updateMedicineStock(item.medicineId, -item.quantityReturned);
+    }
+    
+    // Create supplier transaction entry (debit entry - we're owed money)
+    await this.createSupplierTransaction({
+      supplierId: returnData.supplierId,
+      type: 'PURCHASE_RETURN',
+      referenceId: createdReturn.id,
+      referenceNumber: returnData.returnNumber,
+      txnDate: returnData.returnDate,
+      debitAmount: returnData.totalAmount,
+      creditAmount: "0",
+      remarks: returnData.reason || 'Purchase return',
+      createdByUserId: returnData.createdByUserId
+    });
+    
+    return createdReturn;
+  }
+
+  async getPurchaseReturnItems(returnId: number): Promise<PurchaseReturnItem[]> {
+    return await db.select().from(purchaseReturnItems)
+      .where(eq(purchaseReturnItems.purchaseReturnId, returnId));
+  }
+
+  async getNextPurchaseReturnNumber(): Promise<string> {
+    const result = await pool.query(
+      `UPDATE sequences SET current_value = current_value + 1, updated_at = NOW() 
+       WHERE name = 'purchase_return' 
+       RETURNING current_value, prefix`
+    );
+    if (result.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO sequences (name, current_value, prefix) VALUES ('purchase_return', 1, 'PR')`
+      );
+      return 'PR-0001';
+    }
+    const { current_value, prefix } = result.rows[0];
+    return `${prefix}-${String(current_value).padStart(4, '0')}`;
+  }
+
+  // Day Closing Implementation
+  async getDayClosing(businessDate: string): Promise<DayClosing | undefined> {
+    const result = await db.select().from(dayClosings)
+      .where(eq(dayClosings.businessDate, businessDate)).limit(1);
+    return result[0];
+  }
+
+  async getDayClosings(limit: number = 30): Promise<DayClosing[]> {
+    return await db.select().from(dayClosings)
+      .orderBy(desc(dayClosings.businessDate))
+      .limit(limit);
+  }
+
+  async openDay(data: { businessDate: string; openingCash: string; openedByUserId: string }): Promise<DayClosing> {
+    const existing = await this.getDayClosing(data.businessDate);
+    if (existing) {
+      throw new Error('Day already exists for this date');
+    }
+    
+    const result = await db.insert(dayClosings).values({
+      businessDate: data.businessDate,
+      openingCash: data.openingCash,
+      openedByUserId: data.openedByUserId,
+      openingTime: new Date(),
+      status: 'OPEN'
+    }).returning();
+    return result[0];
+  }
+
+  async closeDay(businessDate: string, data: { actualCash: string; notes?: string; closedByUserId: string }): Promise<DayClosing | undefined> {
+    const dayRecord = await this.getDayClosing(businessDate);
+    if (!dayRecord) {
+      throw new Error('Day not found for this date');
+    }
+    if (dayRecord.status === 'CLOSED') {
+      throw new Error('Day is already closed');
+    }
+    
+    const openingCash = dayRecord.openingCash || "0";
+    const expectedCash = await this.computeExpectedCash(businessDate, openingCash);
+    const actualCash = parseFloat(data.actualCash);
+    const expectedCashNum = parseFloat(expectedCash);
+    const difference = actualCash - expectedCashNum;
+    
+    const result = await db.update(dayClosings).set({
+      expectedCash: expectedCash,
+      actualCash: data.actualCash,
+      difference: difference.toFixed(2),
+      closingTime: new Date(),
+      closedByUserId: data.closedByUserId,
+      notes: data.notes,
+      status: 'CLOSED',
+      updatedAt: new Date()
+    }).where(eq(dayClosings.businessDate, businessDate)).returning();
+    
+    return result[0];
+  }
+
+  async computeExpectedCash(businessDate: string, openingCash: string): Promise<string> {
+    // Get all cash sales for the day
+    const startOfDay = new Date(businessDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(businessDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const cashSalesResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${sales.receivedAmount}), 0)`
+    }).from(sales).where(and(
+      eq(sales.paymentMethod, 'cash'),
+      gte(sales.createdAt, startOfDay),
+      lte(sales.createdAt, endOfDay)
+    ));
+    
+    const cashSales = parseFloat(cashSalesResult[0]?.total || "0");
+    const opening = parseFloat(openingCash);
+    
+    // Get cash refunds for the day
+    const refundsResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${salesReturns.totalRefundAmount}), 0)`
+    }).from(salesReturns).where(and(
+      eq(salesReturns.refundMode, 'cash'),
+      gte(salesReturns.returnDate, startOfDay),
+      lte(salesReturns.returnDate, endOfDay)
+    ));
+    
+    const cashRefunds = parseFloat(refundsResult[0]?.total || "0");
+    
+    return (opening + cashSales - cashRefunds).toFixed(2);
+  }
+
+  // Activity Logs Implementation
+  async getActivityLogs(filters?: { userId?: string; entityType?: string; action?: string; from?: Date; to?: Date }): Promise<ActivityLog[]> {
+    let query = db.select().from(activityLogsTable);
+    
+    const conditions = [];
+    if (filters?.userId) {
+      conditions.push(eq(activityLogsTable.userId, filters.userId));
+    }
+    if (filters?.entityType) {
+      conditions.push(eq(activityLogsTable.entityType, filters.entityType));
+    }
+    if (filters?.action) {
+      conditions.push(eq(activityLogsTable.action, filters.action));
+    }
+    if (filters?.from) {
+      conditions.push(gte(activityLogsTable.createdAt, filters.from));
+    }
+    if (filters?.to) {
+      conditions.push(lte(activityLogsTable.createdAt, filters.to));
+    }
+    
+    if (conditions.length > 0) {
+      return await db.select().from(activityLogsTable)
+        .where(and(...conditions))
+        .orderBy(desc(activityLogsTable.createdAt))
+        .limit(500);
+    }
+    
+    return await db.select().from(activityLogsTable)
+      .orderBy(desc(activityLogsTable.createdAt))
+      .limit(500);
+  }
+
+  async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
+    const result = await db.insert(activityLogsTable).values(log).returning();
+    return result[0];
   }
 }
 
