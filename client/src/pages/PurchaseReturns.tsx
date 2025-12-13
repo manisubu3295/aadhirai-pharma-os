@@ -28,11 +28,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, RotateCcw, Package, CheckCircle2 } from "lucide-react";
+import { Search, Plus, Eye, RotateCcw, Package, CheckCircle2, Download, FileText, Printer } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfDay, endOfDay, parseISO } from "date-fns";
 import type { Supplier, GoodsReceipt, GoodsReceiptItem, PurchaseReturn, PurchaseReturnItem } from "@shared/schema";
+import { exportToCSV } from "@/lib/exportUtils";
+import { generatePurchaseReturnPDF, generatePurchaseReturnsListPDF, generateBulkPurchaseReturnsPDF } from "@/lib/pdfUtils";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface ReturnItem {
   grnItemId?: number;
