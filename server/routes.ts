@@ -322,13 +322,22 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/users/:id/reset-password", requireRole("owner"), async (req, res) => {
+  app.post("/api/users/:id/reset-password", requireRole("owner", "admin"), async (req, res) => {
     try {
       const userId = req.params.id;
       const { newPassword } = req.body;
       
       if (!newPassword || newPassword.length < 6) {
         return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+      
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      if (targetUser.role === "owner") {
+        return res.status(403).json({ error: "Cannot reset owner password" });
       }
       
       const hashedPassword = await bcrypt.hash(newPassword, 10);
