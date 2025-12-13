@@ -1,0 +1,210 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app:
+
+- Backend: Node.js + Express.js
+- Frontend: React.js
+- DB: relational with existing:
+  - invoices, invoice_items
+  - sales returns
+  - users
+  - etc.
+
+NEW GOAL
+Add:
+
+1) Day Closing / Cash Counter module:
+   - Opening cash, closing cash, expected vs actual, difference, notes.
+   - Per pharmacy (branch) and optionally per user/shift.
+
+2) Activity / Audit Log:
+   - Track important actions (invoice changes, returns, price overrides, stock adjustments) with who, when, what changed.
+
+IMPORTANT RULES
+- Do NOT break existing billing and reports.
+- Day closing is ADDITIVE: if not used, current behaviour is unchanged.
+- Audit logging must be read-only and not slow down the app significantly.
+
+────────────────────────
+1) Day Closing / Cash Counter
+────────────────────────
+
+1.1 DB – day_closings
+Add a table, e.g. `day_closings`:
+
+- id (PK)
+- pharmacy_id
+- date (date)                // business date of closing
+- opened_by_user_id (FK to users)
+- opening_cash (numeric)     // optional - if you want to track start-of-day
+- closed_by_user_id (FK to users, nullable until closed)
+- expected_cash (numeric)    // computed from sales/returns
+- actual_cash (numeric, nullable until closing)
+- difference (numeric)       // actual - expected
+- notes (text, nullable)
+- status (string/enum): 'OPEN', 'CLOSED'
+- created_at, updated_at
+
+1.2 Backend – compute expected cash
+- Define expected cash as:
+  - Sum of CASH sales (invoices where payment_mode = CASH and not returned)
+  - Minus CASH refunds/return payouts
+  - Plus opening_cash (optional depending on your model)
+- Implement a helper function that, given pharmacy_id and a date, computes:
+  - total_cash_sales
+  - total_cash_refunds
+  - expected_cash (including opening if required)
+
+1.3 API – Day opening & closing
+- POST `/api/day-closing/open`
+  - Input:
+    - date (optional; default today)
+    - opening_cash (optional)
+  - Behaviour:
+    - If a record already exists with status 'OPEN' for that pharmacy and date: return error.
+    - Else, insert a new row with status 'OPEN', opened_by_user_id = current user, opening_cash.
+    - Return created record.
+
+- POST `/api/day-closing/close`
+  - Input:
+    - date (optional; default today)
+    - actual_cash
+    - notes (optional)
+  - Behaviour:
+    - Find existing OPEN record for that pharmacy and date.
+    - Compute expected_cash from sales/returns.
+    - Set:
+      - closed_by_user_id = current user.
+      - expected_cash.
+      - actual_cash.
+      - difference = actual_cash - expected_cash.
+      - status = 'CLOSED'.
+    - Return the updated record.
+
+- GET `/api/day-closing?from=&to=`
+  - Return list of day_closings for date range:
+    - Date, opening_cash, expected_cash, actual_cash, difference, opened_by, closed_by, status.
+
+1.4 Frontend – Day closing UI
+- Add new menu item under Reports or Operations: “Day Closing”.
+- Screen:
+  - Show today's status:
+    - If no record: show "Not opened" with button "Open Day".
+    - If OPEN: show opening cash, live expected cash (from API), and a "Close Day" form.
+    - If CLOSED: show summary (opening, expected, actual, difference, notes).
+  - On “Open Day”:
+    - Simple dialog to enter opening_cash (optional).
+  - On “Close Day”:
+    - Show computed expected_cash.
+    - Input for actual_cash and notes.
+    - After submit, show the final difference and mark closed.
+- History tab:
+  - Table with:
+    - Date, Opening cash, Expected, Actual, Difference, Status.
+  - Export option to Excel/PDF if you already have report export utilities.
+
+────────────────────────
+2) Activity / Audit Log
+────────────────────────
+
+2.1 DB – activity_logs
+Add a table `activity_logs`:
+
+- id (PK)
+- pharmacy_id
+- user_id (FK to users)
+- action (string)           // e.g. 'INVOICE_CREATE', 'INVOICE_CANCEL', 'PRICE_OVERRIDE', 'STOCK_ADJUST', 'PURCHASE_CREATE', 'PURCHASE_RETURN'
+- entity_type (string)      // e.g. 'INVOICE', 'INVOICE_ITEM', 'PRODUCT', 'STOCK', 'PURCHASE'
+- entity_id (string/int)    // ID of the entity affected
+- description (string)      // short human-readable message
+- details_before (JSON, nullable)  // snapshot of important fields before change
+- details_after (JSON, nullable)   // snapshot after change
+- created_at (timestamp)
+
+Keep details JSON reasonably small (key fields, not entire entities if too large).
+
+2.2 Backend – hook logging into critical actions
+Identify critical endpoints and add logging:
+
+- Invoice creation:
+  - POST /api/invoices:
+    - Log action='INVOICE_CREATE'
+    - entity_type='INVOICE', entity_id=invoice.id
+    - description='Invoice created'
+    - details_after: key fields (invoice number, total, payment_mode, items count).
+
+- Invoice cancel/void (if you support it):
+  - Log action='INVOICE_CANCEL'
+  - details_before: previous status, totals.
+
+- Sales return:
+  - Log 'SALES_RETURN_CREATE', entity_type='SALES_RETURN'.
+
+- Purchase create:
+  - Log 'PURCHASE_CREATE', entity_type='PURCHASE'.
+
+- Purchase return:
+  - Log 'PURCHASE_RETURN_CREATE', entity_type='PURCHASE_RETURN'.
+
+- Stock adjustment (if you have stock adjustments):
+  - Log 'STOCK_ADJUST', entity_type='STOCK/BATCH', with details_before and details_after for quantity.
+
+- Price override (if you allow manual price changes in POS):
+  - When an item price is overridden:
+    - Log 'PRICE_OVERRIDE', entity_type='INVOICE_ITEM', entity_id=item id or temporary id.
+    - description like 'Overrode price from X to Y for product Z on invoice N'.
+
+Make a small helper function, e.g. `logActivity({ pharmacyId, userId, action, entityType, entityId, description, before, after })`, and reuse it.
+
+2.3 API – view audit log (Admin only)
+- GET `/api/admin/activity-logs?from=&to=&user_id=&action=&entity_type=`
+  - Filter by date range, user, action, entity type.
+  - Return paginated list:
+    - timestamp, user, action, entity_type, entity_id, description.
+
+────────────────────────
+3) Frontend – Audit Log UI
+────────────────────────
+
+- Add a menu under Admin: “Activity Log”.
+- Page:
+  - Filters:
+    - Date range
+    - User
+    - Action
+    - Entity type
+  - Table:
+    - Date/time
+    - User name
+    - Action
+    - Entity (type + id)
+    - Description
+    - (Optional) expand row to see before/after JSON for technical debugging.
+- Make this page read-only, visible only to ADMIN/OWNER.
+
+────────────────────────
+4) Safety & performance considerations
+────────────────────────
+
+- Ensure logging does NOT throw and break the main action:
+  - If logging fails, log to console but still allow the main invoice/purchase to continue.
+- Consider using async/non-blocking logging if needed to avoid latency.
+- Scope everything by pharmacy_id.
+
+────────────────────────
+5) Testing checklist
+────────────────────────
+
+- Do a normal day of operations:
+  - Create some invoices (cash and credit).
+  - Perform a return.
+  - Optionally create purchase/stock adjustments.
+
+- Check:
+  - Day closing expected_cash matches cash sales minus cash refunds plus opening (if used).
+  - Day closing record saved correctly when closed.
+
+- In Activity Log:
+  - See entries for:
+    - Invoice create
+    - Return
+    - Purchase (if logged)
+    - Any price override/stock adjust operations.

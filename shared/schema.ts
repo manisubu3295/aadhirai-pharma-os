@@ -332,6 +332,8 @@ export const goodsReceiptItems = pgTable("goods_receipt_items", {
   batchNumber: text("batch_number").notNull(),
   expiryDate: text("expiry_date").notNull(),
   quantity: integer("quantity").notNull(),
+  freeQuantity: integer("free_quantity").default(0),
+  schemeDescription: text("scheme_description"),
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
   mrp: decimal("mrp", { precision: 10, scale: 2 }),
   gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
@@ -341,6 +343,93 @@ export const goodsReceiptItems = pgTable("goods_receipt_items", {
   unitType: text("unit_type").default("STRIP"),
   displayQty: integer("display_qty"),
   locationId: integer("location_id"),
+});
+
+export const supplierTransactions = pgTable("supplier_transactions", {
+  id: serial("id").primaryKey(),
+  supplierId: integer("supplier_id").notNull(),
+  type: text("type").notNull(),
+  referenceId: integer("reference_id"),
+  referenceNumber: text("reference_number"),
+  txnDate: timestamp("txn_date").defaultNow().notNull(),
+  debitAmount: decimal("debit_amount", { precision: 10, scale: 2 }).default("0"),
+  creditAmount: decimal("credit_amount", { precision: 10, scale: 2 }).default("0"),
+  remarks: text("remarks"),
+  createdByUserId: varchar("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const supplierPayments = pgTable("supplier_payments", {
+  id: serial("id").primaryKey(),
+  supplierId: integer("supplier_id").notNull(),
+  paymentDate: timestamp("payment_date").defaultNow().notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentMode: text("payment_mode").notNull(),
+  referenceNo: text("reference_no"),
+  remarks: text("remarks"),
+  createdByUserId: varchar("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const purchaseReturns = pgTable("purchase_returns", {
+  id: serial("id").primaryKey(),
+  returnNumber: text("return_number").notNull().unique(),
+  supplierId: integer("supplier_id").notNull(),
+  supplierName: text("supplier_name").notNull(),
+  originalGrnId: integer("original_grn_id"),
+  returnDate: timestamp("return_date").defaultNow().notNull(),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  reason: text("reason"),
+  status: text("status").notNull().default("Completed"),
+  createdByUserId: varchar("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const purchaseReturnItems = pgTable("purchase_return_items", {
+  id: serial("id").primaryKey(),
+  purchaseReturnId: integer("purchase_return_id").notNull(),
+  grnItemId: integer("grn_item_id"),
+  medicineId: integer("medicine_id").notNull(),
+  medicineName: text("medicine_name").notNull(),
+  batchNumber: text("batch_number").notNull(),
+  expiryDate: text("expiry_date").notNull(),
+  quantityReturned: integer("quantity_returned").notNull(),
+  rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+});
+
+export const dayClosings = pgTable("day_closings", {
+  id: serial("id").primaryKey(),
+  businessDate: text("business_date").notNull().unique(),
+  openedByUserId: varchar("opened_by_user_id"),
+  openingCash: decimal("opening_cash", { precision: 10, scale: 2 }).default("0"),
+  openingTime: timestamp("opening_time"),
+  closedByUserId: varchar("closed_by_user_id"),
+  expectedCash: decimal("expected_cash", { precision: 10, scale: 2 }),
+  actualCash: decimal("actual_cash", { precision: 10, scale: 2 }),
+  difference: decimal("difference", { precision: 10, scale: 2 }),
+  closingTime: timestamp("closing_time"),
+  notes: text("notes"),
+  status: text("status").notNull().default("OPEN"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const activityLogs = pgTable("activity_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  userName: text("user_name").notNull(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  description: text("description").notNull(),
+  detailsBefore: text("details_before"),
+  detailsAfter: text("details_after"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
@@ -367,6 +456,31 @@ export type GoodsReceipt = typeof goodsReceipts.$inferSelect;
 
 export type InsertGoodsReceiptItem = z.infer<typeof insertGoodsReceiptItemSchema>;
 export type GoodsReceiptItem = typeof goodsReceiptItems.$inferSelect;
+
+export const insertSupplierTransactionSchema = createInsertSchema(supplierTransactions).omit({ id: true, createdAt: true });
+export const insertSupplierPaymentSchema = createInsertSchema(supplierPayments).omit({ id: true, createdAt: true });
+export const insertPurchaseReturnSchema = createInsertSchema(purchaseReturns).omit({ id: true, createdAt: true });
+export const insertPurchaseReturnItemSchema = createInsertSchema(purchaseReturnItems).omit({ id: true });
+export const insertDayClosingSchema = createInsertSchema(dayClosings).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });
+
+export type InsertSupplierTransaction = z.infer<typeof insertSupplierTransactionSchema>;
+export type SupplierTransaction = typeof supplierTransactions.$inferSelect;
+
+export type InsertSupplierPayment = z.infer<typeof insertSupplierPaymentSchema>;
+export type SupplierPayment = typeof supplierPayments.$inferSelect;
+
+export type InsertPurchaseReturn = z.infer<typeof insertPurchaseReturnSchema>;
+export type PurchaseReturn = typeof purchaseReturns.$inferSelect;
+
+export type InsertPurchaseReturnItem = z.infer<typeof insertPurchaseReturnItemSchema>;
+export type PurchaseReturnItem = typeof purchaseReturnItems.$inferSelect;
+
+export type InsertDayClosing = z.infer<typeof insertDayClosingSchema>;
+export type DayClosing = typeof dayClosings.$inferSelect;
+
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ActivityLog = typeof activityLogs.$inferSelect;
 
 export const salesReturns = pgTable("sales_returns", {
   id: serial("id").primaryKey(),

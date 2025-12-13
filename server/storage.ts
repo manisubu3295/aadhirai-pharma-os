@@ -279,6 +279,101 @@ export async function initializeDatabase() {
       INSERT INTO sequences (name, current_value, prefix) 
       VALUES ('invoice', 0, 'INV') 
       ON CONFLICT (name) DO NOTHING;
+      
+      -- New tables for supplier ledger, purchase returns, day closing
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS free_quantity INTEGER DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS scheme_description TEXT;
+      
+      CREATE TABLE IF NOT EXISTS supplier_transactions (
+        id SERIAL PRIMARY KEY,
+        supplier_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        reference_id INTEGER,
+        reference_number TEXT,
+        txn_date TIMESTAMP DEFAULT NOW() NOT NULL,
+        debit_amount DECIMAL(10,2) DEFAULT 0,
+        credit_amount DECIMAL(10,2) DEFAULT 0,
+        remarks TEXT,
+        created_by_user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS supplier_payments (
+        id SERIAL PRIMARY KEY,
+        supplier_id INTEGER NOT NULL,
+        payment_date TIMESTAMP DEFAULT NOW() NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        payment_mode TEXT NOT NULL,
+        reference_no TEXT,
+        remarks TEXT,
+        created_by_user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS purchase_returns (
+        id SERIAL PRIMARY KEY,
+        return_number TEXT NOT NULL UNIQUE,
+        supplier_id INTEGER NOT NULL,
+        supplier_name TEXT NOT NULL,
+        original_grn_id INTEGER,
+        return_date TIMESTAMP DEFAULT NOW() NOT NULL,
+        subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+        tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'Completed',
+        created_by_user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS purchase_return_items (
+        id SERIAL PRIMARY KEY,
+        purchase_return_id INTEGER NOT NULL,
+        grn_item_id INTEGER,
+        medicine_id INTEGER NOT NULL,
+        medicine_name TEXT NOT NULL,
+        batch_number TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        quantity_returned INTEGER NOT NULL,
+        rate DECIMAL(10,2) NOT NULL,
+        gst_rate DECIMAL(5,2) DEFAULT 18,
+        tax_amount DECIMAL(10,2) DEFAULT 0,
+        total_amount DECIMAL(10,2) NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS day_closings (
+        id SERIAL PRIMARY KEY,
+        business_date TEXT NOT NULL UNIQUE,
+        opened_by_user_id VARCHAR(255),
+        opening_cash DECIMAL(10,2) DEFAULT 0,
+        opening_time TIMESTAMP,
+        closed_by_user_id VARCHAR(255),
+        expected_cash DECIMAL(10,2),
+        actual_cash DECIMAL(10,2),
+        difference DECIMAL(10,2),
+        closing_time TIMESTAMP,
+        notes TEXT,
+        status TEXT NOT NULL DEFAULT 'OPEN',
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        user_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        description TEXT NOT NULL,
+        details_before TEXT,
+        details_after TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+      
+      INSERT INTO sequences (name, current_value, prefix)
+      VALUES ('purchase_return', 0, 'PR')
+      ON CONFLICT (name) DO NOTHING;
     `);
     console.log("Database tables initialized successfully");
   } catch (error) {

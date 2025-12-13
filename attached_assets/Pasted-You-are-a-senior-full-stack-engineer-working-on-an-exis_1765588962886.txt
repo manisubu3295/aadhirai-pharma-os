@@ -1,0 +1,215 @@
+You are a senior full-stack engineer working on an existing Pharmacy Management app:
+
+- Backend: Node.js + Express.js
+- Frontend: React.js
+- DB: Relational (e.g. PostgreSQL) with existing tables like:
+  - suppliers
+  - purchases
+  - purchase_items
+  - batches
+- The app already supports:
+  - Supplier master
+  - Purchase entry (GRN) and stock updates
+
+NEW GOAL
+Make supplier & purchase handling more complete and accountant-friendly by adding:
+
+1) Supplier credit & payments (supplier ledger)
+2) Purchase returns to suppliers (with stock & GST adjustments)
+3) Purchase schemes / free quantity on purchases
+
+IMPORTANT RULES
+- Do NOT break existing purchase entry flow.
+- Do NOT rename or remove existing DB fields.
+- Make all changes backward compatible.
+- Existing data should remain valid and usable.
+
+────────────────────────
+1) Supplier credit & payments (supplier ledger)
+────────────────────────
+
+1.1 DB – supplier ledger / transactions
+- Add a new table (or reuse if similar exists), e.g. `supplier_transactions`:
+  - id (PK)
+  - supplier_id (FK to suppliers)
+  - pharmacy_id (FK to pharmacy/tenant)
+  - type (enum/string): 'PURCHASE', 'PURCHASE_RETURN', 'PAYMENT', 'ADJUSTMENT'
+  - reference_id (nullable) – e.g. purchase_id, purchase_return_id, payment_id
+  - txn_date (date/datetime)
+  - debit_amount (numeric, default 0)   // amount we owe supplier
+  - credit_amount (numeric, default 0)  // amount that reduces what we owe (payments/returns)
+  - remarks (string, nullable)
+  - created_by_user_id (FK to users)
+  - created_at, updated_at
+
+1.2 Hook ledger into purchases
+- When a purchase (GRN) is created and posted:
+  - Create a `supplier_transactions` row:
+    - type = 'PURCHASE'
+    - debit_amount = total_amount (or net payable to supplier)
+    - credit_amount = 0
+  - This increases what we owe the supplier.
+
+1.3 Supplier payments
+- Add a new table: `supplier_payments`:
+  - id (PK)
+  - supplier_id
+  - pharmacy_id
+  - payment_date
+  - amount
+  - payment_mode (CASH, UPI, CARD, NEFT, CHEQUE, OTHER)
+  - reference_no / remarks (optional)
+  - created_by_user_id
+  - created_at, updated_at
+
+- When a payment is recorded:
+  - Insert into `supplier_payments`.
+  - Create a corresponding entry in `supplier_transactions`:
+    - type = 'PAYMENT'
+    - debit_amount = 0
+    - credit_amount = payment amount.
+
+1.4 Supplier ledger API & UI
+- Backend:
+  - GET `/api/suppliers/:id/ledger?from=&to=`
+    - Returns list of transactions ordered by date:
+      - txn_date, type, reference, debit_amount, credit_amount, running_balance
+    - running_balance = sum(debit - credit) over time.
+  - GET `/api/suppliers/:id/balance`
+    - Returns current balance = total debit - total credit.
+
+- Frontend:
+  - Supplier details page:
+    - Add “Ledger” tab:
+      - Show table: Date, Type, Reference, Debit, Credit, Balance, Remarks.
+      - Show current balance at top (e.g. “Outstanding: ₹xx,xxx”).
+    - Add “Record Payment” button:
+      - Opens dialog to capture payment_date, amount, payment_mode, reference, remarks.
+      - Calls supplier payment API and refreshes ledger.
+
+────────────────────────
+2) Purchase returns to suppliers
+────────────────────────
+
+2.1 DB – purchase returns
+- Add tables:
+  - `purchase_returns`:
+    - id (PK)
+    - pharmacy_id
+    - supplier_id
+    - original_purchase_id (nullable, FK)
+    - return_date
+    - total_amount
+    - reason (string: damage, expiry, wrong item, etc.)
+    - created_by_user_id
+    - created_at, updated_at
+
+  - `purchase_return_items`:
+    - id (PK)
+    - purchase_return_id (FK)
+    - product_id
+    - batch_id
+    - quantity_returned
+    - unit_cost
+    - gst_rate
+    - gst_amount
+    - line_total
+
+2.2 Backend – purchase return APIs
+- POST `/api/purchase-returns`
+  - Input:
+    - supplier_id
+    - original_purchase_id (optional but recommended)
+    - items: [{ product_id, batch_id, quantity_returned }]
+    - reason
+  - Behaviour:
+    - Validate that returned quantity does not exceed purchased quantity (across previous returns).
+    - Calculate unit_cost and gst_rate from original purchase/batch.
+    - For each item:
+      - Reduce batch stock by quantity_returned.
+    - Compute total_amount and gst for the return.
+    - Insert purchase_returns + purchase_return_items.
+    - Insert a `supplier_transactions` row:
+      - type = 'PURCHASE_RETURN'
+      - debit_amount = 0
+      - credit_amount = total_amount  (reduces what we owe supplier).
+
+- GET `/api/purchase-returns?from=&to=&supplier_id=`
+  - List returns for reporting.
+
+2.3 Frontend – purchase return UI
+- Add a new menu under “Purchases” or “Inventory”: “Purchase Return”.
+- Screen flow:
+  - Search by supplier and/or original purchase.
+  - Show list of purchase items for that supplier:
+    - Product, batch, original qty, available qty to return.
+  - Enter return quantities.
+  - Submit → calls `/api/purchase-returns`.
+- After success:
+  - Show a summary with total amount credited.
+  - Optionally allow printing a “Purchase Return Note”.
+
+────────────────────────
+3) Purchase schemes / free quantity
+────────────────────────
+
+3.1 DB – capture schemes on purchase items
+- Extend `purchase_items` table with:
+  - free_quantity (integer, default 0)
+  - scheme_description (string, nullable) – e.g. "10+1", "Buy 5 get 1 free"
+
+- For stock calculations:
+  - total_qty_to_stock = quantity + free_quantity
+  - Cost calculation:
+    - Basic: treat the total amount (amount we pay) as covering both paid and free qty.
+      - effective_unit_cost = (quantity * purchase_rate) / (quantity + free_quantity)
+
+3.2 Backend – purchase entry logic
+- When creating purchase:
+  - Allow free_quantity and scheme_description per item.
+  - Increase batch stock by (quantity + free_quantity).
+  - Optionally store effective_unit_cost in batch or compute on demand.
+- Ensure GST is calculated based on the taxable amount (what we actually pay), not including free_qty value.
+
+3.3 Frontend – purchase scheme UI
+- In Purchase / GRN screen (line items grid):
+  - Add inputs:
+    - Scheme/Free Qty (integer)
+    - Scheme Description (text)
+  - On the UI, show:
+    - Purchased Qty
+    - Free Qty
+    - Total Qty (read-only = Purchased + Free)
+- Optionally, display effective per-unit cost in a small tooltip or column.
+
+────────────────────────
+4) Safety & backwards compatibility
+────────────────────────
+
+- Existing purchases without schemes:
+  - free_quantity = 0 by default.
+- Existing suppliers:
+  - No initial ledger entries required; ledger will start with first structured transaction.
+- Ensure all new features:
+  - Are scoped by pharmacy_id.
+  - Do not break existing stock and purchase flows.
+
+────────────────────────
+5) Testing checklist
+────────────────────────
+
+- Create purchase with normal items (no scheme):
+  - Verify stock increases.
+  - Verify supplier ledger shows PURCHASE debit.
+
+- Record supplier payment:
+  - Verify ledger shows PAYMENT credit.
+  - Balance = purchases - payments.
+
+- Create purchase return:
+  - Verify stock decreases.
+  - Verify supplier ledger shows PURCHASE_RETURN credit (reduces outstanding).
+
+- Create purchase with scheme (free quantity):
+  - Verify batch stock = paid_qty + free_qty.
+  - Verify purchase value and GST remain correct.
