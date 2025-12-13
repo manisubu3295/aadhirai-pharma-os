@@ -1771,5 +1771,308 @@ export async function registerRoutes(
     }
   });
 
+  // ========== SUPPLIER LEDGER & PAYMENTS ==========
+  
+  // Get supplier ledger (all transactions)
+  app.get("/api/suppliers/:id/ledger", requireAuth, async (req, res) => {
+    try {
+      const supplierId = parseInt(req.params.id);
+      const ledger = await storage.getSupplierLedger(supplierId);
+      res.json(ledger);
+    } catch (error) {
+      console.error("Error fetching supplier ledger:", error);
+      res.status(500).json({ error: "Failed to fetch supplier ledger" });
+    }
+  });
+
+  // Get supplier balance
+  app.get("/api/suppliers/:id/balance", requireAuth, async (req, res) => {
+    try {
+      const supplierId = parseInt(req.params.id);
+      const balance = await storage.getSupplierBalance(supplierId);
+      res.json({ balance });
+    } catch (error) {
+      console.error("Error fetching supplier balance:", error);
+      res.status(500).json({ error: "Failed to fetch supplier balance" });
+    }
+  });
+
+  // Get all supplier payments (optionally filter by supplier)
+  app.get("/api/supplier-payments", requireAuth, async (req, res) => {
+    try {
+      const supplierId = req.query.supplierId ? parseInt(req.query.supplierId as string) : undefined;
+      const payments = await storage.getSupplierPayments(supplierId);
+      res.json(payments);
+    } catch (error) {
+      console.error("Error fetching supplier payments:", error);
+      res.status(500).json({ error: "Failed to fetch supplier payments" });
+    }
+  });
+
+  // Create supplier payment
+  app.post("/api/supplier-payments", requireAuth, async (req, res) => {
+    try {
+      const { supplierId, amount, paymentMode, referenceNo, remarks } = req.body;
+      
+      if (!supplierId || !amount || !paymentMode) {
+        return res.status(400).json({ error: "supplierId, amount, and paymentMode are required" });
+      }
+      
+      const payment = await storage.createSupplierPayment({
+        supplierId: parseInt(supplierId),
+        amount: String(amount),
+        paymentMode,
+        referenceNo: referenceNo || null,
+        remarks: remarks || null,
+        createdByUserId: req.session.userId || null,
+      });
+      
+      res.status(201).json(payment);
+    } catch (error) {
+      console.error("Error creating supplier payment:", error);
+      res.status(500).json({ error: "Failed to create supplier payment" });
+    }
+  });
+
+  // ========== PURCHASE RETURNS ==========
+  
+  // Get all purchase returns
+  app.get("/api/purchase-returns", requireAuth, async (req, res) => {
+    try {
+      const returns = await storage.getPurchaseReturns();
+      res.json(returns);
+    } catch (error) {
+      console.error("Error fetching purchase returns:", error);
+      res.status(500).json({ error: "Failed to fetch purchase returns" });
+    }
+  });
+
+  // Get single purchase return
+  app.get("/api/purchase-returns/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const purchaseReturn = await storage.getPurchaseReturn(id);
+      if (!purchaseReturn) {
+        return res.status(404).json({ error: "Purchase return not found" });
+      }
+      res.json(purchaseReturn);
+    } catch (error) {
+      console.error("Error fetching purchase return:", error);
+      res.status(500).json({ error: "Failed to fetch purchase return" });
+    }
+  });
+
+  // Get purchase return items
+  app.get("/api/purchase-returns/:id/items", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const items = await storage.getPurchaseReturnItems(id);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching purchase return items:", error);
+      res.status(500).json({ error: "Failed to fetch purchase return items" });
+    }
+  });
+
+  // Create purchase return
+  app.post("/api/purchase-returns", requireAuth, async (req, res) => {
+    try {
+      const { supplierId, supplierName, originalGrnId, reason, items } = req.body;
+      
+      if (!supplierId || !supplierName || !items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "supplierId, supplierName, and items are required" });
+      }
+      
+      // Calculate totals
+      let subtotal = 0;
+      let taxAmount = 0;
+      
+      const processedItems = items.map((item: any) => {
+        const itemTotal = parseFloat(item.rate) * item.quantityReturned;
+        const itemTax = itemTotal * (parseFloat(item.gstRate || 18) / 100);
+        subtotal += itemTotal;
+        taxAmount += itemTax;
+        
+        return {
+          grnItemId: item.grnItemId || null,
+          medicineId: item.medicineId,
+          medicineName: item.medicineName,
+          batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate,
+          quantityReturned: item.quantityReturned,
+          rate: String(item.rate),
+          gstRate: String(item.gstRate || 18),
+          taxAmount: String(itemTax.toFixed(2)),
+          totalAmount: String((itemTotal + itemTax).toFixed(2)),
+        };
+      });
+      
+      const totalAmount = subtotal + taxAmount;
+      
+      const purchaseReturn = await storage.createPurchaseReturn(
+        {
+          supplierId: parseInt(supplierId),
+          supplierName,
+          originalGrnId: originalGrnId ? parseInt(originalGrnId) : null,
+          subtotal: String(subtotal.toFixed(2)),
+          taxAmount: String(taxAmount.toFixed(2)),
+          totalAmount: String(totalAmount.toFixed(2)),
+          reason: reason || null,
+          createdByUserId: req.session.userId || null,
+        },
+        processedItems
+      );
+      
+      res.status(201).json(purchaseReturn);
+    } catch (error) {
+      console.error("Error creating purchase return:", error);
+      res.status(500).json({ error: "Failed to create purchase return" });
+    }
+  });
+
+  // ========== DAY CLOSING ==========
+  
+  // Get day closing for specific date
+  app.get("/api/day-closing/:date", requireAuth, async (req, res) => {
+    try {
+      const businessDate = req.params.date;
+      const dayClosing = await storage.getDayClosing(businessDate);
+      res.json(dayClosing || null);
+    } catch (error) {
+      console.error("Error fetching day closing:", error);
+      res.status(500).json({ error: "Failed to fetch day closing" });
+    }
+  });
+
+  // Get list of day closings
+  app.get("/api/day-closings", requireAuth, async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 30;
+      const dayClosings = await storage.getDayClosings(limit);
+      res.json(dayClosings);
+    } catch (error) {
+      console.error("Error fetching day closings:", error);
+      res.status(500).json({ error: "Failed to fetch day closings" });
+    }
+  });
+
+  // Open day
+  app.post("/api/day-closing/open", requireAuth, async (req, res) => {
+    try {
+      const { businessDate, openingCash } = req.body;
+      
+      if (!businessDate) {
+        return res.status(400).json({ error: "businessDate is required" });
+      }
+      
+      // Check if day is already open
+      const existing = await storage.getDayClosing(businessDate);
+      if (existing) {
+        return res.status(400).json({ error: "Day is already opened" });
+      }
+      
+      const dayClosing = await storage.openDay({
+        businessDate,
+        openingCash: String(openingCash || 0),
+        openedByUserId: req.session.userId!,
+      });
+      
+      res.status(201).json(dayClosing);
+    } catch (error) {
+      console.error("Error opening day:", error);
+      res.status(500).json({ error: "Failed to open day" });
+    }
+  });
+
+  // Close day
+  app.post("/api/day-closing/close", requireAuth, async (req, res) => {
+    try {
+      const { businessDate, actualCash, notes } = req.body;
+      
+      if (!businessDate || actualCash === undefined) {
+        return res.status(400).json({ error: "businessDate and actualCash are required" });
+      }
+      
+      // Check if day exists and is open
+      const existing = await storage.getDayClosing(businessDate);
+      if (!existing) {
+        return res.status(400).json({ error: "Day has not been opened" });
+      }
+      if (existing.status === 'CLOSED') {
+        return res.status(400).json({ error: "Day is already closed" });
+      }
+      
+      const dayClosing = await storage.closeDay(businessDate, {
+        actualCash: String(actualCash),
+        notes: notes || null,
+        closedByUserId: req.session.userId!,
+      });
+      
+      res.json(dayClosing);
+    } catch (error) {
+      console.error("Error closing day:", error);
+      res.status(500).json({ error: "Failed to close day" });
+    }
+  });
+
+  // Get expected cash for a date
+  app.get("/api/day-closing/:date/expected-cash", requireAuth, async (req, res) => {
+    try {
+      const businessDate = req.params.date;
+      const dayClosing = await storage.getDayClosing(businessDate);
+      
+      if (!dayClosing) {
+        return res.status(404).json({ error: "Day not found" });
+      }
+      
+      const expectedCash = await storage.computeExpectedCash(
+        businessDate, 
+        dayClosing.openingCash || "0"
+      );
+      
+      res.json({ expectedCash });
+    } catch (error) {
+      console.error("Error computing expected cash:", error);
+      res.status(500).json({ error: "Failed to compute expected cash" });
+    }
+  });
+
+  // ========== ACTIVITY LOGS (Enhanced) ==========
+  
+  // Get activity logs with filters
+  app.get("/api/activity-logs", requireRole("owner", "admin", "pharmacist"), async (req, res) => {
+    try {
+      const filters: {
+        userId?: string;
+        entityType?: string;
+        action?: string;
+        from?: Date;
+        to?: Date;
+      } = {};
+      
+      if (req.query.userId) {
+        filters.userId = req.query.userId as string;
+      }
+      if (req.query.entityType) {
+        filters.entityType = req.query.entityType as string;
+      }
+      if (req.query.action) {
+        filters.action = req.query.action as string;
+      }
+      if (req.query.from) {
+        filters.from = new Date(req.query.from as string);
+      }
+      if (req.query.to) {
+        filters.to = new Date(req.query.to as string);
+      }
+      
+      const logs = await storage.getActivityLogs(filters);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching activity logs:", error);
+      res.status(500).json({ error: "Failed to fetch activity logs" });
+    }
+  });
+
   return httpServer;
 }

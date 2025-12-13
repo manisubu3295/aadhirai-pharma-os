@@ -947,7 +947,9 @@ export class DatabaseStorage implements IStorage {
       await db.insert(goodsReceiptItems).values(itemsWithGrnId);
       
       for (const item of items) {
-        await this.updateMedicineStock(item.medicineId, item.quantity);
+        // Update stock with quantity + free quantity
+        const totalQty = item.quantity + (item.freeQuantity || 0);
+        await this.updateMedicineStock(item.medicineId, totalQty);
         if (item.locationId) {
           await db.update(medicines).set({ locationId: item.locationId }).where(eq(medicines.id, item.medicineId));
         }
@@ -959,6 +961,21 @@ export class DatabaseStorage implements IStorage {
           }
         }
       }
+    }
+    
+    // Create supplier transaction (credit entry for purchase)
+    const totalAmount = parseFloat(createdGrn.totalAmount || "0");
+    if (totalAmount > 0 && createdGrn.supplierId) {
+      await this.createSupplierTransaction({
+        supplierId: createdGrn.supplierId,
+        type: 'PURCHASE',
+        referenceId: createdGrn.id,
+        referenceNumber: createdGrn.grnNumber,
+        creditAmount: String(totalAmount.toFixed(2)),
+        debitAmount: "0",
+        remarks: `Goods received - ${createdGrn.grnNumber}`,
+        createdByUserId: null,
+      });
     }
     
     return createdGrn;

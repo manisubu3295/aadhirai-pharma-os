@@ -42,6 +42,8 @@ interface GRNItem {
   batchNumber: string;
   expiryDate: string;
   quantity: number;
+  freeQuantity: number;
+  schemeDescription: string;
   rate: string;
   mrp: string;
   gstRate: string;
@@ -190,6 +192,8 @@ export default function GoodsReceipts() {
         batchNumber: "",
         expiryDate: "",
         quantity: item.quantity - item.receivedQty,
+        freeQuantity: 0,
+        schemeDescription: "",
         rate: item.rate,
         mrp: item.mrp || "",
         gstRate: item.gstRate || "18",
