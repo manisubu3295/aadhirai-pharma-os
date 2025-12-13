@@ -20,7 +20,15 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Calendar, Clock, IndianRupee, CheckCircle2, AlertCircle, PlayCircle, StopCircle } from "lucide-react";
+import { Calendar, Clock, IndianRupee, CheckCircle2, AlertCircle, PlayCircle, StopCircle, Download, FileText } from "lucide-react";
+import { exportToCSV } from "@/lib/exportUtils";
+import { generateDayClosingsPDF } from "@/lib/pdfUtils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
@@ -170,6 +178,36 @@ export default function DayClosing() {
 
   const isDayOpen = todayRecord?.status === "OPEN";
   const isDayClosed = todayRecord?.status === "CLOSED";
+
+  const handleExportCSV = () => {
+    const dataToExport = dayClosings.map(dc => ({
+      "Date": format(parseISO(dc.businessDate), "dd MMM yyyy"),
+      "Opening Time": dc.openingTime ? format(new Date(dc.openingTime), "hh:mm a") : "-",
+      "Opening Cash": dc.openingCash,
+      "Closing Time": dc.closingTime ? format(new Date(dc.closingTime), "hh:mm a") : "-",
+      "Expected Cash": dc.expectedCash || "-",
+      "Actual Cash": dc.actualCash || "-",
+      "Difference": dc.difference || "-",
+      "Status": dc.status
+    }));
+    exportToCSV(dataToExport, `DayClosings_${fromDate}_to_${toDate}`);
+    toast({ title: "CSV exported successfully" });
+  };
+
+  const handleExportPDF = () => {
+    const dataToExport = dayClosings.map(dc => ({
+      businessDate: format(parseISO(dc.businessDate), "dd MMM yyyy"),
+      openingTime: dc.openingTime ? format(new Date(dc.openingTime), "hh:mm a") : null,
+      closingTime: dc.closingTime ? format(new Date(dc.closingTime), "hh:mm a") : null,
+      openingCash: dc.openingCash,
+      expectedCash: dc.expectedCash,
+      actualCash: dc.actualCash,
+      difference: dc.difference,
+      status: dc.status
+    }));
+    generateDayClosingsPDF(dataToExport, { from: fromDate, to: toDate });
+    toast({ title: "PDF exported successfully" });
+  };
 
   return (
     <AppLayout title="Day Closing">
@@ -350,6 +388,24 @@ export default function DayClosing() {
                   data-testid="input-closing-to-date"
                 />
               </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" data-testid="button-export-closings">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleExportCSV} data-testid="menu-export-closing-csv">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export to CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportPDF} data-testid="menu-export-closing-pdf">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export to PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </CardHeader>

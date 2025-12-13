@@ -34,8 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format, startOfDay, endOfDay, parseISO } from "date-fns";
 import type { Supplier, GoodsReceipt, GoodsReceiptItem, PurchaseReturn, PurchaseReturnItem } from "@shared/schema";
 import { exportToCSV } from "@/lib/exportUtils";
-import { generatePurchaseReturnPDF, generatePurchaseReturnsListPDF, generateBulkPurchaseReturnsPDF } from "@/lib/pdfUtils";
-import { Checkbox } from "@/components/ui/checkbox";
+import { generatePurchaseReturnPDF, generatePurchaseReturnsListPDF } from "@/lib/pdfUtils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,6 +60,7 @@ export default function PurchaseReturns() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState<PurchaseReturn | null>(null);
   const [returnItems, setReturnItems] = useState<PurchaseReturnItem[]>([]);
+  const [isLoadingItems, setIsLoadingItems] = useState(false);
   
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [selectedGRNId, setSelectedGRNId] = useState<string>("");
@@ -226,12 +226,15 @@ export default function PurchaseReturns() {
 
   const viewReturn = async (pr: PurchaseReturn) => {
     setSelectedReturn(pr);
+    setReturnItems([]);
+    setIsLoadingItems(true);
+    setViewDialogOpen(true);
     const res = await fetch(`/api/purchase-returns/${pr.id}/items`);
     if (res.ok) {
       const items = await res.json();
       setReturnItems(items);
     }
-    setViewDialogOpen(true);
+    setIsLoadingItems(false);
   };
 
   const filteredReturns = purchaseReturns.filter((pr) => {
@@ -258,6 +261,56 @@ export default function PurchaseReturns() {
   };
 
   const totals = calculateTotal();
+
+  const handleExportCSV = () => {
+    const dataToExport = filteredReturns.map(pr => ({
+      "Return Number": pr.returnNumber,
+      "Supplier": pr.supplierName,
+      "Return Date": format(new Date(pr.returnDate), "dd MMM yyyy"),
+      "Subtotal": pr.subtotal,
+      "Tax Amount": pr.taxAmount,
+      "Total Amount": pr.totalAmount,
+      "Status": pr.status,
+      "Reason": pr.reason || ""
+    }));
+    exportToCSV(dataToExport, `PurchaseReturns_${fromDate}_to_${toDate}`);
+    toast({ title: "CSV exported successfully" });
+  };
+
+  const handleExportPDF = () => {
+    const dataToExport = filteredReturns.map(pr => ({
+      returnNumber: pr.returnNumber,
+      supplierName: pr.supplierName,
+      returnDate: format(new Date(pr.returnDate), "dd MMM yyyy"),
+      totalAmount: pr.totalAmount,
+      status: pr.status
+    }));
+    generatePurchaseReturnsListPDF(dataToExport, { from: fromDate, to: toDate });
+    toast({ title: "PDF exported successfully" });
+  };
+
+  const handlePrintSingle = () => {
+    if (!selectedReturn || returnItems.length === 0) return;
+    generatePurchaseReturnPDF({
+      returnNumber: selectedReturn.returnNumber,
+      supplierName: selectedReturn.supplierName,
+      returnDate: format(new Date(selectedReturn.returnDate), "dd MMM yyyy"),
+      reason: selectedReturn.reason,
+      subtotal: selectedReturn.subtotal,
+      taxAmount: selectedReturn.taxAmount,
+      totalAmount: selectedReturn.totalAmount,
+      items: returnItems.map(item => ({
+        medicineName: item.medicineName,
+        batchNumber: item.batchNumber,
+        expiryDate: item.expiryDate,
+        quantityReturned: item.quantityReturned,
+        rate: item.rate,
+        gstRate: item.gstRate || "18",
+        totalAmount: item.totalAmount
+      }))
+    });
+    toast({ title: "PDF generated for printing" });
+  };
 
   return (
     <AppLayout title="Purchase Returns">
@@ -316,10 +369,30 @@ export default function PurchaseReturns() {
               <CardTitle>Purchase Returns</CardTitle>
               <CardDescription>Return goods to suppliers and update inventory</CardDescription>
             </div>
-            <Button onClick={() => { resetForm(); setCreateDialogOpen(true); }} data-testid="button-create-return">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Return
-            </Button>
+            <div className="flex gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" data-testid="button-export-returns">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleExportCSV} data-testid="menu-export-csv">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export to CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportPDF} data-testid="menu-export-pdf">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export to PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button onClick={() => { resetForm(); setCreateDialogOpen(true); }} data-testid="button-create-return">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Return
+              </Button>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 mt-4">
             <div className="relative flex-1 min-w-[200px]">
@@ -606,6 +679,15 @@ export default function PurchaseReturns() {
             </div>
           )}
           <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={handlePrintSingle} 
+              disabled={isLoadingItems || returnItems.length === 0}
+              data-testid="button-print-return"
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              {isLoadingItems ? "Loading..." : "Print"}
+            </Button>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
