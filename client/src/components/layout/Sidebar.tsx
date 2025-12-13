@@ -25,7 +25,9 @@ import {
   User,
   ChevronRight,
   Menu,
-  FolderOpen
+  FolderOpen,
+  Undo2,
+  CalendarCheck
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
@@ -56,6 +58,8 @@ const iconMap: { [key: string]: React.ElementType } = {
   RotateCcw,
   Menu,
   FolderOpen,
+  Undo2,
+  CalendarCheck,
 };
 
 function getIcon(iconName: string | null): React.ElementType {
@@ -139,6 +143,7 @@ export function Sidebar() {
         { icon: Tags, label: "Rate Master", href: "/supplier-rates" },
         { icon: ClipboardList, label: "Purchase Orders", href: "/purchase-orders" },
         { icon: PackageCheck, label: "Goods Receipt (GRN)", href: "/goods-receipts" },
+        { icon: Undo2, label: "Purchase Returns", href: "/purchase-returns" },
       ]
     },
     {
@@ -162,6 +167,7 @@ export function Sidebar() {
       title: "CONFIGURATION",
       items: [
         { icon: MapPin, label: "Storage Locations", href: "/locations" },
+        { icon: CalendarCheck, label: "Day Closing", href: "/day-closing" },
         { icon: Settings, label: "Settings", href: "/settings", ownerOnly: true },
       ]
     }
