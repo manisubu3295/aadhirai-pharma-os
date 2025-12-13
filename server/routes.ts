@@ -1909,8 +1909,12 @@ export async function registerRoutes(
       
       const totalAmount = subtotal + taxAmount;
       
+      // Generate return number
+      const returnNumber = await storage.getNextPurchaseReturnNumber();
+      
       const purchaseReturn = await storage.createPurchaseReturn(
         {
+          returnNumber,
           supplierId: parseInt(supplierId),
           supplierName,
           originalGrnId: originalGrnId ? parseInt(originalGrnId) : null,
@@ -2025,12 +2029,12 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Day not found" });
       }
       
-      const expectedCash = await storage.computeExpectedCash(
+      const cashBreakdown = await storage.computeExpectedCashWithBreakdown(
         businessDate, 
         dayClosing.openingCash || "0"
       );
       
-      res.json({ expectedCash });
+      res.json(cashBreakdown);
     } catch (error) {
       console.error("Error computing expected cash:", error);
       res.status(500).json({ error: "Failed to compute expected cash" });

@@ -537,6 +537,13 @@ export interface IStorage {
   openDay(data: { businessDate: string; openingCash: string; openedByUserId: string }): Promise<DayClosing>;
   closeDay(businessDate: string, data: { actualCash: string; notes?: string; closedByUserId: string }): Promise<DayClosing | undefined>;
   computeExpectedCash(businessDate: string, openingCash: string): Promise<string>;
+  computeExpectedCashWithBreakdown(businessDate: string, openingCash: string): Promise<{
+    openingCash: number;
+    cashSales: number;
+    cashCollections: number;
+    cashExpenses: number;
+    expectedCash: number;
+  }>;
   
   // Activity Logs (Enhanced)
   getActivityLogs(filters?: { userId?: string; entityType?: string; action?: string; from?: Date; to?: Date }): Promise<ActivityLog[]>;
@@ -1498,6 +1505,63 @@ export class DatabaseStorage implements IStorage {
     const cashRefunds = parseFloat(refundsResult[0]?.total || "0");
     
     return (opening + cashSales - cashRefunds).toFixed(2);
+  }
+
+  async computeExpectedCashWithBreakdown(businessDate: string, openingCash: string): Promise<{
+    openingCash: number;
+    cashSales: number;
+    cashCollections: number;
+    cashExpenses: number;
+    expectedCash: number;
+  }> {
+    const startOfDay = new Date(businessDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(businessDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    // Get cash sales for the day
+    const cashSalesResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${sales.receivedAmount}), 0)`
+    }).from(sales).where(and(
+      eq(sales.paymentMethod, 'cash'),
+      gte(sales.createdAt, startOfDay),
+      lte(sales.createdAt, endOfDay)
+    ));
+    
+    const cashSalesAmount = parseFloat(cashSalesResult[0]?.total || "0");
+    const opening = parseFloat(openingCash);
+    
+    // Get cash refunds/expenses for the day
+    const refundsResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${salesReturns.totalRefundAmount}), 0)`
+    }).from(salesReturns).where(and(
+      eq(salesReturns.refundMode, 'cash'),
+      gte(salesReturns.returnDate, startOfDay),
+      lte(salesReturns.returnDate, endOfDay)
+    ));
+    
+    const cashExpenses = parseFloat(refundsResult[0]?.total || "0");
+    
+    // Get cash collections (credit payments received in cash)
+    const collectionsResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${creditPayments.amount}), 0)`
+    }).from(creditPayments).where(and(
+      eq(creditPayments.paymentMethod, 'cash'),
+      gte(creditPayments.createdAt, startOfDay),
+      lte(creditPayments.createdAt, endOfDay)
+    ));
+    
+    const cashCollections = parseFloat(collectionsResult[0]?.total || "0");
+    
+    const expectedCash = opening + cashSalesAmount + cashCollections - cashExpenses;
+    
+    return {
+      openingCash: opening,
+      cashSales: cashSalesAmount,
+      cashCollections,
+      cashExpenses,
+      expectedCash
+    };
   }
 
   // Activity Logs Implementation
