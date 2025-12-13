@@ -1,9 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useAutoLogout } from "@/hooks/useAutoLogout";
 import { setSessionExpiredHandler } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigation } from "@/contexts/NavigationContext";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, ShieldX } from "lucide-react";
 
 interface User {
   id: string;
@@ -151,12 +154,21 @@ export function ProtectedRoute({ children, allowedRoles, requiredRoute }: Protec
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
+      <AppLayout title="Access Denied">
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+            <ShieldX className="w-8 h-8 text-destructive" />
+          </div>
           <h1 className="text-2xl font-bold text-destructive mb-2">Access Denied</h1>
-          <p className="text-muted-foreground">You don't have permission to access this page.</p>
+          <p className="text-muted-foreground mb-6">You don't have permission to access this page.</p>
+          <Link href="/">
+            <Button variant="outline" className="gap-2" data-testid="button-go-back">
+              <ArrowLeft className="w-4 h-4" />
+              Go to Dashboard
+            </Button>
+          </Link>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
@@ -176,12 +188,21 @@ export function ProtectedRoute({ children, allowedRoles, requiredRoute }: Protec
   const routeToCheck = requiredRoute || location;
   if (routeToCheck && !hasAccess(routeToCheck)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
+      <AppLayout title="Access Denied">
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+            <ShieldX className="w-8 h-8 text-destructive" />
+          </div>
           <h1 className="text-2xl font-bold text-destructive mb-2">Access Denied</h1>
-          <p className="text-muted-foreground">You don't have menu access to this page.</p>
+          <p className="text-muted-foreground mb-6">You don't have menu access to this page.</p>
+          <Link href="/">
+            <Button variant="outline" className="gap-2" data-testid="button-go-back">
+              <ArrowLeft className="w-4 h-4" />
+              Go to Dashboard
+            </Button>
+          </Link>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 

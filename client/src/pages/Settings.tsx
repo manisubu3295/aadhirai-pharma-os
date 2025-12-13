@@ -37,9 +37,11 @@ import {
   Shield,
   CheckCircle,
   XCircle,
-  Loader2
+  Loader2,
+  Key
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 interface User {
@@ -108,9 +110,13 @@ export default function Settings() {
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
   const [userFormData, setUserFormData] = useState<UserFormData>(emptyUserForm);
   const [settings, setSettings] = useState<SettingsData>(defaultSettings);
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -191,12 +197,41 @@ export default function Settings() {
     },
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ userId, newPassword }: { userId: string; newPassword: string }) => {
+      const res = await fetch(`/api/users/${userId}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword }),
+      });
+      if (!res.ok) throw new Error("Failed to reset password");
+      return res.json();
+    },
+    onSuccess: () => {
+      setResetPasswordDialogOpen(false);
+      setResetPasswordUser(null);
+      setNewPassword("");
+      toast({ title: "Password reset successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to reset password", variant: "destructive" });
+    },
+  });
+
   const handleCreateUser = () => {
     if (!userFormData.username || !userFormData.password || !userFormData.name) {
       toast({ title: "Please fill all required fields", variant: "destructive" });
       return;
     }
     createUserMutation.mutate(userFormData);
+  };
+
+  const handleResetPassword = () => {
+    if (!resetPasswordUser || !newPassword || newPassword.length < 6) {
+      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+    resetPasswordMutation.mutate({ userId: resetPasswordUser.id, newPassword });
   };
 
   const handleSaveStoreSettings = () => {
@@ -291,6 +326,7 @@ export default function Settings() {
                         <TableHead>Role</TableHead>
                         <TableHead>Contact</TableHead>
                         <TableHead className="text-center">Status</TableHead>
+                        <TableHead className="text-center">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -312,6 +348,23 @@ export default function Settings() {
                               <CheckCircle className="h-5 w-5 text-green-500 inline" />
                             ) : (
                               <XCircle className="h-5 w-5 text-red-500 inline" />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(currentUser?.role === "owner" || currentUser?.role === "admin") && user.role !== "owner" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setResetPasswordUser(user);
+                                  setNewPassword("");
+                                  setResetPasswordDialogOpen(true);
+                                }}
+                                data-testid={`button-reset-password-${user.id}`}
+                              >
+                                <Key className="h-4 w-4 mr-1" />
+                                Reset Password
+                              </Button>
                             )}
                           </TableCell>
                         </TableRow>
@@ -696,6 +749,44 @@ export default function Settings() {
               data-testid="button-save-user"
             >
               {createUserMutation.isPending ? "Creating..." : "Create User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Reset Password
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Reset password for <span className="font-medium">{resetPasswordUser?.name}</span> ({resetPasswordUser?.username})
+            </p>
+            <div>
+              <Label htmlFor="newPassword">New Password *</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password (min 6 characters)"
+                className="mt-1.5"
+                data-testid="input-new-password"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={handleResetPassword}
+              disabled={resetPasswordMutation.isPending || newPassword.length < 6}
+              data-testid="button-confirm-reset-password"
+            >
+              {resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}
             </Button>
           </DialogFooter>
         </DialogContent>

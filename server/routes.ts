@@ -322,6 +322,24 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/users/:id/reset-password", requireRole("owner"), async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const { newPassword } = req.body;
+      
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+      
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(userId, { password: hashedPassword });
+      res.json({ success: true, message: "Password reset successfully" });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+
   app.get("/api/medicines", async (req, res) => {
     try {
       const medicines = await storage.getMedicines();
