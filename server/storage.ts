@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { 
   type User, 
   type InsertUser,
@@ -96,6 +98,10 @@ import pkg from "pg";
 const { Pool } = pkg;
 import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
 
+console.log("Database URL:" + JSON.stringify(process.env.DATABASE_URL));
+console.log("DATABASE_URL =", process.env.DATABASE_URL);
+console.log("PGDATABASE   =", process.env.PGDATABASE);
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -104,6 +110,8 @@ const db = drizzle(pool);
 
 export async function initializeDatabase() {
   try {
+  const r = await pool.query("select current_database() as db");
+console.log("Connected DB:", r.rows[0].db);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid(),

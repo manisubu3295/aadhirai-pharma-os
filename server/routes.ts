@@ -96,7 +96,9 @@ export async function registerRoutes(
     try {
       const { username, password } = loginSchema.parse(req.body);
       const user = await storage.getUserByUsername(username);
-      
+      console.log("Login attempt for user:", user);
+      console.log("Login attempt for username:", username);
+      console.log("Login attempt for Response:", res);
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
@@ -119,7 +121,8 @@ export async function registerRoutes(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: "Login failed" });
+      res.status(500).json({ error: error instanceof Error ? error.message : " "});
+      //res.status(500).json({ error: "Login failed" });
     }
   });
 

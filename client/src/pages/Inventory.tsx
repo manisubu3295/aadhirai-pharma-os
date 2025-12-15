@@ -409,7 +409,8 @@ export default function Inventory() {
       setFormData(emptyForm);
       toast({ title: "Medicine added successfully" });
     },
-    onError: () => {
+    onError: (error) => {
+      console.log("Create medicine error:", error);
       toast({ title: "Failed to add medicine", variant: "destructive" });
     },
   });
