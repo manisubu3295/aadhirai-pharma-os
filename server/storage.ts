@@ -686,6 +686,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }> {
+    // First, validate stock availability for all items
+    const insufficientStock: { name: string; available: number; requested: number }[] = [];
+    for (const item of items) {
+      const medicine = await this.getMedicine(item.medicineId);
+      if (medicine) {
+        const currentStock = parseInt(medicine.quantity.toString());
+        if (currentStock < item.quantity) {
+          insufficientStock.push({
+            name: medicine.name,
+            available: currentStock,
+            requested: item.quantity
+          });
+        }
+      }
+    }
+    
+    if (insufficientStock.length > 0) {
+      const errorDetails = insufficientStock.map(i => 
+        `${i.name}: available ${i.available}, requested ${i.requested}`
+      ).join('; ');
+      throw new Error(`Insufficient stock: ${errorDetails}`);
+    }
+    
     const saleResult = await db.insert(sales).values(sale).returning();
     const createdSale = saleResult[0];
     

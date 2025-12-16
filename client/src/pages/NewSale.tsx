@@ -672,12 +672,19 @@ export default function NewSale() {
         batchNumber: String(item.batchNumber),
         expiryDate: String(item.expiryDate),
         hsnCode: item.hsnCode ? String(item.hsnCode) : null,
+        category: String(item.category || ""),
         quantity: Number(item.quantity),
         price: Number(item.price),
+        stripPrice: Number(item.stripPrice || item.price || 0),
+        tabletPrice: Number(item.tabletPrice || item.price || 0),
         mrp: item.mrp ? Number(item.mrp) : null,
         gstRate: Number(item.gstRate),
         discount: Number(item.discount),
         availableQty: Number(item.availableQty),
+        unitType: (item.unitType as "STRIP" | "TABLET" | "BOTTLE") || "STRIP",
+        packSize: Number(item.packSize || 1),
+        pricePerUnit: item.pricePerUnit ? Number(item.pricePerUnit) : null,
+        displayQty: Number(item.displayQty || item.quantity || 1),
       }));
       
       setItems(parsedItems);

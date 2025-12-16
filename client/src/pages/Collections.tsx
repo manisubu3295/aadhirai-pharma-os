@@ -224,10 +224,19 @@ export default function Collections() {
   const filterByDateRange = <T extends { createdAt?: string; returnDate?: string }>(items: T[]) => {
     return items.filter((item) => {
       const itemDate = new Date(item.createdAt || item.returnDate || "");
-      const fromDate = new Date(dateFrom);
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      return itemDate >= fromDate && itemDate <= toDate;
+      if (isNaN(itemDate.getTime())) return false;
+      
+      // Guard against empty/invalid date strings
+      if (!dateFrom || !dateTo) return true;
+      
+      // Parse YYYY-MM-DD as local time by appending T00:00:00
+      const from = new Date(`${dateFrom}T00:00:00`);
+      const to = new Date(`${dateTo}T23:59:59.999`);
+      
+      // Check if parsed dates are valid
+      if (isNaN(from.getTime()) || isNaN(to.getTime())) return true;
+      
+      return itemDate >= from && itemDate <= to;
     });
   };
 
@@ -243,9 +252,15 @@ export default function Collections() {
     return !searchTerm || ret.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
+  const safeParseFloat = (value: string | number | null | undefined): number => {
+    if (value === null || value === undefined || value === '') return 0;
+    const parsed = parseFloat(String(value));
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   const paymentTotals = filteredSales.reduce((acc, sale) => {
-    const method = sale.paymentMethod;
-    acc[method] = (acc[method] || 0) + parseFloat(sale.total);
+    const method = sale.paymentMethod || 'Unknown';
+    acc[method] = (acc[method] || 0) + safeParseFloat(sale.total);
     return acc;
   }, {} as Record<string, number>);
 
@@ -260,8 +275,8 @@ export default function Collections() {
       acc[staffName] = { name: staffName, cash: 0, card: 0, upi: 0, credit: 0, total: 0, count: 0 };
     }
     
-    const amount = parseFloat(sale.total);
-    const method = sale.paymentMethod?.toLowerCase();
+    const amount = safeParseFloat(sale.total);
+    const method = sale.paymentMethod?.toLowerCase() || 'unknown';
     acc[staffName].total += amount;
     acc[staffName].count += 1;
     if (method === 'cash') acc[staffName].cash += amount;
@@ -464,7 +479,7 @@ export default function Collections() {
                       onClick={() => exportToPDF(
                         "Daily Collections Report",
                         ["Invoice No", "Date", "Customer", "Payment", "Amount"],
-                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, format(new Date(s.createdAt), "dd/MM/yyyy"), s.customerName, s.paymentMethod, `₹${parseFloat(s.total).toFixed(2)}`])
+                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, format(new Date(s.createdAt), "dd/MM/yyyy"), s.customerName, s.paymentMethod, `₹${safeParseFloat(s.total).toFixed(2)}`])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -505,7 +520,7 @@ export default function Collections() {
                         Refunds
                       </div>
                       <p className="text-2xl font-bold text-red-600 mt-1" data-testid="text-daily-refunds">
-                        -₹{filteredReturns.reduce((s, r) => s + parseFloat(r.totalRefund), 0).toFixed(2)}
+                        -₹{filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0).toFixed(2)}
                       </p>
                     </CardContent>
                   </Card>
@@ -513,7 +528,7 @@ export default function Collections() {
                     <CardContent className="pt-4">
                       <div className="text-green-600 text-sm">Net Collection</div>
                       <p className="text-2xl font-bold text-green-700 mt-1" data-testid="text-net-collection">
-                        ₹{(grandTotal - filteredReturns.reduce((s, r) => s + parseFloat(r.totalRefund), 0)).toFixed(2)}
+                        ₹{(grandTotal - filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0)).toFixed(2)}
                       </p>
                     </CardContent>
                   </Card>
@@ -547,7 +562,7 @@ export default function Collections() {
                               {sale.paymentMethod}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right font-semibold">₹{parseFloat(sale.total).toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-semibold">₹{safeParseFloat(sale.total).toFixed(2)}</TableCell>
                           <TableCell className="text-right">
                             <Button variant="ghost" size="sm" onClick={() => handleReprint(sale)} data-testid={`button-reprint-${sale.id}`}>
                               <Printer className="h-4 w-4" />
@@ -587,7 +602,7 @@ export default function Collections() {
                       onClick={() => exportToPDF(
                         "Refunds Report",
                         ["Return No", "Invoice", "Date", "Mode", "Amount"],
-                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, format(new Date(r.createdAt), "dd/MM/yyyy"), r.refundMode, `₹${parseFloat(r.totalRefund).toFixed(2)}`])
+                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, format(new Date(r.createdAt), "dd/MM/yyyy"), r.refundMode, `₹${safeParseFloat(r.totalRefund).toFixed(2)}`])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -606,7 +621,7 @@ export default function Collections() {
                     <CardContent className="pt-4">
                       <div className="text-sm text-red-600">Total Refunds</div>
                       <p className="text-2xl font-bold text-red-700">
-                        -₹{filteredReturns.reduce((s, r) => s + parseFloat(r.totalRefund), 0).toFixed(2)}
+                        -₹{filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0).toFixed(2)}
                       </p>
                     </CardContent>
                   </Card>
@@ -639,7 +654,7 @@ export default function Collections() {
                           </TableCell>
                           <TableCell>{ret.reason || "-"}</TableCell>
                           <TableCell className="text-right font-semibold text-red-600">
-                            -₹{parseFloat(ret.totalRefund).toFixed(2)}
+                            -₹{safeParseFloat(ret.totalRefund).toFixed(2)}
                           </TableCell>
                         </TableRow>
                       ))}

@@ -1,0 +1,143 @@
+Paste this **updated Replit prompt** (includes your 3 bugs + the new **date shows tomorrow** issue). 
+It forces the agent to find the root cause (timezone/UTC parsing) and fix it across the app.
+
+---
+
+## Replit Prompt (Updated)
+
+You are working on my Pharmacy POS web app (React + Express + Postgres/Drizzle). 
+Fix **four production bugs** with clean code, safe DB logic, and verified behavior. Do not change UI design unless needed. Keep behavior consistent across mobile/desktop. Scan the full app for related date/time handling issues, not just one screen.
+
+---
+
+# Bug 1: Hold new sale → Resume bill not working
+
+**Expected**
+
+* Holding a sale must save cart state (items, qty, price, discounts/taxes, selected customer/doctor, timestamps).
+* Resuming must restore the bill reliably to the sale screen and allow checkout.
+* No duplicates; held bill removed/marked resumed per existing design.
+* Held bills must be scoped by `userId` + `locationId` (if multi-location exists).
+
+**Tasks**
+
+1. Locate hold/resume API routes + DB tables (`HeldBill` etc) + UI actions.
+2. Identify root cause (id mismatch, JSON shape mismatch, scoping, missing items fetch, etc) and fix.
+3. Make server return canonical held bill payload; client normalizes into cart state.
+
+**Acceptance tests**
+
+* Hold with 3 items and quantities; resume matches exactly.
+* Hold with customer selected; resume retains selection.
+* Hold, logout/login; resume works.
+* Two held bills; resume one doesn’t affect the other.
+
+---
+
+# Bug 2: Medicine stock can go negative
+
+**Expected**
+
+* Stock must **never** go below zero.
+* If sale would go negative, reject checkout with clear error listing medicines.
+* Must be enforced on **server** (not only frontend).
+* Use DB transaction + concurrency-safe update/locking.
+
+**Tasks**
+
+1. Identify where stock is deducted.
+2. Validate stock for all items before finalizing sale.
+3. Use transaction + conditional update (only update if `stock >= qty`) and verify affected rows; or lock rows (`FOR UPDATE`) if available.
+
+**Acceptance tests**
+
+* Stock=2, sell qty=3 blocked; stock unchanged.
+* Stock=10, sell qty=4 ok; stock becomes 6.
+* Two simultaneous sales never result in negative stock.
+
+---
+
+# Bug 3: Collections totals show “-NaN” when no data
+
+**Expected**
+
+* Show 0 / 0.00, never NaN/-NaN.
+* Backend returns numeric zeros, not null.
+* Frontend guards against undefined/null and NaN.
+
+**Tasks**
+
+* Use `COALESCE(SUM(...), 0)` in SQL/Drizzle.
+* On frontend use safe numeric conversion and formatting.
+
+**Acceptance tests**
+
+* Fresh DB/no rows: totals all 0.00.
+* With sale + refund + credit: totals correct.
+
+---
+
+# Bug 4: Date issue — “today’s record shows tomorrow”
+
+**Observed**
+
+* Even though a record is created today, UI shows **tomorrow date**.
+
+**Root cause likely**
+
+* UTC vs local timezone conversion (client parses server UTC timestamps as local, or server writes with timezone mismatch).
+* Using `new Date('YYYY-MM-DD')` (treated as UTC) causing +1 day shift in some timezones.
+* Postgres `timestamp` vs `timestamptz`, serialization, or `toISOString()` usage.
+
+**Tasks**
+
+1. Scan entire app for date/time handling:
+
+   * server: how dates are created/stored (Postgres columns type, `now()`, `new Date()`)
+   * API: how dates are serialized (ISO strings)
+   * client: how dates are parsed/format (Date constructor usage, libraries)
+2. Standardize date strategy (must be consistent across all pages):
+
+   * Store timestamps in DB as `timestamptz` or consistent timestamp
+   * Server returns ISO-8601 timestamps with timezone (e.g., `2025-12-16T10:30:00.000Z`)
+   * Client displays in user local timezone correctly
+3. Fix all “date-only” fields:
+
+   * If you use date-only (invoice date), store as date type and render without timezone shift.
+   * Avoid `new Date('YYYY-MM-DD')`; use explicit parsing or append `T00:00:00` in local, or use a date library.
+4. Confirm timezone expectations:
+
+   * App should show dates in local timezone (Asia/Kolkata / Asia/Singapore depending on settings).
+   * No record should appear shifted by +1 day.
+
+**Acceptance tests**
+
+* Create record at different times (morning/night) → UI shows correct same-day date.
+* View list/report pages → all dates correct.
+* Exports/prints (invoice) show correct date.
+* No regression in filtering by “today”.
+
+---
+
+# Output requirements
+
+* Show exact files changed and key code snippets.
+* Provide step-by-step manual test steps for each bug.
+* Keep DB schema changes minimal; if needed, create Drizzle migration + explain.
+* Do not break auth/session behavior.
+
+Start by:
+
+1. Identify where hold/resume fails and fix it.
+2. Add server-side stock protection with transaction and clear errors.
+3. Fix collections NaN with backend COALESCE + frontend guards.
+4. Audit date handling across backend + frontend and eliminate “tomorrow date” bug everywhere.
+
+---
+
+If you want, I can tailor this prompt to your exact repo structure (file paths/routes/components) if you paste:
+
+* the “hold bill” route + UI handler
+* the “create sale” endpoint
+* the “collections” API/component
+* one example of a record with wrong date (API response JSON + UI screenshot).
