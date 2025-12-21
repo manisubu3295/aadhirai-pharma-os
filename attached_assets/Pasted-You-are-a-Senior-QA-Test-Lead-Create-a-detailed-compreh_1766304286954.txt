@@ -1,0 +1,185 @@
+You are a Senior QA/Test Lead. Create a detailed, comprehensive manual test suite (with optional automation notes) for an EXISTING full-stack Pharmacy Management system (React + Express + Postgres + Drizzle).
+
+CONTEXT / SCOPE
+The app recently added/fixed:
+A) Role/Menu Access (menus, menu_groups, menu_group_menus, user_menus, user_menu_groups)
+B) Login landing redirect based on allowed menus
+C) Sidebar hides unauthorized menus (only canView=true)
+D) Route guards + “No Access” page + 404 page
+E) Expenses / Petty Cash module
+F) Void/Cancel + Discount/Price Override approvals workflow with audit
+G) Stock Adjustments with reason codes + audit
+H) Shift Open/Close + Shift Handover report (day closing)
+I) User-wise dashboards + exception reports + My Activity / Alerts
+
+IMPORTANT CONSTRAINTS FOR TEST PLAN
+- This is regression + new feature testing. Do NOT assume a greenfield product.
+- Keep tests aligned to real pharmacy workflows: cashier, pharmacist, storekeeper/purchase, accountant, owner/admin.
+- Include positive + negative + edge cases + security + concurrency + data integrity.
+- Include database persistence verification steps for critical flows (role access sticking, approvals, stock adjustments, day closing).
+- Include test data setup, preconditions, steps, expected result, and postconditions.
+- Include severity and priority for each test.
+- Include traceability mapping to requirement IDs.
+
+OUTPUT FORMAT REQUIRED
+1) Test Strategy Summary
+2) Test Roles & Permission Matrix (owner/admin/cashier/pharmacist/storekeeper/accountant)
+3) Test Data Setup (sample users, menus, medicines, suppliers, invoices)
+4) Detailed Test Cases in table format:
+   Columns:
+   - TC_ID
+   - Module
+   - Title
+   - Requirement_ID(s)
+   - Role
+   - Priority (P0/P1/P2)
+   - Severity (S1/S2/S3)
+   - Preconditions
+   - Test Steps (numbered)
+   - Expected Results
+   - DB Verification (SQL to run / what table/row to check)
+   - Notes / Edge Cases
+5) Regression Checklist (quick sanity)
+6) Non-functional Tests (performance/basic security/audit/logging)
+7) Defect Reporting Template
+
+REQUIREMENTS (USE THESE IDs FOR TRACEABILITY)
+
+ACCESS-01: Access persistence — after admin grants/revokes access, the saved state must persist in DB and reflect after refresh/relogin.
+ACCESS-02: Sidebar must show ONLY menus where canView=true (for non-admin). No “Access Denied” menus in sidebar.
+ACCESS-03: Login landing redirect:
+          - If can view dashboard -> “/”
+          - Else first accessible menu by displayOrder where canView=true
+          - Else “/no-access”
+ACCESS-04: Owner/Admin still sees all menus and retains full access.
+ACCESS-05: Direct URL to unauthorized route shows Access Denied page; no crash.
+ACCESS-06: 404 route shows a friendly page; no blank screens.
+ACCESS-07: React Query invalidation — after updating access, navigation/access queries refresh and show correct state.
+
+EXP-01: Expenses creation, list, filters, summary totals accurate.
+EXP-02: Expense affects shift expected cash (if included in shift summary).
+EXP-03: Expense audit/activity logs recorded.
+
+APP-01: Discount override request created when exceeding threshold.
+APP-02: Approval queue visible to owner/admin; approve/reject with reason.
+APP-03: On approval, sale updates correctly; on reject, sale remains unchanged.
+APP-04: Void/cancel request flow (pending -> approved -> sale VOID + stock restored).
+APP-05: Audit records show requestor, approver, timestamps, before/after payload.
+
+STK-01: Stock adjustment updates medicine quantity correctly (atomic).
+STK-02: Reason code mandatory; history list correct; audit logs created.
+STK-03: Negative stock prevention rules (if implemented) or expected behavior documented.
+
+SHIFT-01: Shift open creates a day record; cannot open twice for same business date.
+SHIFT-02: Shift close computes expected cash correctly:
+          expected = opening_cash + cash_sales + cash_collections - cash_refunds - expenses (if included)
+SHIFT-03: Shift handover report prints and matches computed totals.
+SHIFT-04: Differences recorded with notes; close is idempotent or blocked after closed.
+
+DASH-01: User dashboard shows “My Invoices/Refunds/Collections/Expenses” for selected date range.
+DASH-02: Owner exceptions dashboard shows voids/high discounts/stock edits/reprints (if available).
+DASH-03: My Activity page shows correct actions for logged in user.
+
+ALERT-01: Alerts show low stock/near expiry/pending approvals/credit overdue (based on available data).
+ALERT-02: Alerts respect role permissions (cashier doesn’t see admin-only alerts).
+
+GENERAL-01: Audit logs never miss critical actions (approvals, void, stock edit, expense, permission change).
+GENERAL-02: Data integrity: transactions do not duplicate on refresh; API idempotency or UI prevention.
+GENERAL-03: Security basics: users cannot escalate access by calling admin APIs; server blocks unauthorized access.
+
+SYSTEM ASSUMPTIONS (WRITE TESTS THAT WORK WITH THIS)
+- users.id is VARCHAR (UUID string)
+- non-admin access is driven from /api/navigation returning menus with permissions
+- critical tables:
+  menus, menu_groups, menu_group_menus, user_menus, user_menu_groups
+  sales, sale_items, sales_returns, sales_return_items
+  medicines
+  petty_cash_expenses (or equivalent)
+  approval_requests
+  stock_adjustments
+  day_closings
+  audit_logs and/or activity_logs
+
+TEST DATA TO USE (CREATE IF MISSING)
+- Users:
+  owner1 (role=owner)
+  admin1 (role=admin)
+  cashier1 (role=staff/cashier)
+  pharmacist1 (role=staff/pharmacist)
+  purchase1 (role=staff/purchase)
+  accountant1 (role=staff/accountant)
+- Sample medicines:
+  Paracetamol 500mg qty 100, near expiry and normal expiry variations
+  Cetirizine qty 5 (low stock)
+- Sample sales:
+  create at least 3 sales by cashier1 and 2 by pharmacist1 across different dates
+  include cash, UPI, credit
+- Refund:
+  create at least 1 refund for a sale
+- Expense:
+  create at least 2 expenses (delivery/tea)
+- Approval:
+  create a pending discount approval and a pending void approval
+- Stock adjustment:
+  one damage adjustment (-2), one manual correction (+5)
+
+WHAT TO TEST (MUST INCLUDE)
+1) Access persistence + sidebar filtering + landing redirect
+2) Admin User Access page:
+   - grant/revoke direct menus
+   - grant menu groups
+   - combined group + direct override
+   - verify after refresh/relogin
+3) “No Access” + 404 + unauthorized direct URL
+4) Expenses module end-to-end
+5) Approvals workflow end-to-end (discount + void) including audit and stock effect
+6) Stock adjustments end-to-end including audit and medicine quantity change
+7) Shift open/close + handover report including totals reconciliation
+8) User dashboards & activity logs (per user)
+9) Alerts & notifications list
+10) Security/negative tests: unauthorized API calls, invalid payloads, race conditions
+11) Cross-browser basic (Chrome/Edge), responsive check for key screens
+
+ADDITIONAL REQUIREMENTS FOR DETAIL
+- For each module, include:
+  - Happy path
+  - Boundary values (0, negative, large amounts, long reason text)
+  - Validation errors
+  - Permission checks by role
+  - Persistence check in DB
+  - Refresh/reload behavior
+  - Concurrency: two sessions updating permissions/approvals/stock simultaneously
+- Provide at least:
+  - 25 test cases for Access/Navigation
+  - 15 for Expenses
+  - 25 for Approvals (discount + void)
+  - 15 for Stock adjustments
+  - 15 for Shift/day closing
+  - 15 for Dashboards/Activity/Alerts
+  - 15 security/negative tests
+  - 10 regression sanity tests
+
+SQL VERIFICATION EXAMPLES (INCLUDE PER TEST)
+- Verify user menus:
+  SELECT * FROM user_menus WHERE user_id = '<uuid>';
+- Verify navigation:
+  SELECT m.key, um.can_view, um.can_edit
+  FROM menus m
+  LEFT JOIN user_menus um ON um.menu_id = m.id AND um.user_id = '<uuid>'
+  ORDER BY m.display_order;
+- Verify approval requests:
+  SELECT * FROM approval_requests ORDER BY requested_at DESC;
+- Verify stock adjustments:
+  SELECT * FROM stock_adjustments ORDER BY created_at DESC;
+  SELECT id, name, quantity FROM medicines WHERE id = <medicine_id>;
+- Verify shift:
+  SELECT * FROM day_closings WHERE business_date = 'YYYY-MM-DD';
+- Verify expenses:
+  SELECT * FROM petty_cash_expenses ORDER BY expense_date DESC;
+- Verify audits:
+  SELECT * FROM activity_logs WHERE user_id='<uuid>' ORDER BY created_at DESC;
+
+DELIVER A COMPREHENSIVE TEST SUITE NOW.
+- Do not ask questions.
+- Use clear numbering, consistent formatting, and realistic pharmacy scenarios.
+- Use business language testers can follow.
