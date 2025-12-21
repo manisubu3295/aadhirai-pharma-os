@@ -1382,6 +1382,7 @@ export class DatabaseStorage implements IStorage {
       { key: 'inventory.rates', label: 'Rate Master', routePath: '/supplier-rates', icon: 'Tags', displayOrder: 12 },
       { key: 'inventory.po', label: 'Purchase Orders', routePath: '/purchase-orders', icon: 'ClipboardList', displayOrder: 13 },
       { key: 'inventory.grn', label: 'Goods Receipt (GRN)', routePath: '/goods-receipts', icon: 'PackageCheck', displayOrder: 14 },
+      { key: 'inventory.returns', label: 'Purchase Returns', routePath: '/purchase-returns', icon: 'Undo2', displayOrder: 15 },
       { key: 'customers.accounts', label: 'Customer Accounts', routePath: '/customers', icon: 'Users', displayOrder: 20 },
       { key: 'customers.doctors', label: 'Doctors', routePath: '/doctors', icon: 'Stethoscope', displayOrder: 21 },
       { key: 'customers.collections', label: 'Collections', routePath: '/collections', icon: 'CreditCard', displayOrder: 22 },
@@ -1389,12 +1390,19 @@ export class DatabaseStorage implements IStorage {
       { key: 'reports.analytics', label: 'Owner Analytics', routePath: '/owner-dashboard', icon: 'BarChart3', displayOrder: 31 },
       { key: 'admin.audit', label: 'Audit Log', routePath: '/audit-log', icon: 'Shield', displayOrder: 40 },
       { key: 'admin.tally', label: 'Tally Export', routePath: '/tally-export', icon: 'Calculator', displayOrder: 41 },
+      { key: 'admin.day-closing', label: 'Day Closing', routePath: '/day-closing', icon: 'CalendarCheck', displayOrder: 42 },
+      { key: 'operations.expenses', label: 'Petty Cash / Expenses', routePath: '/expenses', icon: 'Wallet', displayOrder: 43 },
+      { key: 'operations.approvals', label: 'Approval Requests', routePath: '/approvals', icon: 'CheckCircle', displayOrder: 44 },
+      { key: 'operations.stock-adjustments', label: 'Stock Adjustments', routePath: '/stock-adjustments', icon: 'RefreshCw', displayOrder: 45 },
+      { key: 'operations.shift-handover', label: 'Shift Handover', routePath: '/shift-handover', icon: 'Clock', displayOrder: 46 },
       { key: 'admin.locations', label: 'Storage Locations', routePath: '/locations', icon: 'MapPin', displayOrder: 50 },
       { key: 'admin.settings', label: 'Settings', routePath: '/settings', icon: 'Settings', displayOrder: 51 },
       { key: 'admin.users', label: 'User Management', routePath: '/admin/users', icon: 'Users', displayOrder: 52 },
       { key: 'admin.menus', label: 'Menu Management', routePath: '/admin/menus', icon: 'Menu', displayOrder: 53 },
       { key: 'admin.groups', label: 'Menu Groups', routePath: '/admin/menu-groups', icon: 'FolderOpen', displayOrder: 54 },
-      { key: 'admin.access', label: 'User Access', routePath: '/admin/user-access', icon: 'Shield', displayOrder: 55 },
+      { key: 'admin.user-access', label: 'User Access', routePath: '/admin/user-access', icon: 'Shield', displayOrder: 55 },
+      { key: 'operations.my-sales', label: 'My Sales', routePath: '/my-sales', icon: 'ShoppingCart', displayOrder: 94 },
+      { key: 'operations.my-activity', label: 'My Activity', routePath: '/my-activity', icon: 'Activity', displayOrder: 95 },
     ];
 
     for (const menu of defaultMenus) {
@@ -1407,6 +1415,7 @@ export class DatabaseStorage implements IStorage {
     const customersGroup = await db.insert(menuGroups).values({ name: 'Customers & Credit', description: 'Customer management' }).returning();
     const reports = await db.insert(menuGroups).values({ name: 'Reports & Analytics', description: 'Business insights' }).returning();
     const admin = await db.insert(menuGroups).values({ name: 'Administration', description: 'System administration' }).returning();
+    const billing = await db.insert(menuGroups).values({ name: 'Billing', description: 'Front office billing' }).returning();
 
     // Get inserted menus to link
     const insertedMenus = await db.select().from(menus);
@@ -1414,11 +1423,12 @@ export class DatabaseStorage implements IStorage {
 
     // Link menus to groups
     const groupLinks = [
-      { group: operations[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit', 'sales.refund'] },
-      { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn'] },
+      { group: operations[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit', 'sales.refund', 'operations.expenses', 'operations.approvals', 'operations.stock-adjustments', 'operations.shift-handover', 'operations.my-sales', 'operations.my-activity'] },
+      { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn', 'inventory.returns'] },
       { group: customersGroup[0].id, keys: ['customers.accounts', 'customers.doctors', 'customers.collections'] },
       { group: reports[0].id, keys: ['reports.sales', 'reports.analytics'] },
-      { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups', 'admin.access'] },
+      { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.day-closing', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups', 'admin.user-access'] },
+      { group: billing[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit'] },
     ];
 
     for (const link of groupLinks) {
