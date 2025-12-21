@@ -104,7 +104,7 @@ export function groupMenusBySection(menus: MenuWithPermissions[]): { section: st
 
   for (const menu of menus) {
     const key = menu.key;
-    if (key === "dashboard" || key.startsWith("sales.")) {
+    if (key === "dashboard" || key.startsWith("sales.") || key.startsWith("operations.")) {
       sections.OPERATIONS.push(menu);
     } else if (key.startsWith("inventory.")) {
       sections["INVENTORY & PURCHASE"].push(menu);

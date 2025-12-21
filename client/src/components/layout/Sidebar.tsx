@@ -27,7 +27,11 @@ import {
   Menu,
   FolderOpen,
   Undo2,
-  CalendarCheck
+  CalendarCheck,
+  Wallet,
+  CheckCircle,
+  RefreshCw,
+  Clock
 } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
@@ -60,6 +64,10 @@ const iconMap: { [key: string]: React.ElementType } = {
   FolderOpen,
   Undo2,
   CalendarCheck,
+  Wallet,
+  CheckCircle,
+  RefreshCw,
+  Clock,
 };
 
 function getIcon(iconName: string | null): React.ElementType {
