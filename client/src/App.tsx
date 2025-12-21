@@ -86,12 +86,12 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/audit-log">
-        <ProtectedRoute allowedRoles={["owner"]}>
+        <ProtectedRoute>
           <AuditLog />
         </ProtectedRoute>
       </Route>
       <Route path="/tally-export">
-        <ProtectedRoute allowedRoles={["owner"]}>
+        <ProtectedRoute>
           <TallyExport />
         </ProtectedRoute>
       </Route>
@@ -101,7 +101,7 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/owner-dashboard">
-        <ProtectedRoute allowedRoles={["owner"]}>
+        <ProtectedRoute>
           <OwnerDashboard />
         </ProtectedRoute>
       </Route>

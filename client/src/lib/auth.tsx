@@ -187,6 +187,11 @@ export function ProtectedRoute({ children, allowedRoles, requiredRoute }: Protec
 
   const routeToCheck = requiredRoute || location;
   
+  const alwaysAllowedRoutes = ["/profile", "/no-access"];
+  if (alwaysAllowedRoutes.includes(routeToCheck)) {
+    return <>{children}</>;
+  }
+  
   if (routeToCheck && !hasAccess(routeToCheck)) {
     const accessibleMenus = menus.filter(m => m.canView);
     const defaultRoute = getDefaultRoute();
