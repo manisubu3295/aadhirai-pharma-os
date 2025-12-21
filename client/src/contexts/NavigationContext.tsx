@@ -22,6 +22,7 @@ interface NavigationContextType {
   hasAccess: (routePath: string) => boolean;
   canEdit: (routePath: string) => boolean;
   refetch: () => void;
+  getDefaultRoute: () => string;
 }
 
 const NavigationContext = createContext<NavigationContextType | null>(null);
@@ -56,6 +57,19 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     return menus.some(menu => menu.routePath === routePath && menu.canEdit);
   }, [user, menus]);
 
+  const getDefaultRoute = useCallback(() => {
+    if (!user) return "/login";
+    if (user.role === "owner" || user.role === "admin") return "/";
+    
+    const dashboardMenu = menus.find(m => m.routePath === "/" && m.canView);
+    if (dashboardMenu) return "/";
+    
+    const sortedMenus = [...menus].filter(m => m.canView).sort((a, b) => a.displayOrder - b.displayOrder);
+    if (sortedMenus.length > 0) return sortedMenus[0].routePath;
+    
+    return "/no-access";
+  }, [user, menus]);
+
   return (
     <NavigationContext.Provider value={{ 
       menus, 
@@ -63,7 +77,8 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       error: error as Error | null, 
       hasAccess, 
       canEdit,
-      refetch 
+      refetch,
+      getDefaultRoute
     }}>
       {children}
     </NavigationContext.Provider>

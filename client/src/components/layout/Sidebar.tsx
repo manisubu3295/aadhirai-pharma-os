@@ -173,7 +173,15 @@ export function Sidebar() {
     }
   ];
 
+  const isOwner = user?.role === "owner";
+  const isAdmin = user?.role === "admin";
+  const isPrivileged = isOwner || isAdmin;
+  
+  // For owner/admin, use all menus from navigation API (they get full access)
+  // For regular users, only show menus they have canView permission for
   const dynamicSections = groupMenusBySection(menus);
+  
+  // Only use fallback for owner/admin when navigation API returns empty (initial load)
   const menuSections: MenuSection[] = dynamicSections.length > 0
     ? dynamicSections.map(section => ({
         title: section.section,
@@ -183,9 +191,7 @@ export function Sidebar() {
           href: item.routePath,
         }))
       }))
-    : fallbackMenuSections;
-
-  const isOwner = user?.role === "owner";
+    : (isPrivileged ? fallbackMenuSections : []);
 
   const handleLogout = () => {
     logout();

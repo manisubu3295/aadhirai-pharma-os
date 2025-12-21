@@ -34,6 +34,7 @@ import MedicineRefund from "@/pages/MedicineRefund";
 import MenuManagement from "@/pages/admin/MenuManagement";
 import MenuGroups from "@/pages/admin/MenuGroups";
 import UserMenuAccess from "@/pages/admin/UserMenuAccess";
+import NoAccess from "@/pages/NoAccess";
 
 function Router() {
   return (
@@ -164,6 +165,7 @@ function Router() {
           <UserMenuAccess />
         </ProtectedRoute>
       </Route>
+      <Route path="/no-access" component={NoAccess} />
       <Route component={NotFound} />
     </Switch>
   );

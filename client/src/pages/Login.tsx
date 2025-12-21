@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
+import { useNavigation } from "@/contexts/NavigationContext";
 import { Lock, User, ArrowRight } from "lucide-react";
 import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 
@@ -13,11 +14,22 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingRedirect, setPendingRedirect] = useState(false);
   const { login, user } = useAuth();
+  const { getDefaultRoute, isLoading: navLoading, refetch } = useNavigation();
   const [, setLocation] = useLocation();
 
+  useEffect(() => {
+    if (user && !navLoading && pendingRedirect) {
+      const route = getDefaultRoute();
+      setLocation(route);
+      setPendingRedirect(false);
+    } else if (user && !pendingRedirect) {
+      setLocation(getDefaultRoute());
+    }
+  }, [user, navLoading, pendingRedirect, getDefaultRoute, setLocation]);
+
   if (user) {
-    setLocation("/");
     return null;
   }
 
@@ -30,7 +42,8 @@ export default function Login() {
     
     if (result.success) {
       sessionStorage.removeItem("nav-scroll-position");
-      setLocation("/");
+      refetch();
+      setPendingRedirect(true);
     } else {
       setError(result.error || "Login failed");
     }

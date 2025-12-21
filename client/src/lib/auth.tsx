@@ -130,7 +130,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, allowedRoles, requiredRoute }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth();
-  const { hasAccess, isLoading: navLoading } = useNavigation();
+  const { hasAccess, isLoading: navLoading, menus, getDefaultRoute } = useNavigation();
   const [, setLocation] = useLocation();
   const [location] = useLocation();
 
@@ -186,7 +186,16 @@ export function ProtectedRoute({ children, allowedRoles, requiredRoute }: Protec
   }
 
   const routeToCheck = requiredRoute || location;
+  
   if (routeToCheck && !hasAccess(routeToCheck)) {
+    const accessibleMenus = menus.filter(m => m.canView);
+    const defaultRoute = getDefaultRoute();
+    
+    if (accessibleMenus.length === 0) {
+      setLocation("/no-access");
+      return null;
+    }
+    
     return (
       <AppLayout title="Access Denied">
         <div className="flex flex-col items-center justify-center py-16">
@@ -195,10 +204,10 @@ export function ProtectedRoute({ children, allowedRoles, requiredRoute }: Protec
           </div>
           <h1 className="text-2xl font-bold text-destructive mb-2">Access Denied</h1>
           <p className="text-muted-foreground mb-6">You don't have menu access to this page.</p>
-          <Link href="/">
+          <Link href={defaultRoute}>
             <Button variant="outline" className="gap-2" data-testid="button-go-back">
               <ArrowLeft className="w-4 h-4" />
-              Go to Dashboard
+              Go Back
             </Button>
           </Link>
         </div>
