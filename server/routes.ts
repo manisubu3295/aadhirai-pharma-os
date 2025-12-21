@@ -639,6 +639,20 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/my-sales", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const from = req.query.from ? new Date(req.query.from as string) : undefined;
+      const to = req.query.to ? new Date(req.query.to as string + "T23:59:59") : undefined;
+      const search = req.query.search as string | undefined;
+      
+      const sales = await storage.getSalesByUser(userId, { from, to, search });
+      res.json(sales);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user sales" });
+    }
+  });
+
   app.get("/api/sales", async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;

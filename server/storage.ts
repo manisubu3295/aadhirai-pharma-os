@@ -444,6 +444,7 @@ export interface IStorage {
   deleteDoctor(id: number): Promise<boolean>;
   
   getSales(limit?: number): Promise<Sale[]>;
+  getSalesByUser(userId: string, options?: { from?: Date; to?: Date; search?: string }): Promise<Sale[]>;
   getSale(id: number): Promise<Sale | undefined>;
   getSaleByInvoiceNo(invoiceNo: string): Promise<Sale | undefined>;
   createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }>;
@@ -703,6 +704,32 @@ export class DatabaseStorage implements IStorage {
 
   async getSales(limit: number = 100): Promise<Sale[]> {
     return await db.select().from(sales).orderBy(desc(sales.createdAt)).limit(limit);
+  }
+
+  async getSalesByUser(userId: string, options?: { from?: Date; to?: Date; search?: string }): Promise<Sale[]> {
+    const conditions = [eq(sales.userId, userId)];
+    
+    if (options?.from) {
+      conditions.push(gte(sales.createdAt, options.from));
+    }
+    if (options?.to) {
+      conditions.push(lte(sales.createdAt, options.to));
+    }
+    
+    let results = await db.select().from(sales)
+      .where(and(...conditions))
+      .orderBy(desc(sales.createdAt));
+    
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      results = results.filter(s => 
+        s.invoiceNo?.toLowerCase().includes(searchLower) ||
+        s.customerName?.toLowerCase().includes(searchLower) ||
+        s.customerPhone?.includes(searchLower)
+      );
+    }
+    
+    return results;
   }
 
   async getSale(id: number): Promise<Sale | undefined> {
