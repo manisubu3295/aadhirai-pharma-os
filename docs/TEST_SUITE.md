@@ -198,9 +198,9 @@ ORDER BY m.display_order;
 
 ### 4.2 Expenses / Petty Cash (15 Test Cases)
 
-| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | DB Verification | Notes |
-|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|-----------------|-------|
-| EXP-001 | Expenses | Create new expense | EXP-01 | Accountant | P0 | S1 | accountant1 logged in, Expenses accessible | 1. Navigate to Expenses 2. Click Add Expense 3. Enter: Category=Delivery, Amount=100, Description="Courier charges" 4. Save | Expense created, appears in list | `SELECT * FROM petty_cash_expenses ORDER BY id DESC LIMIT 1` | |
+| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | Postconditions | DB Verification | Notes |
+|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|----------------|-----------------|-------|
+| EXP-001 | Expenses | Create new expense | EXP-01 | Accountant | P0 | S1 | accountant1 logged in, Expenses accessible | 1. Navigate to Expenses 2. Click Add Expense 3. Enter: Category=Delivery, Amount=100, Description="Courier charges" 4. Save | Expense created, appears in list | New petty_cash_expenses record created | `SELECT * FROM petty_cash_expenses ORDER BY id DESC LIMIT 1` | |
 | EXP-002 | Expenses | Expense list shows all expenses | EXP-01 | Accountant | P0 | S1 | Multiple expenses exist | 1. Navigate to Expenses 2. View list | All expenses shown with date, category, amount, description | `SELECT COUNT(*) FROM petty_cash_expenses` matches UI count | |
 | EXP-003 | Expenses | Filter expenses by date range | EXP-01 | Accountant | P1 | S2 | Expenses across different dates | 1. Set From/To date 2. Apply filter | Only expenses within range shown | SQL with WHERE expense_date BETWEEN | |
 | EXP-004 | Expenses | Filter expenses by category | EXP-01 | Owner | P1 | S2 | Expenses in different categories | 1. Select category filter 2. Apply | Only matching category shown | | |
@@ -218,9 +218,9 @@ ORDER BY m.display_order;
 
 ### 4.3 Approvals Workflow (25 Test Cases)
 
-| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | DB Verification | Notes |
-|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|-----------------|-------|
-| APP-001 | Approvals | Discount override request created automatically | APP-01 | Cashier | P0 | S1 | Discount threshold set to 15% | 1. Login as cashier1 2. Create sale 3. Apply 25% discount 4. Complete sale | Approval request created, sale marked pending | `SELECT * FROM approval_requests WHERE type='discount' ORDER BY requested_at DESC LIMIT 1` | |
+| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | Postconditions | DB Verification | Notes |
+|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|----------------|-----------------|-------|
+| APP-001 | Approvals | Discount override request created automatically | APP-01 | Cashier | P0 | S1 | Discount threshold set to 15% | 1. Login as cashier1 2. Create sale 3. Apply 25% discount 4. Complete sale | Approval request created, sale marked pending | approval_requests has new pending record, sale awaits approval | `SELECT * FROM approval_requests WHERE type='discount' ORDER BY requested_at DESC LIMIT 1` | |
 | APP-002 | Approvals | Approval queue visible to owner | APP-02 | Owner | P0 | S1 | Pending approval exists | 1. Login as owner1 2. Navigate to Approvals | Pending requests visible with details | | |
 | APP-003 | Approvals | Approval queue visible to admin | APP-02 | Admin | P0 | S1 | Pending approval exists | 1. Login as admin1 2. Navigate to Approvals | Pending requests visible | | |
 | APP-004 | Approvals | Approve discount request | APP-03 | Owner | P0 | S1 | Pending discount approval exists | 1. Select pending request 2. Click Approve 3. Enter reason 4. Confirm | Request approved, sale updated with discount | Check approval_requests status='approved', sales record updated | |
@@ -248,9 +248,9 @@ ORDER BY m.display_order;
 
 ### 4.4 Stock Adjustments (15 Test Cases)
 
-| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | DB Verification | Notes |
-|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|-----------------|-------|
-| STK-001 | Stock Adj | Create negative adjustment (damage) | STK-01 | Pharmacist | P0 | S1 | Medicine qty=100 | 1. Navigate to Stock Adjustments 2. Select medicine 3. Enter qty=-5 4. Select reason="Damage" 5. Save | Stock reduced to 95 | `SELECT quantity FROM medicines WHERE id=<id>` = 95 | |
+| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | Postconditions | DB Verification | Notes |
+|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|----------------|-----------------|-------|
+| STK-001 | Stock Adj | Create negative adjustment (damage) | STK-01 | Pharmacist | P0 | S1 | Medicine qty=100 | 1. Navigate to Stock Adjustments 2. Select medicine 3. Enter qty=-5 4. Select reason="Damage" 5. Save | Stock reduced to 95 | medicines.quantity updated, stock_adjustments record created | `SELECT quantity FROM medicines WHERE id=<id>` = 95 | |
 | STK-002 | Stock Adj | Create positive adjustment (correction) | STK-01 | Pharmacist | P0 | S1 | Medicine qty=95 | 1. Create adjustment qty=+10 2. Reason="Stock correction" | Stock increased to 105 | | |
 | STK-003 | Stock Adj | Reason code mandatory | STK-02 | Pharmacist | P0 | S1 | On adjustment form | 1. Enter quantity 2. Leave reason blank 3. Save | Validation error: "Reason is required" | | |
 | STK-004 | Stock Adj | Adjustment history correct | STK-02 | Owner | P0 | S1 | Multiple adjustments made | 1. View adjustment history | All adjustments listed with date, medicine, qty, reason, user | `SELECT * FROM stock_adjustments ORDER BY created_at DESC` | |
@@ -268,9 +268,9 @@ ORDER BY m.display_order;
 
 ### 4.5 Shift / Day Closing (15 Test Cases)
 
-| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | DB Verification | Notes |
-|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|-----------------|-------|
-| SFT-001 | Shift | Open shift | SHIFT-01 | Cashier | P0 | S1 | No shift open for today | 1. Navigate to Shift 2. Enter opening cash = ₹5000 3. Open Shift | Shift opened, timestamp recorded | `SELECT * FROM day_closings WHERE business_date=CURRENT_DATE` status='open' | |
+| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | Postconditions | DB Verification | Notes |
+|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|----------------|-----------------|-------|
+| SFT-001 | Shift | Open shift | SHIFT-01 | Cashier | P0 | S1 | No shift open for today | 1. Navigate to Shift 2. Enter opening cash = ₹5000 3. Open Shift | Shift opened, timestamp recorded | day_closings record created with status='open' | `SELECT * FROM day_closings WHERE business_date=CURRENT_DATE` status='open' | |
 | SFT-002 | Shift | Cannot open duplicate shift | SHIFT-01 | Cashier | P0 | S1 | Shift already open for today | 1. Try to open another shift | Error: "Shift already open for today" | | |
 | SFT-003 | Shift | Expected cash calculation correct | SHIFT-02 | Cashier | P0 | S1 | Shift open with ₹5000, made sales | 1. ₹1000 cash sale 2. ₹500 cash collection 3. ₹200 cash refund 4. ₹100 expense 5. View shift summary | Expected = 5000 + 1000 + 500 - 200 - 100 = ₹6200 | Check day_closings expected_cash | |
 | SFT-004 | Shift | Close shift with matching cash | SHIFT-02 | Cashier | P0 | S1 | Expected cash = ₹6200 | 1. Enter actual cash = ₹6200 2. Close Shift | Shift closed, difference = ₹0 | day_closings status='closed', difference=0 | |
@@ -288,9 +288,9 @@ ORDER BY m.display_order;
 
 ### 4.6 Dashboards / Activity / Alerts (15 Test Cases)
 
-| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | DB Verification | Notes |
-|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|-----------------|-------|
-| DSH-001 | Dashboard | User sees own invoices | DASH-01 | Cashier | P0 | S1 | cashier1 has sales | 1. Login as cashier1 2. View My Sales | Only cashier1's sales shown | `SELECT * FROM sales WHERE user_id='<cashier1_id>'` | |
+| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | Postconditions | DB Verification | Notes |
+|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|----------------|-----------------|-------|
+| DSH-001 | Dashboard | User sees own invoices | DASH-01 | Cashier | P0 | S1 | cashier1 has sales | 1. Login as cashier1 2. View My Sales | Only cashier1's sales shown | No state change (read-only view) | `SELECT * FROM sales WHERE user_id='<cashier1_id>'` | |
 | DSH-002 | Dashboard | Date range filter works | DASH-01 | Cashier | P0 | S1 | Sales across different dates | 1. Set date range 2. Apply | Only sales within range shown | | |
 | DSH-003 | Dashboard | Owner sees all users' data | DASH-01 | Owner | P0 | S1 | Sales by multiple users | 1. Login as owner1 2. View Sales History | All users' sales visible, user filter available | | |
 | DSH-004 | Dashboard | My Refunds shows user's refunds | DASH-01 | Cashier | P1 | S2 | cashier1 processed refunds | 1. View My Refunds | Only own refunds shown | | |
@@ -308,9 +308,9 @@ ORDER BY m.display_order;
 
 ### 4.7 Security & Negative Tests (15 Test Cases)
 
-| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | DB Verification | Notes |
-|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|-----------------|-------|
-| SEC-001 | Security | Unauthenticated API blocked | GENERAL-03 | None | P0 | S1 | Not logged in | 1. Call any protected API | 401 Unauthorized | | |
+| TC_ID | Module | Title | Req_ID | Role | Priority | Severity | Preconditions | Test Steps | Expected Results | Postconditions | DB Verification | Notes |
+|-------|--------|-------|--------|------|----------|----------|---------------|------------|------------------|----------------|-----------------|-------|
+| SEC-001 | Security | Unauthenticated API blocked | GENERAL-03 | None | P0 | S1 | Not logged in | 1. Call any protected API | 401 Unauthorized | No state change, request rejected | | |
 | SEC-002 | Security | Cannot escalate own role | GENERAL-03 | Cashier | P0 | S1 | cashier1 logged in | 1. Call PUT /api/users/<own_id> with role="owner" | 403 Forbidden | | |
 | SEC-003 | Security | Cannot access other user data | GENERAL-03 | Cashier | P0 | S1 | cashier1 logged in | 1. Call GET /api/users/<admin_id>/permissions | 403 Forbidden | | |
 | SEC-004 | Security | SQL injection blocked | GENERAL-03 | Any | P0 | S1 | Logged in | 1. Enter "'; DROP TABLE users;--" in search | No SQL execution, proper escaping | DB tables intact | |
