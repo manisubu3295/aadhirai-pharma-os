@@ -61,6 +61,12 @@ import {
   type InsertDayClosing,
   type ActivityLog,
   type InsertActivityLog,
+  type PettyCashExpense,
+  type InsertPettyCashExpense,
+  type ApprovalRequest,
+  type InsertApprovalRequest,
+  type StockAdjustment,
+  type InsertStockAdjustment,
   users,
   medicines,
   customers,
@@ -91,7 +97,10 @@ import {
   purchaseReturns,
   purchaseReturnItems,
   dayClosings,
-  activityLogs as activityLogsTable
+  activityLogs as activityLogsTable,
+  pettyCashExpenses,
+  approvalRequests,
+  stockAdjustments
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
@@ -556,6 +565,27 @@ export interface IStorage {
   // Activity Logs (Enhanced)
   getActivityLogs(filters?: { userId?: string; entityType?: string; action?: string; from?: Date; to?: Date }): Promise<ActivityLog[]>;
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+  
+  // Petty Cash / Expenses
+  getPettyCashExpenses(filters?: { from?: string; to?: string; category?: string }): Promise<PettyCashExpense[]>;
+  getPettyCashExpense(id: number): Promise<PettyCashExpense | undefined>;
+  createPettyCashExpense(expense: InsertPettyCashExpense): Promise<PettyCashExpense>;
+  updatePettyCashExpense(id: number, expense: Partial<InsertPettyCashExpense>): Promise<PettyCashExpense | undefined>;
+  deletePettyCashExpense(id: number): Promise<boolean>;
+  getPettyCashSummary(date: string): Promise<{ category: string; total: string }[]>;
+  
+  // Approval Requests
+  getApprovalRequests(filters?: { status?: string; type?: string; from?: Date; to?: Date }): Promise<ApprovalRequest[]>;
+  getApprovalRequest(id: number): Promise<ApprovalRequest | undefined>;
+  createApprovalRequest(request: InsertApprovalRequest): Promise<ApprovalRequest>;
+  updateApprovalRequest(id: number, data: Partial<InsertApprovalRequest>): Promise<ApprovalRequest | undefined>;
+  approveRequest(id: number, approvedByUserId: string, approvedByUserName: string, notes?: string): Promise<ApprovalRequest | undefined>;
+  rejectRequest(id: number, approvedByUserId: string, approvedByUserName: string, notes?: string): Promise<ApprovalRequest | undefined>;
+  
+  // Stock Adjustments
+  getStockAdjustments(filters?: { medicineId?: number; reasonCode?: string; from?: Date; to?: Date }): Promise<StockAdjustment[]>;
+  getStockAdjustment(id: number): Promise<StockAdjustment | undefined>;
+  createStockAdjustment(adjustment: InsertStockAdjustment): Promise<StockAdjustment>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1630,6 +1660,184 @@ export class DatabaseStorage implements IStorage {
 
   async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
     const result = await db.insert(activityLogsTable).values(log).returning();
+    return result[0];
+  }
+
+  // Petty Cash / Expenses Implementation
+  async getPettyCashExpenses(filters?: { from?: string; to?: string; category?: string }): Promise<PettyCashExpense[]> {
+    const conditions = [];
+    if (filters?.from) {
+      conditions.push(gte(pettyCashExpenses.expenseDate, filters.from));
+    }
+    if (filters?.to) {
+      conditions.push(lte(pettyCashExpenses.expenseDate, filters.to));
+    }
+    if (filters?.category) {
+      conditions.push(eq(pettyCashExpenses.category, filters.category));
+    }
+    
+    if (conditions.length > 0) {
+      return await db.select().from(pettyCashExpenses)
+        .where(and(...conditions))
+        .orderBy(desc(pettyCashExpenses.createdAt));
+    }
+    
+    return await db.select().from(pettyCashExpenses)
+      .orderBy(desc(pettyCashExpenses.createdAt));
+  }
+
+  async getPettyCashExpense(id: number): Promise<PettyCashExpense | undefined> {
+    const result = await db.select().from(pettyCashExpenses)
+      .where(eq(pettyCashExpenses.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createPettyCashExpense(expense: InsertPettyCashExpense): Promise<PettyCashExpense> {
+    const result = await db.insert(pettyCashExpenses).values(expense).returning();
+    return result[0];
+  }
+
+  async updatePettyCashExpense(id: number, expense: Partial<InsertPettyCashExpense>): Promise<PettyCashExpense | undefined> {
+    const result = await db.update(pettyCashExpenses)
+      .set(expense)
+      .where(eq(pettyCashExpenses.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deletePettyCashExpense(id: number): Promise<boolean> {
+    const result = await db.delete(pettyCashExpenses)
+      .where(eq(pettyCashExpenses.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  async getPettyCashSummary(date: string): Promise<{ category: string; total: string }[]> {
+    const result = await db.select({
+      category: pettyCashExpenses.category,
+      total: sql<string>`COALESCE(SUM(${pettyCashExpenses.amount}), 0)`
+    }).from(pettyCashExpenses)
+      .where(eq(pettyCashExpenses.expenseDate, date))
+      .groupBy(pettyCashExpenses.category);
+    return result;
+  }
+
+  // Approval Requests Implementation
+  async getApprovalRequests(filters?: { status?: string; type?: string; from?: Date; to?: Date }): Promise<ApprovalRequest[]> {
+    const conditions = [];
+    if (filters?.status) {
+      conditions.push(eq(approvalRequests.status, filters.status));
+    }
+    if (filters?.type) {
+      conditions.push(eq(approvalRequests.type, filters.type));
+    }
+    if (filters?.from) {
+      conditions.push(gte(approvalRequests.createdAt, filters.from));
+    }
+    if (filters?.to) {
+      conditions.push(lte(approvalRequests.createdAt, filters.to));
+    }
+    
+    if (conditions.length > 0) {
+      return await db.select().from(approvalRequests)
+        .where(and(...conditions))
+        .orderBy(desc(approvalRequests.createdAt));
+    }
+    
+    return await db.select().from(approvalRequests)
+      .orderBy(desc(approvalRequests.createdAt));
+  }
+
+  async getApprovalRequest(id: number): Promise<ApprovalRequest | undefined> {
+    const result = await db.select().from(approvalRequests)
+      .where(eq(approvalRequests.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createApprovalRequest(request: InsertApprovalRequest): Promise<ApprovalRequest> {
+    const result = await db.insert(approvalRequests).values(request).returning();
+    return result[0];
+  }
+
+  async updateApprovalRequest(id: number, data: Partial<InsertApprovalRequest>): Promise<ApprovalRequest | undefined> {
+    const result = await db.update(approvalRequests)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(approvalRequests.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async approveRequest(id: number, approvedByUserId: string, approvedByUserName: string, notes?: string): Promise<ApprovalRequest | undefined> {
+    const result = await db.update(approvalRequests)
+      .set({
+        status: 'APPROVED',
+        approvedByUserId,
+        approvedByUserName,
+        approvalNotes: notes,
+        updatedAt: new Date()
+      })
+      .where(eq(approvalRequests.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async rejectRequest(id: number, approvedByUserId: string, approvedByUserName: string, notes?: string): Promise<ApprovalRequest | undefined> {
+    const result = await db.update(approvalRequests)
+      .set({
+        status: 'REJECTED',
+        approvedByUserId,
+        approvedByUserName,
+        approvalNotes: notes,
+        updatedAt: new Date()
+      })
+      .where(eq(approvalRequests.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Stock Adjustments Implementation
+  async getStockAdjustments(filters?: { medicineId?: number; reasonCode?: string; from?: Date; to?: Date }): Promise<StockAdjustment[]> {
+    const conditions = [];
+    if (filters?.medicineId) {
+      conditions.push(eq(stockAdjustments.medicineId, filters.medicineId));
+    }
+    if (filters?.reasonCode) {
+      conditions.push(eq(stockAdjustments.reasonCode, filters.reasonCode));
+    }
+    if (filters?.from) {
+      conditions.push(gte(stockAdjustments.createdAt, filters.from));
+    }
+    if (filters?.to) {
+      conditions.push(lte(stockAdjustments.createdAt, filters.to));
+    }
+    
+    if (conditions.length > 0) {
+      return await db.select().from(stockAdjustments)
+        .where(and(...conditions))
+        .orderBy(desc(stockAdjustments.createdAt));
+    }
+    
+    return await db.select().from(stockAdjustments)
+      .orderBy(desc(stockAdjustments.createdAt));
+  }
+
+  async getStockAdjustment(id: number): Promise<StockAdjustment | undefined> {
+    const result = await db.select().from(stockAdjustments)
+      .where(eq(stockAdjustments.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createStockAdjustment(adjustment: InsertStockAdjustment): Promise<StockAdjustment> {
+    // Create the adjustment record
+    const result = await db.insert(stockAdjustments).values(adjustment).returning();
+    
+    // Update the medicine stock atomically
+    await db.update(medicines)
+      .set({
+        quantity: sql`${medicines.quantity} + ${adjustment.adjustmentQty}`
+      })
+      .where(eq(medicines.id, adjustment.medicineId));
+    
     return result[0];
   }
 }
