@@ -40,6 +40,7 @@ import Approvals from "@/pages/Approvals";
 import StockAdjustments from "@/pages/StockAdjustments";
 import ShiftHandover from "@/pages/ShiftHandover";
 import MyActivity from "@/pages/MyActivity";
+import MySales from "@/pages/MySales";
 
 function Router() {
   return (
@@ -193,6 +194,11 @@ function Router() {
       <Route path="/my-activity">
         <ProtectedRoute>
           <MyActivity />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/my-sales">
+        <ProtectedRoute>
+          <MySales />
         </ProtectedRoute>
       </Route>
       <Route path="/no-access" component={NoAccess} />
