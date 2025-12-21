@@ -1,0 +1,63 @@
+ async getUserNavigation(userId: string, role: string): Promise<MenuWithPermissions[]> {
+    const allMenus = await db.select().from(menus).where(eq(menus.isActive, true)).orderBy(menus.displayOrder);
+    
+    if (allMenus.length === 0) {
+      return [];
+    }
+    
+    // If owner or admin, return all menus with full permissions
+    if (role === 'owner' || role === 'admin') {
+      return allMenus.map(menu => ({ ...menu, canView: true, canEdit: true }));
+    }
+    
+    // Get user's direct menu permissions
+    const directMenus = await db.select().from(userMenus).where(eq(userMenus.userId, userId));
+    
+    // Get user's menu groups
+    const userGroups = await db.select().from(userMenuGroups).where(eq(userMenuGroups.userId, userId));
+    
+    // Get all menus from user's groups
+    const groupMenuIds: number[] = [];
+    for (const ug of userGroups) {
+      const groupMenus = await db.select().from(menuGroupMenus).where(eq(menuGroupMenus.menuGroupId, ug.menuGroupId));
+      groupMenuIds.push(...groupMenus.map(gm => gm.menuId));
+    }
+    
+    // If user has no explicit assignments, use defaults based on role
+    if (directMenus.length === 0 && userGroups.length === 0) {
+      // Default: staff gets view access to common menus
+      return allMenus
+        .filter(m => !m.key.startsWith('admin.') && !m.key.includes('settings') && !m.key.includes('audit'))
+        .map(menu => ({ ...menu, canView: true, canEdit: false }));
+    }
+    
+    // Build permissions map
+    const permissionsMap: Map<number, { canView: boolean; canEdit: boolean }> = new Map();
+    
+    // Add group menu permissions (view only by default for groups)
+    for (const menuId of groupMenuIds) {
+      if (!permissionsMap.has(menuId)) {
+        permissionsMap.set(menuId, { canView: true, canEdit: false });
+      }
+    }
+    
+    // Override with direct permissions
+    for (const dm of directMenus) {
+      const existing = permissionsMap.get(dm.menuId) || { canView: false, canEdit: false };
+      permissionsMap.set(dm.menuId, {
+        canView: existing.canView || dm.canView,
+        canEdit: existing.canEdit || dm.canEdit
+      });
+    }
+    
+    // Return menus with permissions
+    const result: MenuWithPermissions[] = [];
+    for (const menu of allMenus) {
+      const perms = permissionsMap.get(menu.id);
+      if (perms && perms.canView) {
+        result.push({ ...menu, canView: perms.canView, canEdit: perms.canEdit });
+      }
+    }
+    
+    return result;
+  }
