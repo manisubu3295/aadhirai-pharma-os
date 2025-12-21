@@ -1764,6 +1764,10 @@ export async function registerRoutes(
       const userId = req.params.id;
       const { permissions, groupIds } = req.body;
       
+      console.log("[User Menu Access] Saving for userId:", userId);
+      console.log("[User Menu Access] Permissions:", JSON.stringify(permissions));
+      console.log("[User Menu Access] Group IDs:", JSON.stringify(groupIds));
+      
       if (permissions && Array.isArray(permissions)) {
         await storage.setUserMenus(userId, permissions);
       }
@@ -1771,6 +1775,10 @@ export async function registerRoutes(
       if (groupIds && Array.isArray(groupIds)) {
         await storage.setUserMenuGroups(userId, groupIds);
       }
+      
+      // Verify what was saved
+      const savedMenus = await storage.getUserMenus(userId);
+      console.log("[User Menu Access] Saved menus count:", savedMenus.length);
       
       res.json({ message: "User menu access updated" });
     } catch (error) {
@@ -1786,7 +1794,9 @@ export async function registerRoutes(
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
+      console.log("[Navigation] Fetching for user:", user.id, "role:", user.role);
       const navigation = await storage.getUserNavigation(user.id, user.role);
+      console.log("[Navigation] Returned menus count:", navigation.length);
       res.json(navigation);
     } catch (error) {
       console.error("Error fetching user navigation:", error);
