@@ -278,33 +278,27 @@ export default function StockAdjustments() {
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Search Medicine *</Label>
-                <Input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search by name or batch..."
-                  data-testid="input-search-medicine"
-                />
-              </div>
-              
-              <div className="space-y-2">
                 <Label>Select Medicine *</Label>
                 <Select 
                   value={formData.medicineId} 
                   onValueChange={handleMedicineSelect}
                 >
                   <SelectTrigger data-testid="select-medicine">
-                    <SelectValue placeholder="Select medicine" />
+                    <SelectValue placeholder="Choose a medicine..." />
                   </SelectTrigger>
-                  <SelectContent>
-                    {filteredMedicines.slice(0, 50).map(medicine => (
-                      <SelectItem key={medicine.id} value={String(medicine.id)}>
-                        {medicine.name} - {medicine.batchNumber} (Qty: {medicine.quantity})
-                      </SelectItem>
-                    ))}
+                  <SelectContent className="max-h-[300px]">
+                    {medicines.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">No medicines found</div>
+                    ) : (
+                      medicines.map(medicine => (
+                        <SelectItem key={medicine.id} value={String(medicine.id)}>
+                          {medicine.name} - {medicine.batchNumber} (Stock: {medicine.quantity})
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">Choose a medicine to adjust its stock quantity</p>
               </div>
 
               {selectedMedicine && (

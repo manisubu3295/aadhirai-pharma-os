@@ -105,7 +105,7 @@ import {
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
-import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
+import { eq, desc, sql, and, gte, lte, or } from "drizzle-orm";
 
 console.log("Database URL:" + JSON.stringify(process.env.DATABASE_URL));
 console.log("DATABASE_URL =", process.env.DATABASE_URL);
@@ -550,7 +550,7 @@ export interface IStorage {
   
   // Day Closing
   getDayClosing(businessDate: string): Promise<DayClosing | undefined>;
-  getDayClosings(limit?: number): Promise<DayClosing[]>;
+  getDayClosings(limit?: number, userId?: string): Promise<DayClosing[]>;
   openDay(data: { businessDate: string; openingCash: string; openedByUserId: string }): Promise<DayClosing>;
   closeDay(businessDate: string, data: { actualCash: string; notes?: string; closedByUserId: string }): Promise<DayClosing | undefined>;
   computeExpectedCash(businessDate: string, openingCash: string): Promise<string>;
@@ -1485,7 +1485,16 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getDayClosings(limit: number = 30): Promise<DayClosing[]> {
+  async getDayClosings(limit: number = 30, userId?: string): Promise<DayClosing[]> {
+    if (userId) {
+      return await db.select().from(dayClosings)
+        .where(or(
+          eq(dayClosings.openedByUserId, userId),
+          eq(dayClosings.closedByUserId, userId)
+        ))
+        .orderBy(desc(dayClosings.businessDate))
+        .limit(limit);
+    }
     return await db.select().from(dayClosings)
       .orderBy(desc(dayClosings.businessDate))
       .limit(limit);

@@ -165,7 +165,7 @@ export default function Approvals() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">Approval Requests</h1>
-            <p className="text-muted-foreground">Review and approve pending requests</p>
+            <p className="text-muted-foreground">Review and approve pending requests from staff</p>
           </div>
           {pendingCount > 0 && (
             <Badge className="bg-yellow-500 text-white px-3 py-1">
@@ -173,6 +173,16 @@ export default function Approvals() {
             </Badge>
           )}
         </div>
+
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="p-4">
+            <p className="text-sm text-blue-800">
+              <strong>What are Approval Requests?</strong> When staff members need to do special actions like voiding a sale, 
+              giving large discounts, changing prices, or processing returns, those requests come here for your review. 
+              You can approve or reject each request to maintain control over sensitive operations.
+            </p>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>

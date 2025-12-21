@@ -20,6 +20,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { 
   Calendar, 
@@ -29,25 +36,37 @@ import {
   AlertCircle, 
   PlayCircle, 
   StopCircle,
-  ArrowRight
+  ArrowRight,
+  User,
+  Filter
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth } from "date-fns";
+import { useAuth } from "@/lib/auth";
 
 interface DayClosing {
   id: number;
   businessDate: string;
   openedByUserId: string | null;
+  openedByUserName: string | null;
   openingCash: string;
   openingTime: string | null;
   closedByUserId: string | null;
+  closedByUserName: string | null;
   expectedCash: string | null;
   actualCash: string | null;
   difference: string | null;
   closingTime: string | null;
   notes: string | null;
   status: string;
+}
+
+interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: string;
 }
 
 interface ExpectedCashData {
@@ -65,10 +84,24 @@ export default function ShiftHandover() {
   const [actualCash, setActualCash] = useState("");
   const [closingNotes, setClosingNotes] = useState("");
   const [expectedCashData, setExpectedCashData] = useState<ExpectedCashData | null>(null);
+  const [filterUserId, setFilterUserId] = useState("");
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
+  const isOwner = currentUser?.role === "owner";
+
+  // Fetch users for the filter (owners only)
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const response = await fetch("/api/users");
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: isOwner,
+  });
 
   const { data: todayRecord, isLoading } = useQuery<DayClosing | null>({
     queryKey: ["/api/day-closing", todayStr],
@@ -81,9 +114,11 @@ export default function ShiftHandover() {
   });
 
   const { data: recentClosings = [] } = useQuery<DayClosing[]>({
-    queryKey: ["/api/day-closings-recent"],
+    queryKey: ["/api/day-closings-recent", filterUserId],
     queryFn: async () => {
-      const response = await fetch(`/api/day-closings?limit=7`);
+      let url = `/api/day-closings?limit=14`;
+      if (filterUserId) url += `&userId=${filterUserId}`;
+      const response = await fetch(url);
       if (!response.ok) throw new Error("Failed to fetch recent closings");
       return response.json();
     },
@@ -210,10 +245,18 @@ export default function ShiftHandover() {
               ) : todayRecord.status === "OPEN" ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <Badge className="bg-green-100 text-green-800 px-3 py-1">
-                      <Clock className="h-3 w-3 mr-1" />
-                      SHIFT OPEN
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-green-100 text-green-800 px-3 py-1">
+                        <Clock className="h-3 w-3 mr-1" />
+                        SHIFT OPEN
+                      </Badge>
+                      {todayRecord.openedByUserName && (
+                        <span className="text-sm text-muted-foreground flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {todayRecord.openedByUserName}
+                        </span>
+                      )}
+                    </div>
                     {todayRecord.openingTime && (
                       <span className="text-sm text-muted-foreground">
                         Since {format(new Date(todayRecord.openingTime), "HH:mm")}
@@ -263,17 +306,34 @@ export default function ShiftHandover() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <Badge className="bg-gray-100 text-gray-800 px-3 py-1">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      SHIFT CLOSED
-                    </Badge>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-gray-100 text-gray-800 px-3 py-1">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        SHIFT CLOSED
+                      </Badge>
+                      {todayRecord.closedByUserName && (
+                        <span className="text-sm text-muted-foreground flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {todayRecord.closedByUserName}
+                        </span>
+                      )}
+                    </div>
                     {todayRecord.closingTime && (
                       <span className="text-sm text-muted-foreground">
                         At {format(new Date(todayRecord.closingTime), "HH:mm")}
                       </span>
                     )}
                   </div>
+                  
+                  {todayRecord.openedByUserName && todayRecord.closedByUserName && (
+                    <div className="bg-blue-50 p-3 rounded-lg flex items-center gap-2 text-sm">
+                      <User className="h-4 w-4 text-blue-600" />
+                      <span>Handover: {todayRecord.openedByUserName}</span>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <span>{todayRecord.closedByUserName}</span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-muted p-3 rounded-lg">
@@ -312,8 +372,28 @@ export default function ShiftHandover() {
 
           <Card className="lg:col-span-1">
             <CardHeader>
-              <CardTitle>Recent Shifts</CardTitle>
-              <CardDescription>Last 7 days</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Recent Shifts</CardTitle>
+                  <CardDescription>Last 14 days</CardDescription>
+                </div>
+                {isOwner && users.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <Select value={filterUserId || "all"} onValueChange={(v) => setFilterUserId(v === "all" ? "" : v)}>
+                      <SelectTrigger className="w-40" data-testid="select-filter-user">
+                        <SelectValue placeholder="All Users" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Users</SelectItem>
+                        {users.map(u => (
+                          <SelectItem key={u.id} value={u.id}>{u.name || u.username}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {recentClosings.length === 0 ? (
@@ -323,6 +403,8 @@ export default function ShiftHandover() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
+                      <TableHead>Opened By</TableHead>
+                      <TableHead>Closed By</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Difference</TableHead>
                     </TableRow>
@@ -331,6 +413,18 @@ export default function ShiftHandover() {
                     {recentClosings.map((closing) => (
                       <TableRow key={closing.id} data-testid={`row-shift-${closing.id}`}>
                         <TableCell>{closing.businessDate}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-sm">{closing.openedByUserName || "-"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-sm">{closing.closedByUserName || "-"}</span>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant={closing.status === "OPEN" ? "default" : "secondary"}>
                             {closing.status}

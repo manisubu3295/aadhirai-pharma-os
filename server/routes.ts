@@ -1947,7 +1947,24 @@ export async function registerRoutes(
     try {
       const businessDate = req.params.date;
       const dayClosing = await storage.getDayClosing(businessDate);
-      res.json(dayClosing || null);
+      if (!dayClosing) {
+        return res.json(null);
+      }
+      
+      // Add user names
+      let openedByUserName = null;
+      let closedByUserName = null;
+      
+      if (dayClosing.openedByUserId) {
+        const openedByUser = await storage.getUser(dayClosing.openedByUserId);
+        openedByUserName = openedByUser?.name || openedByUser?.username || null;
+      }
+      if (dayClosing.closedByUserId) {
+        const closedByUser = await storage.getUser(dayClosing.closedByUserId);
+        closedByUserName = closedByUser?.name || closedByUser?.username || null;
+      }
+      
+      res.json({ ...dayClosing, openedByUserName, closedByUserName });
     } catch (error) {
       console.error("Error fetching day closing:", error);
       res.status(500).json({ error: "Failed to fetch day closing" });
@@ -1958,8 +1975,22 @@ export async function registerRoutes(
   app.get("/api/day-closings", requireAuth, async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 30;
-      const dayClosings = await storage.getDayClosings(limit);
-      res.json(dayClosings);
+      const userId = req.query.userId as string | undefined;
+      
+      // Pass userId to storage for database-level filtering
+      const dayClosings = await storage.getDayClosings(limit, userId);
+      
+      // Enrich with user names
+      const allUsers = await storage.getUsers();
+      const userMap = new Map(allUsers.map(u => [u.id, u.name || u.username]));
+      
+      const enrichedClosings = dayClosings.map(dc => ({
+        ...dc,
+        openedByUserName: dc.openedByUserId ? userMap.get(dc.openedByUserId) || null : null,
+        closedByUserName: dc.closedByUserId ? userMap.get(dc.closedByUserId) || null : null,
+      }));
+      
+      res.json(enrichedClosings);
     } catch (error) {
       console.error("Error fetching day closings:", error);
       res.status(500).json({ error: "Failed to fetch day closings" });
