@@ -1344,19 +1344,23 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // Override with direct permissions
+    // Override with direct permissions (ensure type safety for local environments)
     for (const dm of directMenus) {
-      const existing = permissionsMap.get(dm.menuId) || { canView: false, canEdit: false };
-      permissionsMap.set(dm.menuId, {
-        canView: existing.canView || dm.canView,
-        canEdit: existing.canEdit || dm.canEdit
+      const menuIdNum = Number(dm.menuId);
+      const canViewBool = dm.canView === true || dm.canView === 'true' || dm.canView === 't';
+      const canEditBool = dm.canEdit === true || dm.canEdit === 'true' || dm.canEdit === 't';
+      const existing = permissionsMap.get(menuIdNum) || { canView: false, canEdit: false };
+      permissionsMap.set(menuIdNum, {
+        canView: existing.canView || canViewBool,
+        canEdit: existing.canEdit || canEditBool
       });
     }
     
     // Return menus with permissions
     const result: MenuWithPermissions[] = [];
     for (const menu of allMenus) {
-      const perms = permissionsMap.get(menu.id);
+      const menuIdNum = Number(menu.id);
+      const perms = permissionsMap.get(menuIdNum);
       if (perms && perms.canView) {
         result.push({ ...menu, canView: perms.canView, canEdit: perms.canEdit });
       }
