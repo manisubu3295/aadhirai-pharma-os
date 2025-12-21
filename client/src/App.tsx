@@ -39,6 +39,7 @@ import Expenses from "@/pages/Expenses";
 import Approvals from "@/pages/Approvals";
 import StockAdjustments from "@/pages/StockAdjustments";
 import ShiftHandover from "@/pages/ShiftHandover";
+import MyActivity from "@/pages/MyActivity";
 
 function Router() {
   return (
@@ -187,6 +188,11 @@ function Router() {
       <Route path="/shift-handover">
         <ProtectedRoute>
           <ShiftHandover />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/my-activity">
+        <ProtectedRoute>
+          <MyActivity />
         </ProtectedRoute>
       </Route>
       <Route path="/no-access" component={NoAccess} />

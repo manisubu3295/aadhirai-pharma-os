@@ -2081,8 +2081,12 @@ export async function registerRoutes(
   // ========== ACTIVITY LOGS (Enhanced) ==========
   
   // Get activity logs with filters
-  app.get("/api/activity-logs", requireRole("owner", "admin", "pharmacist"), async (req, res) => {
+  app.get("/api/activity-logs", requireAuth, async (req, res) => {
     try {
+      const currentUserId = req.session.userId;
+      const currentUserRole = req.session.userRole;
+      const isOwnerOrAdmin = currentUserRole === "owner" || currentUserRole === "admin";
+      
       const filters: {
         userId?: string;
         entityType?: string;
@@ -2091,9 +2095,13 @@ export async function registerRoutes(
         to?: Date;
       } = {};
       
-      if (req.query.userId) {
+      // Non-owners can only see their own logs
+      if (!isOwnerOrAdmin) {
+        filters.userId = currentUserId;
+      } else if (req.query.userId) {
         filters.userId = req.query.userId as string;
       }
+      
       if (req.query.entityType) {
         filters.entityType = req.query.entityType as string;
       }
