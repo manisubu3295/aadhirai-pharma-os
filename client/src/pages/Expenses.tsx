@@ -221,12 +221,12 @@ export default function Expenses() {
               </div>
               <div className="flex items-center gap-2">
                 <Label>Category:</Label>
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <Select value={filterCategory || "all"} onValueChange={(v) => setFilterCategory(v === "all" ? "" : v)}>
                   <SelectTrigger className="w-40" data-testid="select-filter-category">
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
                     {EXPENSE_CATEGORIES.map(cat => (
                       <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                     ))}

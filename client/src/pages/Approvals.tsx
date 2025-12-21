@@ -180,12 +180,12 @@ export default function Approvals() {
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4" />
                 <Label>Status:</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <Select value={filterStatus || "all"} onValueChange={(v) => setFilterStatus(v === "all" ? "" : v)}>
                   <SelectTrigger className="w-40" data-testid="select-filter-status">
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
                     <SelectItem value="PENDING">Pending</SelectItem>
                     <SelectItem value="APPROVED">Approved</SelectItem>
                     <SelectItem value="REJECTED">Rejected</SelectItem>
@@ -194,12 +194,12 @@ export default function Approvals() {
               </div>
               <div className="flex items-center gap-2">
                 <Label>Type:</Label>
-                <Select value={filterType} onValueChange={setFilterType}>
+                <Select value={filterType || "all"} onValueChange={(v) => setFilterType(v === "all" ? "" : v)}>
                   <SelectTrigger className="w-48" data-testid="select-filter-type">
                     <SelectValue placeholder="All Types" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Types</SelectItem>
+                    <SelectItem value="all">All Types</SelectItem>
                     {APPROVAL_TYPES.map(type => (
                       <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
                     ))}

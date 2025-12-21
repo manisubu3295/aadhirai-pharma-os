@@ -205,12 +205,12 @@ export default function StockAdjustments() {
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4" />
                 <Label>Reason:</Label>
-                <Select value={filterReasonCode} onValueChange={setFilterReasonCode}>
+                <Select value={filterReasonCode || "all"} onValueChange={(v) => setFilterReasonCode(v === "all" ? "" : v)}>
                   <SelectTrigger className="w-48" data-testid="select-filter-reason">
                     <SelectValue placeholder="All Reasons" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Reasons</SelectItem>
+                    <SelectItem value="all">All Reasons</SelectItem>
                     {REASON_CODES.map(reason => (
                       <SelectItem key={reason.value} value={reason.value}>{reason.label}</SelectItem>
                     ))}
