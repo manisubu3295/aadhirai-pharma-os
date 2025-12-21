@@ -1,0 +1,143 @@
+You are working on an existing full-stack app (React + Express + Postgres + Drizzle).
+
+PRIMARY GOAL: Fix Role/Menu access so that:
+1) After admin gives access to a user (via User Access page / API), reopening the page or re-login must show the access correctly (persisted in DB and loaded reliably).
+2) After user creation, a non-admin user should NOT see menus they don’t have access to (no “access denied” menus in sidebar). Only show menus where canView = true.
+3) On login, landing route should be decided by priority:
+   - If user can view "dashboard" -> go to "/"
+   - Else go to the first accessible menu by displayOrder (smallest number) where canView=true
+   - Else go to a safe fallback page like "/no-access" with a clear message.
+4) Do NOT break existing flows: owner/admin should still see all menus, existing routes should still enforce access server-side, and current UI layout must remain consistent.
+
+IMPORTANT CONSTRAINTS:
+- Make minimal, surgical changes. Do not refactor unrelated components.
+- Keep existing DB schema and tables (menus, user_menus, user_menu_groups, menu_groups, menu_group_menus).
+- Preserve existing endpoints unless truly necessary; if changed, keep backward compatibility.
+- Add logs only if needed; remove excessive logs after verifying.
+
+Diagnose and Fix:
+A) Backend (Express/Storage):
+- Ensure “setUserMenus” and “setUserMenuGroups” actually persist changes.
+- If there is a mismatch between user id types (users.id is VARCHAR UUID; user_menu user_id is VARCHAR(255)), confirm the exact userId stored in auth/session and ensure it matches what is inserted in user_menus/user_menu_groups.
+- Ensure getUserNavigation(userId, role) returns ONLY menus the user canView=true (except owner/admin who get all).
+- If user has menu groups assigned, include those menus with canView=true.
+- If user has direct menu permissions, merge/override:
+    * Group grants canView=true, canEdit=false by default
+    * Direct permissions override (canEdit overrides group canEdit)
+- Make sure queries use correct column names matching Drizzle schema (e.g., userMenus.userId, userMenuGroups.userId, menus.isActive, menus.displayOrder).
+- Fix caching issues: API must return fresh permissions after update. If using react-query, ensure mutation invalidates the navigation query key.
+
+Add/Verify Endpoints:
+- Ensure GET /api/navigation returns the current logged-in user’s menu list with permissions.
+- Ensure the admin endpoint used to set access returns success and (optionally) returns the saved permissions.
+
+B) Frontend (React):
+- Sidebar: render only menus returned by navigation API where canView=true. Do not show denied menus.
+- Remove any old logic that shows all menus then labels “Access Denied”.
+- After login: fetch navigation first, then redirect:
+   - If dashboard exists -> route "/"
+   - Else route to first menu routePath by displayOrder
+   - Else "/no-access"
+- Ensure protected routes still check permission; if user navigates manually, show Access Denied page.
+
+React Query:
+- Use a stable queryKey for navigation, e.g. ["/api/navigation"].
+- After admin changes access, invalidate ["/api/navigation"] (and user-specific access query) so UI refreshes and shows correct permissions.
+- If the admin is editing another user’s access, also re-fetch that user's access state in the admin screen (e.g. ["/api/admin/user-access", userId]).
+
+C) Bug that access “doesn’t stick”:
+- Find and fix the root cause: likely userId mismatch, wrong column mapping, or the admin UI reads from a different source than what is being saved.
+- Add a quick verification: after saving access, re-fetch from server and show “Saved” state matching DB.
+
+DELIVERABLE SET 1 (Access):
+1) Code changes in backend storage + routes (minimal).
+2) Update Sidebar menu rendering to hide unauthorized menus.
+3) Login redirect logic based on accessible menu priority.
+4) Add a simple "/no-access" page if missing.
+5) Provide short notes on what was changed and why, and where to test.
+
+TESTING CHECKLIST (must pass):
+- Create a new staff user -> login -> sees ONLY allowed menus (or none).
+- Admin grants 2 menus -> staff re-login -> sees exactly those menus.
+- Admin revokes a menu -> staff refresh/re-login -> menu disappears.
+- If staff has no dashboard access -> landing goes to first allowed route.
+- Owner/admin still sees all menus and can access admin screens.
+- Direct URL to unauthorized route shows Access Denied, not crash.
+
+
+SECONDARY GOAL: Add “missing operational screens” in a way that fits the current app layout/design and does NOT break existing flows.
+- Add routes + menu keys only if needed; keep consistent styling/components with existing screens.
+- If role access is not granted, screens must be hidden in sidebar AND blocked by route guards + server checks.
+
+Implement the following missing modules (minimal viable, audit-friendly):
+
+MODULE 1: Expenses / Petty Cash
+- Add table: petty_cash_expenses (if not present). Fields:
+  id SERIAL PK
+  expense_date TIMESTAMP NOT NULL DEFAULT now()
+  category TEXT NOT NULL (Delivery/Tea/Courier/Misc)
+  amount NUMERIC(10,2) NOT NULL
+  payment_mode TEXT NOT NULL DEFAULT 'cash'
+  notes TEXT
+  created_by_user_id VARCHAR(255)
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+- Screens:
+  1) Expense Entry (create)
+  2) Expense List (filter by date range, category, created_by)
+  3) Daily Expense Summary (total by category)
+- API:
+  GET /api/expenses?from&to&userId?
+  POST /api/expenses
+  GET /api/expenses/summary?from&to
+- Audit:
+  write to audit_logs/activity_logs when expense created/edited/deleted (if delete exists, soft delete preferred)
+
+MODULE 2: Void/Cancel & Discount Approvals with Audit
+- Requirements:
+  - Cashier can “request void” or “request discount override” if above allowed threshold.
+  - Owner/Admin can approve/reject. Must record:
+    request_by, approved_by, reason, before/after values, timestamps, status.
+- Add tables:
+  approval_requests:
+    id SERIAL PK
+    type TEXT NOT NULL ('VOID_SALE','DISCOUNT_OVERRIDE','PRICE_OVERRIDE','RETURN_APPROVAL')
+    entity_type TEXT NOT NULL ('sale','sale_item','sales_return')
+    entity_id INTEGER NOT NULL
+    requested_by_user_id VARCHAR(255) NOT NULL
+    requested_at TIMESTAMP NOT NULL DEFAULT now()
+    status TEXT NOT NULL DEFAULT 'PENDING' ('PENDING','APPROVED','REJECTED')
+    approved_by_user_id VARCHAR(255)
+    approved_at TIMESTAMP
+    reason TEXT
+    payload_before TEXT (json string)
+    payload_after TEXT (json string)
+- UI changes (minimal):
+  - On Sale / POS screen: if discount > threshold, create approval request instead of applying.
+  - Provide “Pending Approvals” screen for owner/admin:
+      filter by type/status/date, approve/reject with reason.
+  - Void flow: “Void bill” creates approval request; if approved, sale status becomes 'VOID' and stock is restored (same logic as refund/return, but track separately).
+- Ensure audit_logs/activity_logs record who requested + who approved.
+
+MODULE 3: Stock Adjustments + Reason Codes
+- Add table:
+  stock_adjustments:
+    id SERIAL PK
+    medicine_id INTEGER NOT NULL
+    batch_number TEXT
+    adjustment_qty INTEGER NOT NULL (positive or negative)
+    reason_code TEXT NOT NULL ('DAMAGE','EXPIRY','THEFT','MANUAL_CORRECTION','STOCK_TAKE')
+    notes TEXT
+    created_by_user_id VARCHAR(255)
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+- Screen:
+  - Stock Adjustment form (select medicine, qty +/- , reason, notes)
+  - Stock Adjustment history list (filters)
+- Backend:
+  - POST /api/stock-adjustments -> writes adjustment record + updates medicines.quantity atomically
+- Audit:
+  - log stock edits in activity_logs/audit_logs
+
+MODULE 4: Shift Handover Report (Shift Open/Close)
+- Use existing day_closings table if present; do not change schema unless necessary.
+- Add UI:
+  - Shift Open: bu

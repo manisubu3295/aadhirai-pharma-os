@@ -613,3 +613,62 @@ export type MenuWithPermissions = Menu & {
   canView: boolean;
   canEdit: boolean;
 };
+
+// Petty Cash / Expenses Table
+export const pettyCashExpenses = pgTable("petty_cash_expenses", {
+  id: serial("id").primaryKey(),
+  expenseDate: text("expense_date").notNull(),
+  category: text("category").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentMode: text("payment_mode").notNull().default("CASH"),
+  notes: text("notes"),
+  createdByUserId: varchar("created_by_user_id").notNull(),
+  createdByUserName: text("created_by_user_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertPettyCashExpenseSchema = createInsertSchema(pettyCashExpenses).omit({ id: true, createdAt: true });
+export type InsertPettyCashExpense = z.infer<typeof insertPettyCashExpenseSchema>;
+export type PettyCashExpense = typeof pettyCashExpenses.$inferSelect;
+
+// Approval Requests Table (for void, discount, price override, return approvals)
+export const approvalRequests = pgTable("approval_requests", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id"),
+  requestedByUserId: varchar("requested_by_user_id").notNull(),
+  requestedByUserName: text("requested_by_user_name"),
+  status: text("status").notNull().default("PENDING"),
+  approvedByUserId: varchar("approved_by_user_id"),
+  approvedByUserName: text("approved_by_user_name"),
+  reason: text("reason"),
+  payloadBefore: text("payload_before"),
+  payloadAfter: text("payload_after"),
+  approvalNotes: text("approval_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertApprovalRequestSchema = createInsertSchema(approvalRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertApprovalRequest = z.infer<typeof insertApprovalRequestSchema>;
+export type ApprovalRequest = typeof approvalRequests.$inferSelect;
+
+// Stock Adjustments Table
+export const stockAdjustments = pgTable("stock_adjustments", {
+  id: serial("id").primaryKey(),
+  medicineId: integer("medicine_id").notNull(),
+  medicineName: text("medicine_name").notNull(),
+  batchNumber: text("batch_number").notNull(),
+  adjustmentQty: integer("adjustment_qty").notNull(),
+  adjustmentType: text("adjustment_type").notNull(),
+  reasonCode: text("reason_code").notNull(),
+  notes: text("notes"),
+  createdByUserId: varchar("created_by_user_id").notNull(),
+  createdByUserName: text("created_by_user_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertStockAdjustmentSchema = createInsertSchema(stockAdjustments).omit({ id: true, createdAt: true });
+export type InsertStockAdjustment = z.infer<typeof insertStockAdjustmentSchema>;
+export type StockAdjustment = typeof stockAdjustments.$inferSelect;
