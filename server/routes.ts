@@ -2322,7 +2322,12 @@ export async function registerRoutes(
       res.status(201).json(adjustment);
     } catch (error) {
       console.error("Error creating stock adjustment:", error);
-      res.status(500).json({ error: "Failed to create stock adjustment" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to create stock adjustment";
+      if (errorMessage.includes("Insufficient stock")) {
+        res.status(400).json({ error: errorMessage });
+      } else {
+        res.status(500).json({ error: "Failed to create stock adjustment" });
+      }
     }
   });
 

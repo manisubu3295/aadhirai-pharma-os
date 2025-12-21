@@ -1828,13 +1828,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStockAdjustment(adjustment: InsertStockAdjustment): Promise<StockAdjustment> {
+    // Calculate the actual quantity change based on adjustment type
+    const qtyChange = adjustment.adjustmentType === 'DECREASE' 
+      ? -Math.abs(adjustment.adjustmentQty) 
+      : Math.abs(adjustment.adjustmentQty);
+    
+    // Check for negative stock on decrease
+    if (adjustment.adjustmentType === 'DECREASE') {
+      const medicine = await db.select().from(medicines)
+        .where(eq(medicines.id, adjustment.medicineId)).limit(1);
+      if (medicine[0] && medicine[0].quantity + qtyChange < 0) {
+        throw new Error(`Insufficient stock. Current: ${medicine[0].quantity}, Adjustment: ${Math.abs(adjustment.adjustmentQty)}`);
+      }
+    }
+    
     // Create the adjustment record
     const result = await db.insert(stockAdjustments).values(adjustment).returning();
     
     // Update the medicine stock atomically
     await db.update(medicines)
       .set({
-        quantity: sql`${medicines.quantity} + ${adjustment.adjustmentQty}`
+        quantity: sql`${medicines.quantity} + ${qtyChange}`
       })
       .where(eq(medicines.id, adjustment.medicineId));
     

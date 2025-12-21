@@ -35,6 +35,10 @@ import MenuManagement from "@/pages/admin/MenuManagement";
 import MenuGroups from "@/pages/admin/MenuGroups";
 import UserMenuAccess from "@/pages/admin/UserMenuAccess";
 import NoAccess from "@/pages/NoAccess";
+import Expenses from "@/pages/Expenses";
+import Approvals from "@/pages/Approvals";
+import StockAdjustments from "@/pages/StockAdjustments";
+import ShiftHandover from "@/pages/ShiftHandover";
 
 function Router() {
   return (
@@ -163,6 +167,26 @@ function Router() {
       <Route path="/admin/user-access">
         <ProtectedRoute allowedRoles={["owner"]}>
           <UserMenuAccess />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/expenses">
+        <ProtectedRoute>
+          <Expenses />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/approvals">
+        <ProtectedRoute>
+          <Approvals />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/stock-adjustments">
+        <ProtectedRoute>
+          <StockAdjustments />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/shift-handover">
+        <ProtectedRoute>
+          <ShiftHandover />
         </ProtectedRoute>
       </Route>
       <Route path="/no-access" component={NoAccess} />
