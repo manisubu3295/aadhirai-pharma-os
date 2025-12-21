@@ -18,7 +18,10 @@ import {
   insertGoodsReceiptSchema,
   insertGoodsReceiptItemSchema,
   insertSalesReturnSchema,
-  insertSalesReturnItemSchema
+  insertSalesReturnItemSchema,
+  insertPettyCashExpenseSchema,
+  insertApprovalRequestSchema,
+  insertStockAdjustmentSchema
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
@@ -2078,6 +2081,248 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching activity logs:", error);
       res.status(500).json({ error: "Failed to fetch activity logs" });
+    }
+  });
+
+  // ========== PETTY CASH / EXPENSES ==========
+  
+  // Get expenses with optional filters
+  app.get("/api/expenses", requireAuth, async (req, res) => {
+    try {
+      const filters: { from?: string; to?: string; category?: string } = {};
+      if (req.query.from) filters.from = req.query.from as string;
+      if (req.query.to) filters.to = req.query.to as string;
+      if (req.query.category) filters.category = req.query.category as string;
+      
+      const expenses = await storage.getPettyCashExpenses(filters);
+      res.json(expenses);
+    } catch (error) {
+      console.error("Error fetching expenses:", error);
+      res.status(500).json({ error: "Failed to fetch expenses" });
+    }
+  });
+  
+  // Get expense by ID
+  app.get("/api/expenses/:id", requireAuth, async (req, res) => {
+    try {
+      const expense = await storage.getPettyCashExpense(parseInt(req.params.id));
+      if (!expense) {
+        return res.status(404).json({ error: "Expense not found" });
+      }
+      res.json(expense);
+    } catch (error) {
+      console.error("Error fetching expense:", error);
+      res.status(500).json({ error: "Failed to fetch expense" });
+    }
+  });
+  
+  // Create new expense
+  app.post("/api/expenses", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      const data = insertPettyCashExpenseSchema.parse({
+        ...req.body,
+        createdByUserId: req.session.userId,
+        createdByUserName: user?.name || user?.username
+      });
+      
+      const expense = await storage.createPettyCashExpense(data);
+      res.status(201).json(expense);
+    } catch (error) {
+      console.error("Error creating expense:", error);
+      res.status(500).json({ error: "Failed to create expense" });
+    }
+  });
+  
+  // Update expense
+  app.put("/api/expenses/:id", requireAuth, async (req, res) => {
+    try {
+      const expense = await storage.updatePettyCashExpense(parseInt(req.params.id), req.body);
+      if (!expense) {
+        return res.status(404).json({ error: "Expense not found" });
+      }
+      res.json(expense);
+    } catch (error) {
+      console.error("Error updating expense:", error);
+      res.status(500).json({ error: "Failed to update expense" });
+    }
+  });
+  
+  // Delete expense
+  app.delete("/api/expenses/:id", requireAuth, async (req, res) => {
+    try {
+      const deleted = await storage.deletePettyCashExpense(parseInt(req.params.id));
+      if (!deleted) {
+        return res.status(404).json({ error: "Expense not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+      res.status(500).json({ error: "Failed to delete expense" });
+    }
+  });
+  
+  // Get daily expense summary
+  app.get("/api/expenses/summary/:date", requireAuth, async (req, res) => {
+    try {
+      const summary = await storage.getPettyCashSummary(req.params.date);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching expense summary:", error);
+      res.status(500).json({ error: "Failed to fetch expense summary" });
+    }
+  });
+
+  // ========== APPROVAL REQUESTS ==========
+  
+  // Get approval requests with optional filters
+  app.get("/api/approvals", requireAuth, async (req, res) => {
+    try {
+      const filters: { status?: string; type?: string; from?: Date; to?: Date } = {};
+      if (req.query.status) filters.status = req.query.status as string;
+      if (req.query.type) filters.type = req.query.type as string;
+      if (req.query.from) filters.from = new Date(req.query.from as string);
+      if (req.query.to) filters.to = new Date(req.query.to as string);
+      
+      const requests = await storage.getApprovalRequests(filters);
+      res.json(requests);
+    } catch (error) {
+      console.error("Error fetching approval requests:", error);
+      res.status(500).json({ error: "Failed to fetch approval requests" });
+    }
+  });
+  
+  // Get approval request by ID
+  app.get("/api/approvals/:id", requireAuth, async (req, res) => {
+    try {
+      const request = await storage.getApprovalRequest(parseInt(req.params.id));
+      if (!request) {
+        return res.status(404).json({ error: "Approval request not found" });
+      }
+      res.json(request);
+    } catch (error) {
+      console.error("Error fetching approval request:", error);
+      res.status(500).json({ error: "Failed to fetch approval request" });
+    }
+  });
+  
+  // Create approval request
+  app.post("/api/approvals", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      const data = insertApprovalRequestSchema.parse({
+        ...req.body,
+        requestedByUserId: req.session.userId,
+        requestedByUserName: user?.name || user?.username
+      });
+      
+      const request = await storage.createApprovalRequest(data);
+      res.status(201).json(request);
+    } catch (error) {
+      console.error("Error creating approval request:", error);
+      res.status(500).json({ error: "Failed to create approval request" });
+    }
+  });
+  
+  // Approve request (owner/admin only)
+  app.post("/api/approvals/:id/approve", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      const request = await storage.approveRequest(
+        parseInt(req.params.id),
+        req.session.userId!,
+        user?.name || user?.username || "Unknown",
+        req.body.notes
+      );
+      
+      if (!request) {
+        return res.status(404).json({ error: "Approval request not found" });
+      }
+      res.json(request);
+    } catch (error) {
+      console.error("Error approving request:", error);
+      res.status(500).json({ error: "Failed to approve request" });
+    }
+  });
+  
+  // Reject request (owner/admin only)
+  app.post("/api/approvals/:id/reject", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      const request = await storage.rejectRequest(
+        parseInt(req.params.id),
+        req.session.userId!,
+        user?.name || user?.username || "Unknown",
+        req.body.notes
+      );
+      
+      if (!request) {
+        return res.status(404).json({ error: "Approval request not found" });
+      }
+      res.json(request);
+    } catch (error) {
+      console.error("Error rejecting request:", error);
+      res.status(500).json({ error: "Failed to reject request" });
+    }
+  });
+
+  // ========== STOCK ADJUSTMENTS ==========
+  
+  // Get stock adjustments with optional filters
+  app.get("/api/stock-adjustments", requireAuth, async (req, res) => {
+    try {
+      const filters: { medicineId?: number; reasonCode?: string; from?: Date; to?: Date } = {};
+      if (req.query.medicineId) filters.medicineId = parseInt(req.query.medicineId as string);
+      if (req.query.reasonCode) filters.reasonCode = req.query.reasonCode as string;
+      if (req.query.from) filters.from = new Date(req.query.from as string);
+      if (req.query.to) filters.to = new Date(req.query.to as string);
+      
+      const adjustments = await storage.getStockAdjustments(filters);
+      res.json(adjustments);
+    } catch (error) {
+      console.error("Error fetching stock adjustments:", error);
+      res.status(500).json({ error: "Failed to fetch stock adjustments" });
+    }
+  });
+  
+  // Get stock adjustment by ID
+  app.get("/api/stock-adjustments/:id", requireAuth, async (req, res) => {
+    try {
+      const adjustment = await storage.getStockAdjustment(parseInt(req.params.id));
+      if (!adjustment) {
+        return res.status(404).json({ error: "Stock adjustment not found" });
+      }
+      res.json(adjustment);
+    } catch (error) {
+      console.error("Error fetching stock adjustment:", error);
+      res.status(500).json({ error: "Failed to fetch stock adjustment" });
+    }
+  });
+  
+  // Create stock adjustment
+  app.post("/api/stock-adjustments", requireRole("owner", "admin", "pharmacist"), async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      
+      // Get medicine details
+      const medicine = await storage.getMedicine(req.body.medicineId);
+      if (!medicine) {
+        return res.status(404).json({ error: "Medicine not found" });
+      }
+      
+      const data = insertStockAdjustmentSchema.parse({
+        ...req.body,
+        medicineName: medicine.name,
+        batchNumber: req.body.batchNumber || medicine.batchNumber,
+        createdByUserId: req.session.userId,
+        createdByUserName: user?.name || user?.username
+      });
+      
+      const adjustment = await storage.createStockAdjustment(data);
+      res.status(201).json(adjustment);
+    } catch (error) {
+      console.error("Error creating stock adjustment:", error);
+      res.status(500).json({ error: "Failed to create stock adjustment" });
     }
   });
 
