@@ -56,7 +56,14 @@ export default function AuditLog() {
   const [userFilter, setUserFilter] = useState<string>("");
 
   const { data: logs = [], isLoading } = useQuery<AuditLogEntry[]>({
-    queryKey: ["/api/audit-logs", dateFrom, dateTo],
+    queryKey: ["audit-logs", dateFrom, dateTo],
+    queryFn: async () => {
+      const response = await fetch(`/api/audit-logs?from=${dateFrom}&to=${dateTo}`, {
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error("Failed to fetch audit logs");
+      return response.json();
+    },
     enabled: isPro,
   });
 
