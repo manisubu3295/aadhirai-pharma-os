@@ -116,6 +116,7 @@ export async function registerRoutes(
       }
       
       req.session.userId = user.id;
+      req.session.userRole = user.role;
       req.session.lastActivity = Date.now();
       
       const { password: _, ...userWithoutPassword } = user;
@@ -306,7 +307,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/users", requireRole("owner"), async (req, res) => {
+  app.get("/api/users", requireRole("owner", "admin"), async (req, res) => {
     try {
       const users = await storage.getUsers();
       const usersWithoutPasswords = users.map(({ password: _, ...u }) => u);
