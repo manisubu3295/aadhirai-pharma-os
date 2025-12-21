@@ -13,15 +13,24 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   ShoppingCart, 
   Calendar,
   Search,
   Receipt,
-  IndianRupee
+  IndianRupee,
+  User
 } from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
+import { useAuth } from "@/lib/auth";
 
 interface Sale {
   id: number;
@@ -38,6 +47,13 @@ interface Sale {
   createdAt: string;
 }
 
+interface UserInfo {
+  id: string;
+  username: string;
+  name: string;
+  role: string;
+}
+
 export default function MySales() {
   const today = new Date();
   const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -45,11 +61,28 @@ export default function MySales() {
   const [fromDate, setFromDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
   const [toDate, setToDate] = useState(today.toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterUserId, setFilterUserId] = useState("");
+
+  const { user: currentUser } = useAuth();
+  const isOwnerOrAdmin = currentUser?.role === "owner" || currentUser?.role === "admin";
+
+  const { data: users = [] } = useQuery<UserInfo[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const response = await fetch("/api/users");
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: isOwnerOrAdmin,
+  });
 
   const { data: sales = [], isLoading, refetch } = useQuery<Sale[]>({
-    queryKey: ["/api/my-sales", fromDate, toDate, searchQuery],
+    queryKey: ["/api/my-sales", fromDate, toDate, searchQuery, filterUserId],
     queryFn: async () => {
       let url = `/api/my-sales?from=${fromDate}&to=${toDate}`;
+      if (filterUserId && filterUserId !== "all") {
+        url += `&userId=${filterUserId}`;
+      }
       if (searchQuery.trim()) {
         url += `&search=${encodeURIComponent(searchQuery.trim())}`;
       }
@@ -61,8 +94,8 @@ export default function MySales() {
 
   const totalSales = sales.length;
   const totalAmount = sales.reduce((sum, s) => sum + parseFloat(s.total || "0"), 0);
-  const cashSales = sales.filter(s => s.paymentMethod === "cash").length;
-  const creditSales = sales.filter(s => s.paymentMethod === "credit").length;
+  const cashSales = sales.filter(s => s.paymentMethod?.toLowerCase() === "cash").length;
+  const creditSales = sales.filter(s => s.paymentMethod?.toLowerCase() === "credit").length;
 
   const getPaymentBadge = (method: string) => {
     const colors: Record<string, string> = {
@@ -71,7 +104,7 @@ export default function MySales() {
       card: "bg-purple-100 text-purple-800",
       credit: "bg-orange-100 text-orange-800",
     };
-    return colors[method.toLowerCase()] || "bg-gray-100 text-gray-800";
+    return colors[method?.toLowerCase()] || "bg-gray-100 text-gray-800";
   };
 
   return (
@@ -80,10 +113,10 @@ export default function MySales() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
             <ShoppingCart className="h-6 w-6" />
-            My Sales History
+            {isOwnerOrAdmin ? "Sales History" : "My Sales History"}
           </h1>
           <p className="text-muted-foreground mt-1">
-            View all transactions created by you
+            {isOwnerOrAdmin ? "View all users' sales transactions" : "View all transactions created by you"}
           </p>
         </div>
 
@@ -139,7 +172,7 @@ export default function MySales() {
             <CardTitle className="text-lg">Filters</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="space-y-2">
                 <Label>From Date</Label>
                 <div className="relative">
@@ -166,6 +199,25 @@ export default function MySales() {
                   />
                 </div>
               </div>
+              {isOwnerOrAdmin && users.length > 0 && (
+                <div className="space-y-2">
+                  <Label>User</Label>
+                  <Select value={filterUserId} onValueChange={setFilterUserId}>
+                    <SelectTrigger data-testid="select-user">
+                      <User className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="All Users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Users</SelectItem>
+                      {users.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name || u.username}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Search</Label>
                 <div className="relative">
@@ -243,7 +295,7 @@ export default function MySales() {
                         <TableCell className="text-right font-bold">₹{parseFloat(sale.total).toFixed(2)}</TableCell>
                         <TableCell>
                           <Badge className={getPaymentBadge(sale.paymentMethod)} data-testid={`badge-payment-${sale.id}`}>
-                            {sale.paymentMethod.toUpperCase()}
+                            {sale.paymentMethod?.toUpperCase() || "N/A"}
                           </Badge>
                         </TableCell>
                       </TableRow>

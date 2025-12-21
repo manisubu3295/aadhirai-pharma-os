@@ -641,13 +641,26 @@ export async function registerRoutes(
 
   app.get("/api/my-sales", requireAuth, async (req, res) => {
     try {
-      const userId = req.session.userId!;
+      const userRole = req.session.userRole;
+      const isOwnerOrAdmin = userRole === "owner" || userRole === "admin";
+      
       const from = req.query.from ? new Date(req.query.from as string) : undefined;
       const to = req.query.to ? new Date(req.query.to as string + "T23:59:59") : undefined;
       const search = req.query.search as string | undefined;
       
-      const sales = await storage.getSalesByUser(userId, { from, to, search });
-      res.json(sales);
+      if (isOwnerOrAdmin) {
+        const targetUserId = req.query.userId as string | undefined;
+        const sales = await storage.getSalesWithFilters({ 
+          userId: targetUserId || undefined, 
+          from, 
+          to, 
+          search 
+        });
+        res.json(sales);
+      } else {
+        const sales = await storage.getSalesByUser(req.session.userId!, { from, to, search });
+        res.json(sales);
+      }
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch user sales" });
     }

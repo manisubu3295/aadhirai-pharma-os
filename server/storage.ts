@@ -445,6 +445,7 @@ export interface IStorage {
   
   getSales(limit?: number): Promise<Sale[]>;
   getSalesByUser(userId: string, options?: { from?: Date; to?: Date; search?: string }): Promise<Sale[]>;
+  getSalesWithFilters(options: { userId?: string; from?: Date; to?: Date; search?: string; limit?: number }): Promise<Sale[]>;
   getSale(id: number): Promise<Sale | undefined>;
   getSaleByInvoiceNo(invoiceNo: string): Promise<Sale | undefined>;
   createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }>;
@@ -721,6 +722,43 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(sales.createdAt));
     
     if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      results = results.filter(s => 
+        s.invoiceNo?.toLowerCase().includes(searchLower) ||
+        s.customerName?.toLowerCase().includes(searchLower) ||
+        s.customerPhone?.includes(searchLower)
+      );
+    }
+    
+    return results;
+  }
+
+  async getSalesWithFilters(options: { userId?: string; from?: Date; to?: Date; search?: string; limit?: number }): Promise<Sale[]> {
+    const conditions: any[] = [];
+    
+    if (options.userId) {
+      conditions.push(eq(sales.userId, options.userId));
+    }
+    if (options.from) {
+      conditions.push(gte(sales.createdAt, options.from));
+    }
+    if (options.to) {
+      conditions.push(lte(sales.createdAt, options.to));
+    }
+    
+    let query = db.select().from(sales);
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    const hasDateFilter = options.from || options.to;
+    const effectiveLimit = options.limit || (hasDateFilter ? undefined : 10000);
+    
+    let orderedQuery = query.orderBy(desc(sales.createdAt));
+    let results = effectiveLimit ? await orderedQuery.limit(effectiveLimit) : await orderedQuery;
+    
+    if (options.search) {
       const searchLower = options.search.toLowerCase();
       results = results.filter(s => 
         s.invoiceNo?.toLowerCase().includes(searchLower) ||
