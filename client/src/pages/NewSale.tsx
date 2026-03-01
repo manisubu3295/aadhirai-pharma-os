@@ -497,8 +497,6 @@ export default function NewSale() {
 
   const calculations = useMemo(() => {
     let subtotal = 0;
-    let totalCgst = 0;
-    let totalSgst = 0;
     let totalMRP = 0;
     let totalItemDiscount = 0;
 
@@ -508,15 +506,12 @@ export default function NewSale() {
       totalItemDiscount += item.discount;
       const itemTotal = item.price * item.displayQty - item.discount;
       subtotal += itemTotal;
-      const gstAmount = (itemTotal * item.gstRate) / 100;
-      totalCgst += gstAmount / 2;
-      totalSgst += gstAmount / 2;
     });
 
     const discountPercent = Number(billDiscountPercent) || 0;
     const discountAmount = (subtotal * discountPercent) / 100;
-    const tax = totalCgst + totalSgst;
-    const netAmount = subtotal - discountAmount + tax;
+    const tax = 0;
+    const netAmount = subtotal - discountAmount;
     const roundedNet = Math.round(netAmount);
     const roundOff = roundedNet - netAmount;
     const received = Number(receivedAmount) || 0;
@@ -524,8 +519,8 @@ export default function NewSale() {
 
     return {
       subtotal,
-      cgst: totalCgst,
-      sgst: totalSgst,
+      cgst: 0,
+      sgst: 0,
       tax,
       discountPercent,
       discount: discountAmount,
@@ -584,7 +579,6 @@ export default function NewSale() {
       sendViaEmail,
       items: items.map((item) => {
         const itemTotal = item.price * item.displayQty - item.discount;
-        const gstAmount = (itemTotal * item.gstRate) / 100;
         return {
           medicineId: item.medicineId,
           medicineName: item.name,
@@ -594,11 +588,11 @@ export default function NewSale() {
           quantity: item.quantity,
           price: item.price.toFixed(2),
           mrp: item.mrp?.toFixed(2) || null,
-          gstRate: item.gstRate.toFixed(2),
-          cgst: (gstAmount / 2).toFixed(2),
-          sgst: (gstAmount / 2).toFixed(2),
+          gstRate: "0.00",
+          cgst: "0.00",
+          sgst: "0.00",
           discount: item.discount.toFixed(2),
-          total: (itemTotal + gstAmount).toFixed(2),
+          total: itemTotal.toFixed(2),
         };
       }),
     };
@@ -1238,12 +1232,6 @@ export default function NewSale() {
                     <span className="text-xs">%</span>
                   </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">CGST + SGST</span>
-                  <span className="font-medium" data-testid="text-cgst">
-                    ₹{(calculations.cgst + calculations.sgst).toFixed(2)}
-                  </span>
-                </div>
                 {calculations.roundOff !== 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Round Off</span>
@@ -1553,6 +1541,8 @@ export default function NewSale() {
                   showMrp: appSettings.showMrp,
                   showGstBreakup: appSettings.showGstBreakup,
                   showDoctor: appSettings.showDoctor,
+                  hideTaxDetails: true,
+                  hideStoreGstin: true,
                 }}
               />
             </div>

@@ -33,7 +33,6 @@ import {
   RefreshCw,
   Clock
 } from "lucide-react";
-import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 import { useAuth } from "@/lib/auth";
 import { useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { useNavigation, groupMenusBySection } from "@/contexts/NavigationContext";
@@ -210,11 +209,8 @@ export function Sidebar() {
       {/* Brand Header */}
       <div className="p-5 border-b border-slate-800/80">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center p-1.5 shadow-lg shadow-indigo-500/20">
-            <img src={logoImage} alt="Aadhirai" className="w-full h-full object-contain" />
-          </div>
           <div>
-            <h1 className="font-bold text-base text-white tracking-tight">Aadhirai</h1>
+            <h1 className="font-bold text-base text-white tracking-tight">Medora+</h1>
             <p className="text-[11px] text-slate-400 font-medium">Pharmacy Management</p>
           </div>
         </div>

@@ -111,14 +111,117 @@ console.log("Database URL:" + JSON.stringify(process.env.DATABASE_URL));
 console.log("DATABASE_URL =", process.env.DATABASE_URL);
 console.log("PGDATABASE   =", process.env.PGDATABASE);
 
+const DEFAULT_DATABASE_NAME = "medora_vasantham";
+
+function withDatabaseName(connectionString: string, databaseName: string): string {
+  const parsedUrl = new URL(connectionString);
+  parsedUrl.pathname = `/${databaseName}`;
+  return parsedUrl.toString();
+}
+
+function getResolvedDatabaseConfig() {
+  const rawConnectionString = process.env.DATABASE_URL;
+  if (!rawConnectionString) {
+    throw new Error("DATABASE_URL is required");
+  }
+
+  const parsedUrl = new URL(rawConnectionString);
+  const dbFromUrl = parsedUrl.pathname.replace(/^\//, "").trim();
+  const resolvedDatabaseName = dbFromUrl || process.env.PGDATABASE || DEFAULT_DATABASE_NAME;
+  const resolvedConnectionString = withDatabaseName(rawConnectionString, resolvedDatabaseName);
+
+  return {
+    resolvedDatabaseName,
+    resolvedConnectionString,
+    adminConnectionString: withDatabaseName(resolvedConnectionString, "postgres"),
+  };
+}
+
+const databaseConfig = getResolvedDatabaseConfig();
+
+async function ensureDatabaseExists() {
+  const adminPool = new Pool({
+    connectionString: databaseConfig.adminConnectionString,
+    max: 1,
+  });
+
+  try {
+    const checkResult = await adminPool.query(
+      `SELECT 1 FROM pg_database WHERE datname = $1`,
+      [databaseConfig.resolvedDatabaseName],
+    );
+
+    if (checkResult.rowCount === 0) {
+      const safeDatabaseName = databaseConfig.resolvedDatabaseName.replace(/"/g, '""');
+      await adminPool.query(`CREATE DATABASE "${safeDatabaseName}"`);
+      console.log(`Database created: ${databaseConfig.resolvedDatabaseName}`);
+    }
+  } catch (error: any) {
+    if (error?.code !== "42P04") {
+      throw error;
+    }
+  } finally {
+    await adminPool.end();
+  }
+}
+
+async function seedDefaultAppSettings() {
+  const defaultSettings: Record<string, string> = {
+    storeName: "Medora+",
+    storePhone: "+91 98765 43210",
+    storeAddress: "123 Main Street, Chennai, Tamil Nadu - 600001",
+    storeEmail: "contact@medoraplus.com",
+    dlNo: "TN-01-123456",
+    gstin: "33AABCU9603R1ZM",
+    stateCode: "33",
+    autoGst: "false",
+    invoicePrefix: "INV-",
+    startNumber: "1001",
+    showMrp: "true",
+    showGstBreakup: "false",
+    showDoctor: "true",
+    printOnSave: "false",
+  };
+
+  const valueColumnResult = await pool.query<{
+    data_type: string;
+    udt_name: string;
+  }>(
+    `
+      SELECT data_type, udt_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'app_settings'
+        AND column_name = 'value'
+      LIMIT 1
+    `,
+  );
+
+  const valueColumn = valueColumnResult.rows[0];
+  const isJsonValueColumn = valueColumn
+    ? valueColumn.data_type === "json" || valueColumn.udt_name === "jsonb"
+    : false;
+
+  for (const [key, value] of Object.entries(defaultSettings)) {
+    const preparedValue = isJsonValueColumn ? JSON.stringify(value) : value;
+
+    await pool.query(
+      `INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+      [key, preparedValue],
+    );
+  }
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseConfig.resolvedConnectionString,
 });
 
 const db = drizzle(pool);
 
 export async function initializeDatabase() {
   try {
+    await ensureDatabaseExists();
+
   const r = await pool.query("select current_database() as db");
 console.log("Connected DB:", r.rows[0].db);
     await pool.query(`
@@ -310,6 +413,13 @@ console.log("Connected DB:", r.rows[0].db);
         prefix TEXT NOT NULL DEFAULT 'INV',
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id SERIAL PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
       
       INSERT INTO sequences (name, current_value, prefix) 
       VALUES ('invoice', 0, 'INV') 
@@ -410,6 +520,9 @@ console.log("Connected DB:", r.rows[0].db);
       VALUES ('purchase_return', 0, 'PR')
       ON CONFLICT (name) DO NOTHING;
     `);
+
+    await seedDefaultAppSettings();
+
     console.log("Database tables initialized successfully");
   } catch (error) {
     console.error("Database initialization error:", error);

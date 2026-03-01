@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { useNavigation } from "@/contexts/NavigationContext";
 import { Lock, User, ArrowRight } from "lucide-react";
-import logoImage from '@assets/4809A98F-D4B8-4E8A-AEF1-11CDDF7D2FD6_1765274700818.png';
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -57,11 +56,8 @@ export default function Login() {
       <div className="hidden lg:flex lg:w-1/2 bg-slate-900 flex-col justify-between p-12">
         <div>
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center p-2 shadow-lg shadow-indigo-500/30">
-              <img src={logoImage} alt="Aadhirai" className="w-full h-full object-contain" />
-            </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Aadhirai</h1>
+              <h1 className="text-xl font-bold text-white">Medora+</h1>
               <p className="text-sm text-slate-400">Pharmacy Management</p>
             </div>
           </div>
@@ -100,11 +96,8 @@ export default function Login() {
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center p-2 shadow-lg">
-              <img src={logoImage} alt="Aadhirai" className="w-full h-full object-contain" />
-            </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-900">Aadhirai</h1>
+              <h1 className="text-xl font-bold text-slate-900">Medora+</h1>
               <p className="text-sm text-slate-500">Pharmacy Management</p>
             </div>
           </div>
@@ -182,19 +175,6 @@ export default function Login() {
             </CardContent>
           </Card>
 
-          <div className="mt-6 p-4 bg-slate-100 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-500 text-center mb-2">Demo Credentials</p>
-            <div className="flex justify-center gap-6 text-sm">
-              <div className="text-center">
-                <p className="font-mono font-medium text-slate-700">owner</p>
-                <p className="text-xs text-slate-400">username</p>
-              </div>
-              <div className="text-center">
-                <p className="font-mono font-medium text-slate-700">password123</p>
-                <p className="text-xs text-slate-400">password</p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
