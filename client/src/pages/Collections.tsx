@@ -14,6 +14,7 @@ import { usePlan } from "@/lib/planContext";
 import { format } from "date-fns";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
 import { useSettings } from "@/contexts/SettingsContext";
+import { endOfLocalDay, formatAppDate, formatAppDateTime, parseServerDate, startOfLocalDay } from "@/lib/dateTime";
 import type { Sale as SaleType, SaleItem } from "@shared/schema";
 
 interface Sale {
@@ -223,15 +224,14 @@ export default function Collections() {
 
   const filterByDateRange = <T extends { createdAt?: string; returnDate?: string }>(items: T[]) => {
     return items.filter((item) => {
-      const itemDate = new Date(item.createdAt || item.returnDate || "");
+      const itemDate = parseServerDate(item.createdAt || item.returnDate || "");
       if (isNaN(itemDate.getTime())) return false;
       
       // Guard against empty/invalid date strings
       if (!dateFrom || !dateTo) return true;
       
-      // Parse YYYY-MM-DD as local time by appending T00:00:00
-      const from = new Date(`${dateFrom}T00:00:00`);
-      const to = new Date(`${dateTo}T23:59:59.999`);
+      const from = startOfLocalDay(dateFrom);
+      const to = endOfLocalDay(dateTo);
       
       // Check if parsed dates are valid
       if (isNaN(from.getTime()) || isNaN(to.getTime())) return true;
@@ -257,6 +257,9 @@ export default function Collections() {
     const parsed = parseFloat(String(value));
     return isNaN(parsed) ? 0 : parsed;
   };
+
+  const totalRefundAmount = filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0);
+  const formattedTotalRefund = `${totalRefundAmount > 0 ? "-" : ""}₹${totalRefundAmount.toFixed(2)}`;
 
   const paymentTotals = filteredSales.reduce((acc, sale) => {
     const method = sale.paymentMethod || 'Unknown';
@@ -467,7 +470,7 @@ export default function Collections() {
                       onClick={() => exportToCSV(
                         `collections_daily_${dateFrom}_to_${dateTo}.csv`,
                         ["Invoice No", "Date", "Customer", "Payment Method", "Amount"],
-                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, format(new Date(s.createdAt), "dd/MM/yyyy HH:mm"), s.customerName, s.paymentMethod, s.total])
+                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, formatAppDateTime(s.createdAt, "dd/MM/yyyy HH:mm"), s.customerName, s.paymentMethod, s.total])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -479,7 +482,7 @@ export default function Collections() {
                       onClick={() => exportToPDF(
                         "Daily Collections Report",
                         ["Invoice No", "Date", "Customer", "Payment", "Amount"],
-                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, format(new Date(s.createdAt), "dd/MM/yyyy"), s.customerName, s.paymentMethod, `₹${safeParseFloat(s.total).toFixed(2)}`])
+                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, formatAppDate(s.createdAt, "dd/MM/yyyy"), s.customerName, s.paymentMethod, `₹${safeParseFloat(s.total).toFixed(2)}`])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -520,7 +523,7 @@ export default function Collections() {
                         Refunds
                       </div>
                       <p className="text-2xl font-bold text-red-600 mt-1" data-testid="text-daily-refunds">
-                        -₹{filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0).toFixed(2)}
+                        {formattedTotalRefund}
                       </p>
                     </CardContent>
                   </Card>
@@ -554,7 +557,7 @@ export default function Collections() {
                       {filteredSales.map((sale) => (
                         <TableRow key={sale.id} data-testid={`row-collection-${sale.id}`}>
                           <TableCell className="font-medium">{sale.invoiceNo || `INV-${sale.id}`}</TableCell>
-                          <TableCell>{format(new Date(sale.createdAt), "dd MMM yyyy, hh:mm a")}</TableCell>
+                          <TableCell>{formatAppDateTime(sale.createdAt, "dd MMM yyyy, hh:mm a")}</TableCell>
                           <TableCell>{sale.customerName}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -590,7 +593,7 @@ export default function Collections() {
                       onClick={() => exportToCSV(
                         `refunds_${dateFrom}_to_${dateTo}.csv`,
                         ["Return No", "Invoice", "Date", "Refund Mode", "Amount", "Reason"],
-                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, format(new Date(r.createdAt), "dd/MM/yyyy"), r.refundMode, r.totalRefund, r.reason || ""])
+                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, formatAppDate(r.createdAt, "dd/MM/yyyy"), r.refundMode, r.totalRefund, r.reason || ""])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -602,7 +605,7 @@ export default function Collections() {
                       onClick={() => exportToPDF(
                         "Refunds Report",
                         ["Return No", "Invoice", "Date", "Mode", "Amount"],
-                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, format(new Date(r.createdAt), "dd/MM/yyyy"), r.refundMode, `₹${safeParseFloat(r.totalRefund).toFixed(2)}`])
+                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, formatAppDate(r.createdAt, "dd/MM/yyyy"), r.refundMode, `₹${safeParseFloat(r.totalRefund).toFixed(2)}`])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -621,7 +624,7 @@ export default function Collections() {
                     <CardContent className="pt-4">
                       <div className="text-sm text-red-600">Total Refunds</div>
                       <p className="text-2xl font-bold text-red-700">
-                        -₹{filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0).toFixed(2)}
+                        {formattedTotalRefund}
                       </p>
                     </CardContent>
                   </Card>
@@ -646,7 +649,7 @@ export default function Collections() {
                         <TableRow key={ret.id} data-testid={`row-refund-${ret.id}`}>
                           <TableCell className="font-medium">RET-{ret.id}</TableCell>
                           <TableCell>{ret.invoiceNo}</TableCell>
-                          <TableCell>{format(new Date(ret.createdAt), "dd MMM yyyy, hh:mm a")}</TableCell>
+                          <TableCell>{formatAppDateTime(ret.createdAt, "dd MMM yyyy, hh:mm a")}</TableCell>
                           <TableCell>
                             <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">
                               {ret.refundMode}

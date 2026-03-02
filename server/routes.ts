@@ -33,6 +33,14 @@ const loginSchema = z.object({
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
+function parseDateQueryStart(value: string): Date {
+  return new Date(`${value}T00:00:00`);
+}
+
+function parseDateQueryEnd(value: string): Date {
+  return new Date(`${value}T23:59:59.999`);
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -644,8 +652,8 @@ export async function registerRoutes(
       const userRole = req.session.userRole;
       const isOwnerOrAdmin = userRole === "owner" || userRole === "admin";
       
-      const from = req.query.from ? new Date(req.query.from as string) : undefined;
-      const to = req.query.to ? new Date(req.query.to as string + "T23:59:59") : undefined;
+      const from = req.query.from ? parseDateQueryStart(req.query.from as string) : undefined;
+      const to = req.query.to ? parseDateQueryEnd(req.query.to as string) : undefined;
       const search = req.query.search as string | undefined;
       
       if (isOwnerOrAdmin) {
@@ -723,7 +731,11 @@ export async function registerRoutes(
       }
       
       const invoiceNo = await storage.getNextInvoiceNumber();
-      const saleWithInvoice = { ...sale, invoiceNo };
+      const saleWithInvoice = {
+        ...sale,
+        invoiceNo,
+        userId: req.session.userId || sale.userId || null,
+      };
       
       const createdSale = await storage.createSale(saleWithInvoice, saleItems);
       res.status(201).json(createdSale);
@@ -872,10 +884,15 @@ export async function registerRoutes(
       const { from, to } = req.query;
       const allSales = await storage.getSales(10000);
       
-      const fromDate = from ? new Date(from as string) : new Date();
-      const toDate = to ? new Date(to as string) : new Date();
-      fromDate.setHours(0, 0, 0, 0);
-      toDate.setHours(23, 59, 59, 999);
+      const fromDate = from ? parseDateQueryStart(from as string) : new Date();
+      const toDate = to ? parseDateQueryEnd(to as string) : new Date();
+
+      if (!from) {
+        fromDate.setHours(0, 0, 0, 0);
+      }
+      if (!to) {
+        toDate.setHours(23, 59, 59, 999);
+      }
       
       const filteredSales = allSales.filter(sale => {
         const saleDate = new Date(sale.createdAt);
@@ -989,8 +1006,8 @@ export async function registerRoutes(
 
   app.get("/api/audit-logs", requireRole("owner"), async (req, res) => {
     try {
-      const from = req.query.from ? new Date(req.query.from as string) : undefined;
-      const to = req.query.to ? new Date(req.query.to as string) : undefined;
+      const from = req.query.from ? parseDateQueryStart(req.query.from as string) : undefined;
+      const to = req.query.to ? parseDateQueryEnd(req.query.to as string) : undefined;
       const logs = await storage.getAuditLogs(from, to);
       res.json(logs);
     } catch (error) {
@@ -2137,10 +2154,10 @@ export async function registerRoutes(
         filters.action = req.query.action as string;
       }
       if (req.query.from) {
-        filters.from = new Date(req.query.from as string);
+        filters.from = parseDateQueryStart(req.query.from as string);
       }
       if (req.query.to) {
-        filters.to = new Date(req.query.to as string);
+        filters.to = parseDateQueryEnd(req.query.to as string);
       }
       
       const logs = await storage.getActivityLogs(filters);
@@ -2248,8 +2265,8 @@ export async function registerRoutes(
       const filters: { status?: string; type?: string; from?: Date; to?: Date } = {};
       if (req.query.status) filters.status = req.query.status as string;
       if (req.query.type) filters.type = req.query.type as string;
-      if (req.query.from) filters.from = new Date(req.query.from as string);
-      if (req.query.to) filters.to = new Date(req.query.to as string);
+      if (req.query.from) filters.from = parseDateQueryStart(req.query.from as string);
+      if (req.query.to) filters.to = parseDateQueryEnd(req.query.to as string);
       
       const requests = await storage.getApprovalRequests(filters);
       res.json(requests);
@@ -2341,8 +2358,8 @@ export async function registerRoutes(
       const filters: { medicineId?: number; reasonCode?: string; from?: Date; to?: Date } = {};
       if (req.query.medicineId) filters.medicineId = parseInt(req.query.medicineId as string);
       if (req.query.reasonCode) filters.reasonCode = req.query.reasonCode as string;
-      if (req.query.from) filters.from = new Date(req.query.from as string);
-      if (req.query.to) filters.to = new Date(req.query.to as string);
+      if (req.query.from) filters.from = parseDateQueryStart(req.query.from as string);
+      if (req.query.to) filters.to = parseDateQueryEnd(req.query.to as string);
       
       const adjustments = await storage.getStockAdjustments(filters);
       res.json(adjustments);
