@@ -166,6 +166,16 @@ async function ensureDatabaseExists() {
 }
 
 async function seedDefaultAppSettings() {
+  const settingsCountResult = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM app_settings`,
+  );
+
+  const existingCount = Number(settingsCountResult.rows[0]?.count || "0");
+  if (existingCount > 0) {
+    console.log(`Skipping app settings seed: ${existingCount} existing rows found`);
+    return;
+  }
+
   const defaultSettings: Record<string, string> = {
     storeName: "Medora+",
     storePhone: "+91 98765 43210",
@@ -174,11 +184,11 @@ async function seedDefaultAppSettings() {
     dlNo: "TN-01-123456",
     gstin: "33AABCU9603R1ZM",
     stateCode: "33",
-    autoGst: "false",
+    autoGst: "true",
     invoicePrefix: "INV-",
     startNumber: "1001",
     showMrp: "true",
-    showGstBreakup: "false",
+    showGstBreakup: "true",
     showDoctor: "true",
     printOnSave: "false",
   };
@@ -210,6 +220,8 @@ async function seedDefaultAppSettings() {
       [key, preparedValue],
     );
   }
+
+  console.log(`Seeded default app settings: ${Object.keys(defaultSettings).length} rows`);
 }
 
 const pool = new Pool({

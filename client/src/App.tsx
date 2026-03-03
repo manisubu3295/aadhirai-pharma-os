@@ -171,6 +171,11 @@ function Router() {
           <UserMenuAccess />
         </ProtectedRoute>
       </Route>
+      <Route path="/admin/users">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <UserMenuAccess />
+        </ProtectedRoute>
+      </Route>
       <Route path="/expenses">
         <ProtectedRoute>
           <Expenses />

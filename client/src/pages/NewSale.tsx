@@ -133,6 +133,7 @@ export default function NewSale() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { settings: appSettings } = useSettings();
+  const isGstEnabled = true;
   const isOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
 
   const [items, setItems] = useState<SaleItem[]>([]);
@@ -499,6 +500,7 @@ export default function NewSale() {
     let subtotal = 0;
     let totalMRP = 0;
     let totalItemDiscount = 0;
+    let itemLevelTaxTotal = 0;
 
     items.forEach((item) => {
       const mrpValue = item.mrp || item.price;
@@ -506,12 +508,19 @@ export default function NewSale() {
       totalItemDiscount += item.discount;
       const itemTotal = item.price * item.displayQty - item.discount;
       subtotal += itemTotal;
+      if (isGstEnabled) {
+        itemLevelTaxTotal += itemTotal * (item.gstRate / 100);
+      }
     });
 
     const discountPercent = Number(billDiscountPercent) || 0;
     const discountAmount = (subtotal * discountPercent) / 100;
-    const tax = 0;
-    const netAmount = subtotal - discountAmount;
+    const discountedSubtotal = subtotal - discountAmount;
+    const taxAdjustmentFactor = subtotal > 0 ? discountedSubtotal / subtotal : 1;
+    const tax = isGstEnabled ? itemLevelTaxTotal * taxAdjustmentFactor : 0;
+    const cgst = tax / 2;
+    const sgst = tax / 2;
+    const netAmount = discountedSubtotal + tax;
     const roundedNet = Math.round(netAmount);
     const roundOff = roundedNet - netAmount;
     const received = Number(receivedAmount) || 0;
@@ -519,8 +528,8 @@ export default function NewSale() {
 
     return {
       subtotal,
-      cgst: 0,
-      sgst: 0,
+      cgst,
+      sgst,
       tax,
       discountPercent,
       discount: discountAmount,
@@ -531,7 +540,7 @@ export default function NewSale() {
       totalMRP,
       totalItemDiscount,
     };
-  }, [items, billDiscountPercent, receivedAmount]);
+  }, [items, billDiscountPercent, receivedAmount, isGstEnabled]);
 
   const resetForm = () => {
     setItems([]);
@@ -579,6 +588,11 @@ export default function NewSale() {
       sendViaEmail,
       items: items.map((item) => {
         const itemTotal = item.price * item.displayQty - item.discount;
+        const itemDiscountPercent = Number(billDiscountPercent) || 0;
+        const discountedItemTotal = itemTotal - (itemTotal * itemDiscountPercent) / 100;
+        const itemTax = isGstEnabled ? discountedItemTotal * (item.gstRate / 100) : 0;
+        const itemCgst = itemTax / 2;
+        const itemSgst = itemTax / 2;
         return {
           medicineId: item.medicineId,
           medicineName: item.name,
@@ -588,11 +602,11 @@ export default function NewSale() {
           quantity: item.quantity,
           price: item.price.toFixed(2),
           mrp: item.mrp?.toFixed(2) || null,
-          gstRate: "0.00",
-          cgst: "0.00",
-          sgst: "0.00",
+          gstRate: isGstEnabled ? item.gstRate.toFixed(2) : "0.00",
+          cgst: itemCgst.toFixed(2),
+          sgst: itemSgst.toFixed(2),
           discount: item.discount.toFixed(2),
-          total: itemTotal.toFixed(2),
+          total: (discountedItemTotal + itemTax).toFixed(2),
         };
       }),
     };
@@ -1232,6 +1246,18 @@ export default function NewSale() {
                     <span className="text-xs">%</span>
                   </div>
                 </div>
+                {isGstEnabled && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">CGST</span>
+                      <span className="font-medium">₹{calculations.cgst.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">SGST</span>
+                      <span className="font-medium">₹{calculations.sgst.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
                 {calculations.roundOff !== 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Round Off</span>
@@ -1541,7 +1567,7 @@ export default function NewSale() {
                   showMrp: appSettings.showMrp,
                   showGstBreakup: appSettings.showGstBreakup,
                   showDoctor: appSettings.showDoctor,
-                  hideTaxDetails: true,
+                  hideTaxDetails: !isGstEnabled,
                   hideStoreGstin: true,
                 }}
               />
