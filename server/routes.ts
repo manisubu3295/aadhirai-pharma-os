@@ -25,6 +25,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -743,7 +744,48 @@ export async function registerRoutes(
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: "Failed to create sale" });
+
+      const traceId = randomUUID();
+      const errorObj = error as {
+        message?: string;
+        code?: string;
+        detail?: string;
+        table?: string;
+        column?: string;
+        constraint?: string;
+        where?: string;
+      };
+
+      console.error("[SALES_CREATE_FAILED]", {
+        traceId,
+        message: errorObj?.message || String(error),
+        code: errorObj?.code,
+        detail: errorObj?.detail,
+        table: errorObj?.table,
+        column: errorObj?.column,
+        constraint: errorObj?.constraint,
+        where: errorObj?.where,
+        itemCount: Array.isArray(req.body?.items) ? req.body.items.length : 0,
+        paymentMethod: req.body?.paymentMethod,
+        total: req.body?.total,
+      });
+
+      if (process.env.NODE_ENV === "production") {
+        return res.status(500).json({ error: "Failed to create sale", traceId });
+      }
+
+      return res.status(500).json({
+        error: "Failed to create sale",
+        traceId,
+        details: {
+          message: errorObj?.message || String(error),
+          code: errorObj?.code,
+          detail: errorObj?.detail,
+          table: errorObj?.table,
+          column: errorObj?.column,
+          constraint: errorObj?.constraint,
+        },
+      });
     }
   });
 
