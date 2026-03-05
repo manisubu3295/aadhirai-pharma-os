@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import type { AddressInfo } from "net";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { initializeDatabase, storage } from "./storage";
@@ -126,15 +127,35 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-     // reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  const preferredPort = parseInt(process.env.PORT || "5000", 10);
+
+  const listenWithRetry = (port: number) => {
+    httpServer.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE" && process.env.NODE_ENV !== "production") {
+        const fallbackPort = port + 1;
+        log(`port ${port} is in use, retrying on ${fallbackPort}`);
+        setTimeout(() => listenWithRetry(fallbackPort), 200);
+        return;
+      }
+
+      console.error(error);
+      process.exit(1);
+    });
+
+    httpServer.listen(
+      {
+        port,
+        host: "0.0.0.0",
+      },
+      () => {
+        const address = httpServer.address() as AddressInfo | null;
+        const activePort = address?.port ?? port;
+        log(`serving on port ${activePort}`);
+        log(`local: http://localhost:${activePort}`);
+        log(`network: http://0.0.0.0:${activePort}`);
+      },
+    );
+  };
+
+  listenWithRetry(preferredPort);
 })();

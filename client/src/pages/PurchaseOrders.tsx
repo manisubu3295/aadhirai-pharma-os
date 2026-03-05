@@ -306,11 +306,28 @@ export default function PurchaseOrders() {
     }]);
   };
 
+  const parseSelectedId = (value: string): number => {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
   const updateItem = (index: number, field: keyof POItem, value: any) => {
     const newItems = [...items];
+    if (index < 0 || index >= newItems.length || !newItems[index]) {
+      return;
+    }
+
     newItems[index] = { ...newItems[index], [field]: value };
     if (field === "medicineId") {
-      const medicine = medicines.find(m => m.id === value);
+      const medicineId = Number.isFinite(value) ? Number(value) : 0;
+      if (medicineId <= 0) {
+        newItems[index].medicineId = 0;
+        newItems[index].medicineName = "";
+        setItems(newItems);
+        return;
+      }
+
+      const medicine = medicines.find(m => m.id === medicineId);
       if (medicine) {
         newItems[index].medicineName = medicine.name;
         newItems[index].rate = medicine.costPrice || medicine.price;
@@ -326,6 +343,28 @@ export default function PurchaseOrders() {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  const validatePOItems = (): string | null => {
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      const line = index + 1;
+
+      if (!item.medicineId || item.medicineId <= 0 || !item.medicineName?.trim()) {
+        return `Please select medicine for item ${line}`;
+      }
+
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        return `Quantity must be greater than 0 for item ${line}`;
+      }
+
+      const rate = Number.parseFloat(item.rate || "0");
+      if (!Number.isFinite(rate) || rate < 0) {
+        return `Rate is invalid for item ${line}`;
+      }
+    }
+
+    return null;
+  };
+
   const handleSubmit = () => {
     if (!selectedSupplierId) {
       toast({ title: "Please select a supplier", variant: "destructive" });
@@ -335,9 +374,17 @@ export default function PurchaseOrders() {
       toast({ title: "Please add at least one item", variant: "destructive" });
       return;
     }
-    const supplier = suppliers.find(s => s.id === parseInt(selectedSupplierId));
+
+    const itemValidationError = validatePOItems();
+    if (itemValidationError) {
+      toast({ title: itemValidationError, variant: "destructive" });
+      return;
+    }
+
+    const supplierId = parseSelectedId(selectedSupplierId);
+    const supplier = suppliers.find(s => s.id === supplierId);
     createMutation.mutate({
-      supplierId: parseInt(selectedSupplierId),
+      supplierId,
       supplierName: supplier?.name || "",
       notes,
       items,
@@ -390,10 +437,18 @@ export default function PurchaseOrders() {
       toast({ title: "Please add at least one item", variant: "destructive" });
       return;
     }
-    const supplier = suppliers.find(s => s.id === parseInt(selectedSupplierId));
+
+    const itemValidationError = validatePOItems();
+    if (itemValidationError) {
+      toast({ title: itemValidationError, variant: "destructive" });
+      return;
+    }
+
+    const supplierId = parseSelectedId(selectedSupplierId);
+    const supplier = suppliers.find(s => s.id === supplierId);
     updateMutation.mutate({
       id: editingPO.id,
-      supplierId: parseInt(selectedSupplierId),
+      supplierId,
       supplierName: supplier?.name || "",
       notes,
       items,
@@ -777,7 +832,7 @@ export default function PurchaseOrders() {
                           ) : (
                             <SearchableSelect
                               value={item.medicineId ? item.medicineId.toString() : ""}
-                              onValueChange={(v) => updateItem(index, "medicineId", parseInt(v))}
+                              onValueChange={(v) => updateItem(index, "medicineId", parseSelectedId(v))}
                               options={medicineOptions}
                               placeholder="Select medicine"
                               searchPlaceholder="Search medicine..."
@@ -1133,7 +1188,7 @@ export default function PurchaseOrders() {
                         <TableCell>
                           <SearchableSelect
                             value={item.medicineId ? item.medicineId.toString() : ""}
-                            onValueChange={(v) => updateItem(index, "medicineId", parseInt(v))}
+                            onValueChange={(v) => updateItem(index, "medicineId", parseSelectedId(v))}
                             options={medicineOptions}
                             placeholder="Select medicine"
                             searchPlaceholder="Search medicine..."

@@ -36,9 +36,39 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
 
+  const normalizedOptions = useMemo<SearchableSelectOption[]>(() => {
+    const result: SearchableSelectOption[] = [];
+    const seenValues = new Set<string>();
+
+    for (const option of options) {
+      const normalizedValue = String(option.value ?? "").trim();
+      if (!normalizedValue) {
+        continue;
+      }
+      if (seenValues.has(normalizedValue)) {
+        continue;
+      }
+
+      const normalizedLabel = String(option.label ?? "").trim() || normalizedValue;
+      const normalizedKeywords = (option.keywords ?? [normalizedLabel])
+        .map((keyword) => String(keyword ?? "").trim())
+        .filter(Boolean);
+
+      result.push({
+        ...option,
+        value: normalizedValue,
+        label: normalizedLabel,
+        keywords: normalizedKeywords.length ? normalizedKeywords : [normalizedLabel],
+      });
+      seenValues.add(normalizedValue);
+    }
+
+    return result;
+  }, [options]);
+
   const selected = useMemo(
-    () => options.find((option) => option.value === value),
-    [options, value],
+    () => normalizedOptions.find((option) => option.value === value),
+    [normalizedOptions, value],
   );
 
   return (
@@ -63,13 +93,17 @@ export function SearchableSelect({
           <CommandList>
             <CommandEmpty>{emptyLabel}</CommandEmpty>
             <CommandGroup>
-              {options.map((option) => (
+              {normalizedOptions.map((option) => (
                 <CommandItem
                   key={option.value}
-                  value={option.label}
+                  value={option.value}
                   keywords={option.keywords || [option.label]}
                   onSelect={() => {
-                    onValueChange(option.value);
+                    try {
+                      onValueChange(option.value);
+                    } catch (error) {
+                      console.error("SearchableSelect onValueChange failed", error);
+                    }
                     setOpen(false);
                   }}
                 >

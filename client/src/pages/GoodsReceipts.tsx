@@ -847,7 +847,13 @@ export default function GoodsReceipts() {
                       <TableHead>Batch</TableHead>
                       <TableHead>Expiry</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Free</TableHead>
+                      <TableHead className="text-right">Unit</TableHead>
+                      <TableHead className="text-right">Units/Strip</TableHead>
                       <TableHead className="text-right">Rate</TableHead>
+                      <TableHead className="text-right">Disc %</TableHead>
+                      <TableHead className="text-right">GST %</TableHead>
+                      <TableHead>Scheme</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -858,7 +864,13 @@ export default function GoodsReceipts() {
                         <TableCell className="font-mono text-xs">{item.batchNumber}</TableCell>
                         <TableCell>{item.expiryDate}</TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
+                        <TableCell className="text-right">{item.freeQuantity || 0}</TableCell>
+                        <TableCell className="text-right">{item.purchaseUnit || "-"}</TableCell>
+                        <TableCell className="text-right">{item.unitsPerStrip || 1}</TableCell>
                         <TableCell className="text-right font-mono">₹{item.rate}</TableCell>
+                        <TableCell className="text-right">{item.discountPercent || "0"}</TableCell>
+                        <TableCell className="text-right">{item.gstRate || "0"}</TableCell>
+                        <TableCell>{item.schemeDescription || "-"}</TableCell>
                         <TableCell className="text-right font-mono">₹{item.totalAmount}</TableCell>
                       </TableRow>
                     ))}
@@ -871,6 +883,14 @@ export default function GoodsReceipts() {
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span className="font-mono">₹{selectedGRN.subtotal}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Discount Rate:</span>
+                    <span className="font-mono">{selectedGRN.discountRate || "0"}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Discount:</span>
+                    <span className="font-mono">₹{selectedGRN.discountAmount || "0.00"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Tax:</span>
@@ -938,7 +958,13 @@ export default function GoodsReceipts() {
                           <th>Batch</th>
                           <th>Expiry</th>
                           <th class="text-right">Qty</th>
+                          <th class="text-right">Free</th>
+                          <th class="text-right">Unit</th>
+                          <th class="text-right">Units/Strip</th>
                           <th class="text-right">Rate</th>
+                          <th class="text-right">Disc %</th>
+                          <th class="text-right">GST %</th>
+                          <th>Scheme</th>
                           <th class="text-right">Total</th>
                         </tr>
                       </thead>
@@ -949,16 +975,24 @@ export default function GoodsReceipts() {
                             <td>${item.batchNumber}</td>
                             <td>${item.expiryDate}</td>
                             <td class="text-right">${item.quantity}</td>
-                            <td class="text-right">₹${item.rate}</td>
-                            <td class="text-right">₹${item.totalAmount}</td>
+                            <td class="text-right">${item.freeQuantity || 0}</td>
+                            <td class="text-right">${item.purchaseUnit || "-"}</td>
+                            <td class="text-right">${item.unitsPerStrip || 1}</td>
+                            <td class="text-right">₹${Number(item.rate || 0).toFixed(2)}</td>
+                            <td class="text-right">${item.discountPercent || "0"}</td>
+                            <td class="text-right">${item.gstRate || "0"}</td>
+                            <td>${item.schemeDescription || "-"}</td>
+                            <td class="text-right">₹${Number(item.totalAmount || 0).toFixed(2)}</td>
                           </tr>
                         `).join("")}
                       </tbody>
                     </table>
                     <div class="totals">
-                      <div>Subtotal: ₹${selectedGRN?.subtotal}</div>
-                      <div>Tax: ₹${selectedGRN?.taxAmount}</div>
-                      <div class="total-line">Total: ₹${selectedGRN?.totalAmount}</div>
+                      <div>Subtotal: ₹${Number(selectedGRN?.subtotal || 0).toFixed(2)}</div>
+                      <div>Discount Rate: ${selectedGRN?.discountRate || "0"}%</div>
+                      <div>Discount: ₹${Number(selectedGRN?.discountAmount || 0).toFixed(2)}</div>
+                      <div>Tax: ₹${Number(selectedGRN?.taxAmount || 0).toFixed(2)}</div>
+                      <div class="total-line">Total: ₹${Number(selectedGRN?.totalAmount || 0).toFixed(2)}</div>
                     </div>
                   </body>
                 </html>
