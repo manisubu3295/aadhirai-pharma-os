@@ -29,18 +29,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send, Printer, Download, Calendar, Pencil } from "lucide-react";
+import { Search, Plus, Eye, FileText, ShoppingCart, Clock, CheckCircle2, XCircle, Truck, Send, Printer, Download, Calendar, Pencil, ArrowUpDown } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
 import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, Medicine, PurchaseOrder, PurchaseOrderItem, SupplierRate } from "@shared/schema";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface POItem {
   medicineId: number;
   medicineName: string;
   quantity: number;
   rate: string;
+  unitType: "STRIP" | "TABLET";
+  unitsPerStrip: number;
   mrp: string;
   gstRate: string;
   discountPercent: string;
@@ -81,6 +84,7 @@ export default function PurchaseOrders() {
   const [toDate, setToDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
+  const [orderDateSortOrder, setOrderDateSortOrder] = useState<"asc" | "desc">("desc");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -126,10 +130,20 @@ export default function PurchaseOrders() {
   const createMutation = useMutation({
     mutationFn: async (data: { supplierId: number; supplierName: string; notes: string; items: POItem[] }) => {
       const poNumber = `PO-${Date.now()}`;
-      const subtotal = data.items.reduce((sum, item) => sum + (parseFloat(item.rate) * item.quantity), 0);
+      const subtotal = data.items.reduce((sum, item) => {
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        return sum + lineBase;
+      }, 0);
+      const discountAmount = data.items.reduce((sum, item) => {
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        const lineDiscount = lineBase * (parseFloat(item.discountPercent || "0") / 100);
+        return sum + lineDiscount;
+      }, 0);
       const taxAmount = data.items.reduce((sum, item) => {
-        const lineTotal = parseFloat(item.rate) * item.quantity;
-        return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        const lineDiscount = lineBase * (parseFloat(item.discountPercent || "0") / 100);
+        const taxable = lineBase - lineDiscount;
+        return sum + (taxable * parseFloat(item.gstRate || "18") / 100);
       }, 0);
       
       const res = await fetch("/api/purchase-orders", {
@@ -142,19 +156,22 @@ export default function PurchaseOrders() {
           notes: data.notes,
           status: "Draft",
           subtotal: subtotal.toFixed(2),
+          discountAmount: discountAmount.toFixed(2),
           taxAmount: taxAmount.toFixed(2),
-          totalAmount: (subtotal + taxAmount).toFixed(2),
+          totalAmount: (subtotal - discountAmount + taxAmount).toFixed(2),
           items: data.items.map(item => ({
             medicineId: item.medicineId,
             medicineName: item.medicineName,
             quantity: item.quantity,
             rate: item.rate,
+            unitType: item.unitType,
+            unitsPerStrip: item.unitsPerStrip,
             mrp: item.mrp || null,
             gstRate: item.gstRate || "18",
             discountPercent: item.discountPercent || "0",
             supplierRateId: item.supplierRateId || null,
-            taxAmount: ((parseFloat(item.rate) * item.quantity) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
-            totalAmount: (parseFloat(item.rate) * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2),
+            taxAmount: (((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
+            totalAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2),
           })),
         }),
       });
@@ -189,10 +206,20 @@ export default function PurchaseOrders() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: { id: number; supplierId: number; supplierName: string; notes: string; items: POItem[] }) => {
-      const subtotal = data.items.reduce((sum, item) => sum + (parseFloat(item.rate) * item.quantity), 0);
+      const subtotal = data.items.reduce((sum, item) => {
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        return sum + lineBase;
+      }, 0);
+      const discountAmount = data.items.reduce((sum, item) => {
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        const lineDiscount = lineBase * (parseFloat(item.discountPercent || "0") / 100);
+        return sum + lineDiscount;
+      }, 0);
       const taxAmount = data.items.reduce((sum, item) => {
-        const lineTotal = parseFloat(item.rate) * item.quantity;
-        return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        const lineDiscount = lineBase * (parseFloat(item.discountPercent || "0") / 100);
+        const taxable = lineBase - lineDiscount;
+        return sum + (taxable * parseFloat(item.gstRate || "18") / 100);
       }, 0);
       
       const res = await fetch(`/api/purchase-orders/${data.id}`, {
@@ -203,19 +230,22 @@ export default function PurchaseOrders() {
           supplierName: data.supplierName,
           notes: data.notes,
           subtotal: subtotal.toFixed(2),
+          discountAmount: discountAmount.toFixed(2),
           taxAmount: taxAmount.toFixed(2),
-          totalAmount: (subtotal + taxAmount).toFixed(2),
+          totalAmount: (subtotal - discountAmount + taxAmount).toFixed(2),
           items: data.items.map(item => ({
             medicineId: item.medicineId,
             medicineName: item.medicineName,
             quantity: item.quantity,
             rate: item.rate,
+            unitType: item.unitType,
+            unitsPerStrip: item.unitsPerStrip,
             mrp: item.mrp || null,
             gstRate: item.gstRate || "18",
             discountPercent: item.discountPercent || "0",
             supplierRateId: item.supplierRateId || null,
-            taxAmount: ((parseFloat(item.rate) * item.quantity) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
-            totalAmount: (parseFloat(item.rate) * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2),
+            taxAmount: (((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
+            totalAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2),
           })),
         }),
       });
@@ -250,6 +280,8 @@ export default function PurchaseOrders() {
         medicineName: medicine?.name || "Unknown",
         quantity: rate.minOrderQty || 1,
         rate: rate.rate,
+        unitType: "STRIP",
+        unitsPerStrip: medicine?.packSize || 1,
         mrp: rate.mrp || "",
         gstRate: rate.gstRate || "18",
         discountPercent: rate.discountPercent || "0",
@@ -266,6 +298,8 @@ export default function PurchaseOrders() {
       medicineName: "",
       quantity: 1,
       rate: "",
+      unitType: "STRIP",
+      unitsPerStrip: 1,
       mrp: "",
       gstRate: "18",
       discountPercent: "0",
@@ -282,6 +316,7 @@ export default function PurchaseOrders() {
         newItems[index].rate = medicine.costPrice || medicine.price;
         newItems[index].mrp = medicine.mrp || "";
         newItems[index].gstRate = medicine.gstRate || "18";
+        newItems[index].unitsPerStrip = medicine.packSize || 1;
       }
     }
     setItems(newItems);
@@ -333,6 +368,8 @@ export default function PurchaseOrders() {
         medicineName: item.medicineName,
         quantity: item.quantity,
         rate: item.rate,
+        unitType: (item.unitType as "STRIP" | "TABLET") || "STRIP",
+        unitsPerStrip: item.unitsPerStrip || 1,
         mrp: item.mrp || "",
         gstRate: item.gstRate || "18",
         discountPercent: item.discountPercent || "0",
@@ -379,6 +416,33 @@ export default function PurchaseOrders() {
     return matchesSearch && matchesDateRange && matchesStatus && matchesSupplier;
   });
 
+  const sortedFilteredOrders = [...filteredOrders].sort((a, b) => {
+    const first = new Date(a.orderDate).getTime();
+    const second = new Date(b.orderDate).getTime();
+    return orderDateSortOrder === "asc" ? first - second : second - first;
+  });
+
+  const supplierFilterOptions = [
+    { value: "all", label: "All Suppliers" },
+    ...suppliers.map((supplier) => ({
+      value: supplier.id.toString(),
+      label: supplier.name,
+      keywords: [supplier.name, supplier.code || ""],
+    })),
+  ];
+
+  const supplierOptions = suppliers.map((supplier) => ({
+    value: supplier.id.toString(),
+    label: `${supplier.name} (${supplier.code})`,
+    keywords: [supplier.name, supplier.code || ""],
+  }));
+
+  const medicineOptions = medicines.map((medicine) => ({
+    value: medicine.id.toString(),
+    label: medicine.name,
+    keywords: [medicine.name, medicine.manufacturer || "", medicine.batchNumber || ""],
+  }));
+
   const handleExportPOs = () => {
     const exportData = filteredOrders.map(po => ({
       "PO Number": po.poNumber,
@@ -396,11 +460,17 @@ export default function PurchaseOrders() {
 
   const calculateTotal = () => {
     const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.rate || "0") * item.quantity), 0);
-    const tax = items.reduce((sum, item) => {
-      const lineTotal = parseFloat(item.rate || "0") * item.quantity;
-      return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+    const discount = items.reduce((sum, item) => {
+      const lineBase = parseFloat(item.rate || "0") * item.quantity;
+      return sum + (lineBase * parseFloat(item.discountPercent || "0") / 100);
     }, 0);
-    return { subtotal, tax, total: subtotal + tax };
+    const tax = items.reduce((sum, item) => {
+      const lineBase = parseFloat(item.rate || "0") * item.quantity;
+      const lineDiscount = lineBase * parseFloat(item.discountPercent || "0") / 100;
+      const taxable = lineBase - lineDiscount;
+      return sum + (taxable * parseFloat(item.gstRate || "18") / 100);
+    }, 0);
+    return { subtotal, discount, tax, total: subtotal - discount + tax };
   };
 
   const totals = calculateTotal();
@@ -532,17 +602,15 @@ export default function PurchaseOrders() {
                 <SelectItem value="Cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-              <SelectTrigger className="w-40" data-testid="select-po-supplier">
-                <SelectValue placeholder="Supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Suppliers</SelectItem>
-                {suppliers.map(s => (
-                  <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={supplierFilter}
+              onValueChange={setSupplierFilter}
+              options={supplierFilterOptions}
+              placeholder="Supplier"
+              searchPlaceholder="Search supplier..."
+              dataTestId="select-po-supplier"
+              className="w-40"
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -561,14 +629,25 @@ export default function PurchaseOrders() {
                   <TableRow>
                     <TableHead>PO Number</TableHead>
                     <TableHead>Supplier</TableHead>
-                    <TableHead>Order Date</TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-0 font-medium"
+                        onClick={() => setOrderDateSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                        data-testid="button-sort-po-order-date"
+                      >
+                        Order Date
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    </TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-24">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredOrders.map((po) => (
+                  {sortedFilteredOrders.map((po) => (
                     <TableRow key={po.id} data-testid={`row-po-${po.id}`}>
                       <TableCell className="font-mono font-medium">{po.poNumber}</TableCell>
                       <TableCell>{po.supplierName}</TableCell>
@@ -628,18 +707,15 @@ export default function PurchaseOrders() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Supplier *</Label>
-                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                  <SelectTrigger data-testid="select-po-supplier">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                        {supplier.name} ({supplier.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={selectedSupplierId}
+                  onValueChange={setSelectedSupplierId}
+                  options={supplierOptions}
+                  placeholder="Select supplier"
+                  searchPlaceholder="Search supplier..."
+                  dataTestId="select-po-create-supplier"
+                  className="w-full"
+                />
               </div>
               <div>
                 <Label>Notes</Label>
@@ -682,7 +758,11 @@ export default function PurchaseOrders() {
                     <TableRow>
                       <TableHead>Medicine</TableHead>
                       <TableHead className="w-24">Qty</TableHead>
+                      <TableHead className="w-24">Unit</TableHead>
+                      <TableHead className="w-24">Units/Strip</TableHead>
                       <TableHead className="w-28">Rate</TableHead>
+                      <TableHead className="w-28">MRP</TableHead>
+                      <TableHead className="w-24">Disc %</TableHead>
                       <TableHead className="w-24">GST %</TableHead>
                       <TableHead className="w-28 text-right">Total</TableHead>
                       <TableHead className="w-12"></TableHead>
@@ -695,21 +775,15 @@ export default function PurchaseOrders() {
                           {poMode === "rates" ? (
                             <span>{item.medicineName}</span>
                           ) : (
-                            <Select
-                              value={item.medicineId.toString()}
+                            <SearchableSelect
+                              value={item.medicineId ? item.medicineId.toString() : ""}
                               onValueChange={(v) => updateItem(index, "medicineId", parseInt(v))}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select medicine" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {medicines.map((m) => (
-                                  <SelectItem key={m.id} value={m.id.toString()}>
-                                    {m.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              options={medicineOptions}
+                              placeholder="Select medicine"
+                              searchPlaceholder="Search medicine..."
+                              dataTestId={`select-po-medicine-${index}`}
+                              className="w-full"
+                            />
                           )}
                         </TableCell>
                         <TableCell>
@@ -721,12 +795,52 @@ export default function PurchaseOrders() {
                           />
                         </TableCell>
                         <TableCell>
+                          <Select
+                            value={item.unitType}
+                            onValueChange={(v) => updateItem(index, "unitType", v as "STRIP" | "TABLET")}
+                          >
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="STRIP">Strip</SelectItem>
+                              <SelectItem value="TABLET">Tablet</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={1}
+                            value={item.unitsPerStrip}
+                            onChange={(value) => updateItem(index, "unitsPerStrip", value)}
+                            className="w-20"
+                          />
+                        </TableCell>
+                        <TableCell>
                           <NumericInput
                             min={0}
                             allowDecimal={true}
                             value={parseFloat(item.rate) || 0}
                             onChange={(value) => updateItem(index, "rate", String(value))}
                             className="w-24"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.mrp) || 0}
+                            onChange={(value) => updateItem(index, "mrp", String(value))}
+                            className="w-24"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.discountPercent) || 0}
+                            onChange={(value) => updateItem(index, "discountPercent", String(value))}
+                            className="w-20"
                           />
                         </TableCell>
                         <TableCell>
@@ -747,7 +861,7 @@ export default function PurchaseOrders() {
                           </Select>
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ₹{(parseFloat(item.rate || "0") * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2)}
+                          ₹{((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2)}
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
@@ -767,6 +881,10 @@ export default function PurchaseOrders() {
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span className="font-mono">₹{totals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Discount:</span>
+                    <span className="font-mono">₹{totals.discount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Tax:</span>
@@ -963,18 +1081,15 @@ export default function PurchaseOrders() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Supplier *</Label>
-                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                  <SelectTrigger data-testid="select-edit-po-supplier">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                        {supplier.name} ({supplier.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={selectedSupplierId}
+                  onValueChange={setSelectedSupplierId}
+                  options={supplierOptions}
+                  placeholder="Select supplier"
+                  searchPlaceholder="Search supplier..."
+                  dataTestId="select-edit-po-supplier"
+                  className="w-full"
+                />
               </div>
               <div>
                 <Label>Notes</Label>
@@ -1002,7 +1117,11 @@ export default function PurchaseOrders() {
                     <TableRow>
                       <TableHead>Medicine</TableHead>
                       <TableHead className="w-24">Qty</TableHead>
+                      <TableHead className="w-24">Unit</TableHead>
+                      <TableHead className="w-24">Units/Strip</TableHead>
                       <TableHead className="w-28">Rate</TableHead>
+                      <TableHead className="w-28">MRP</TableHead>
+                      <TableHead className="w-24">Disc %</TableHead>
                       <TableHead className="w-24">GST %</TableHead>
                       <TableHead className="w-28 text-right">Total</TableHead>
                       <TableHead className="w-12"></TableHead>
@@ -1012,21 +1131,15 @@ export default function PurchaseOrders() {
                     {items.map((item, index) => (
                       <TableRow key={index}>
                         <TableCell>
-                          <Select
-                            value={item.medicineId.toString()}
+                          <SearchableSelect
+                            value={item.medicineId ? item.medicineId.toString() : ""}
                             onValueChange={(v) => updateItem(index, "medicineId", parseInt(v))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select medicine" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {medicines.map((m) => (
-                                <SelectItem key={m.id} value={m.id.toString()}>
-                                  {m.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            options={medicineOptions}
+                            placeholder="Select medicine"
+                            searchPlaceholder="Search medicine..."
+                            dataTestId={`select-edit-po-medicine-${index}`}
+                            className="w-full"
+                          />
                         </TableCell>
                         <TableCell>
                           <NumericInput
@@ -1037,12 +1150,52 @@ export default function PurchaseOrders() {
                           />
                         </TableCell>
                         <TableCell>
+                          <Select
+                            value={item.unitType}
+                            onValueChange={(v) => updateItem(index, "unitType", v as "STRIP" | "TABLET")}
+                          >
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="STRIP">Strip</SelectItem>
+                              <SelectItem value="TABLET">Tablet</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={1}
+                            value={item.unitsPerStrip}
+                            onChange={(value) => updateItem(index, "unitsPerStrip", value)}
+                            className="w-20"
+                          />
+                        </TableCell>
+                        <TableCell>
                           <NumericInput
                             min={0}
                             allowDecimal={true}
                             value={parseFloat(item.rate) || 0}
                             onChange={(value) => updateItem(index, "rate", String(value))}
                             className="w-24"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.mrp) || 0}
+                            onChange={(value) => updateItem(index, "mrp", String(value))}
+                            className="w-24"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.discountPercent) || 0}
+                            onChange={(value) => updateItem(index, "discountPercent", String(value))}
+                            className="w-20"
                           />
                         </TableCell>
                         <TableCell>
@@ -1063,7 +1216,7 @@ export default function PurchaseOrders() {
                           </Select>
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          ₹{(parseFloat(item.rate || "0") * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2)}
+                          ₹{((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2)}
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
@@ -1083,6 +1236,10 @@ export default function PurchaseOrders() {
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span className="font-mono">₹{totals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Discount:</span>
+                    <span className="font-mono">₹{totals.discount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Tax:</span>

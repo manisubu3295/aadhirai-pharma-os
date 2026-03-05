@@ -249,7 +249,20 @@ export default function NewSale() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create sale");
+      if (!res.ok) {
+        let errorMessage = "Failed to create sale";
+        try {
+          const payload = await res.json();
+          if (payload?.details && typeof payload.details === "string") {
+            errorMessage = payload.details;
+          } else if (payload?.error && typeof payload.error === "string") {
+            errorMessage = payload.error;
+          }
+        } catch {
+          // Keep fallback message when response is not JSON.
+        }
+        throw new Error(errorMessage);
+      }
       return res.json();
     },
     onSuccess: (saleResult: { sale: Sale; items: SaleItemSchema[] }, variables) => {
@@ -273,8 +286,12 @@ export default function NewSale() {
       
       resetForm();
     },
-    onError: () => {
-      toast({ title: "Failed to create sale", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create sale",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 

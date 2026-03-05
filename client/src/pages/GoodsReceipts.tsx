@@ -28,12 +28,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, Package, Truck, CheckCircle2, Calendar, Printer, Download } from "lucide-react";
+import { Search, Plus, Eye, Package, Truck, CheckCircle2, Calendar, Printer, Download, ArrowUpDown } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
 import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, GoodsReceipt, GoodsReceiptItem } from "@shared/schema";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface GRNItem {
   poItemId?: number;
@@ -45,8 +46,12 @@ interface GRNItem {
   freeQuantity: number;
   schemeDescription: string;
   rate: string;
+  sellingPrice: string;
   mrp: string;
+  discountPercent: string;
   gstRate: string;
+  purchaseUnit: "STRIP" | "TABLET";
+  unitsPerStrip: number;
   pendingQty?: number;
   locationId?: number;
 }
@@ -61,12 +66,14 @@ export default function GoodsReceipts() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [selectedPOId, setSelectedPOId] = useState<string>("");
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
+  const [discountRate, setDiscountRate] = useState("0");
   const [items, setItems] = useState<GRNItem[]>([]);
   
   const [fromDate, setFromDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [toDate, setToDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
+  const [receiptDateSortOrder, setReceiptDateSortOrder] = useState<"asc" | "desc">("desc");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -116,13 +123,26 @@ export default function GoodsReceipts() {
       supplierName: string; 
       poId?: number;
       supplierInvoiceNo: string;
+      discountRate: string;
       items: GRNItem[] 
     }) => {
       const grnNumber = `GRN-${Date.now()}`;
-      const subtotal = data.items.reduce((sum, item) => sum + (parseFloat(item.rate) * item.quantity), 0);
+      const subtotal = data.items.reduce((sum, item) => sum + (parseFloat(item.rate || "0") * item.quantity), 0);
+      const lineDiscountAmount = data.items.reduce((sum, item) => {
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        return sum + (lineBase * parseFloat(item.discountPercent || "0") / 100);
+      }, 0);
+      const headerDiscountAmount = (subtotal - lineDiscountAmount) * (parseFloat(data.discountRate || "0") / 100);
+      const taxableAmount = subtotal - lineDiscountAmount - headerDiscountAmount;
       const taxAmount = data.items.reduce((sum, item) => {
-        const lineTotal = parseFloat(item.rate) * item.quantity;
-        return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        const lineDiscount = lineBase * parseFloat(item.discountPercent || "0") / 100;
+        const lineAfterLineDiscount = lineBase - lineDiscount;
+        const prorataHeaderDiscount = taxableAmount > 0
+          ? (lineAfterLineDiscount / (subtotal - lineDiscountAmount || 1)) * headerDiscountAmount
+          : 0;
+        const lineTaxable = lineAfterLineDiscount - prorataHeaderDiscount;
+        return sum + (lineTaxable * parseFloat(item.gstRate || "18") / 100);
       }, 0);
       
       const res = await fetch("/api/goods-receipts", {
@@ -136,8 +156,10 @@ export default function GoodsReceipts() {
           supplierInvoiceNo: data.supplierInvoiceNo || null,
           status: "Completed",
           subtotal: subtotal.toFixed(2),
+          discountRate: data.discountRate || "0",
+          discountAmount: (lineDiscountAmount + headerDiscountAmount).toFixed(2),
           taxAmount: taxAmount.toFixed(2),
-          totalAmount: (subtotal + taxAmount).toFixed(2),
+          totalAmount: (taxableAmount + taxAmount).toFixed(2),
           items: data.items.map(item => ({
             poItemId: item.poItemId || null,
             medicineId: item.medicineId,
@@ -148,10 +170,15 @@ export default function GoodsReceipts() {
             freeQuantity: item.freeQuantity || 0,
             schemeDescription: item.schemeDescription || null,
             rate: item.rate,
+            sellingPrice: item.sellingPrice || null,
             mrp: item.mrp || null,
+            discountPercent: item.discountPercent || "0",
+            discountAmount: ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100).toFixed(2),
             gstRate: item.gstRate || "18",
-            taxAmount: ((parseFloat(item.rate) * item.quantity) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
-            totalAmount: (parseFloat(item.rate) * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2),
+            taxAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * parseFloat(item.gstRate || "18") / 100)).toFixed(2),
+            totalAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2),
+            purchaseUnit: item.purchaseUnit,
+            unitsPerStrip: item.unitsPerStrip,
             locationId: item.locationId || null,
           })),
         }),
@@ -176,6 +203,7 @@ export default function GoodsReceipts() {
     setSelectedSupplierId("");
     setSelectedPOId("");
     setSupplierInvoiceNo("");
+    setDiscountRate("0");
     setItems([]);
   };
 
@@ -197,8 +225,12 @@ export default function GoodsReceipts() {
         freeQuantity: 0,
         schemeDescription: "",
         rate: item.rate,
+        sellingPrice: item.mrp || item.rate,
         mrp: item.mrp || "",
+        discountPercent: item.discountPercent || "0",
         gstRate: item.gstRate || "18",
+        purchaseUnit: (item.unitType as "STRIP" | "TABLET") || "STRIP",
+        unitsPerStrip: item.unitsPerStrip || 1,
         pendingQty: item.quantity - item.receivedQty,
       }));
     
@@ -240,6 +272,7 @@ export default function GoodsReceipts() {
       supplierName: supplier?.name || "",
       poId: selectedPOId ? parseInt(selectedPOId) : undefined,
       supplierInvoiceNo,
+      discountRate,
       items,
     });
   };
@@ -271,6 +304,33 @@ export default function GoodsReceipts() {
     return matchesSearch && matchesDateRange && matchesStatus && matchesSupplier;
   });
 
+  const sortedFilteredReceipts = [...filteredReceipts].sort((a, b) => {
+    const first = new Date(a.receiptDate).getTime();
+    const second = new Date(b.receiptDate).getTime();
+    return receiptDateSortOrder === "asc" ? first - second : second - first;
+  });
+
+  const supplierFilterOptions = [
+    { value: "all", label: "All Suppliers" },
+    ...suppliers.map((supplier) => ({
+      value: supplier.id.toString(),
+      label: supplier.name,
+      keywords: [supplier.name, supplier.code || ""],
+    })),
+  ];
+
+  const supplierOptions = suppliers.map((supplier) => ({
+    value: supplier.id.toString(),
+    label: supplier.name,
+    keywords: [supplier.name, supplier.code || ""],
+  }));
+
+  const poOptions = supplierPOs.map((po) => ({
+    value: po.id.toString(),
+    label: `${po.poNumber} - ${po.supplierName}`,
+    keywords: [po.poNumber, po.supplierName],
+  }));
+
   const handleExportGRNs = () => {
     const exportData = filteredReceipts.map(grn => ({
       "GRN Number": grn.grnNumber,
@@ -288,11 +348,23 @@ export default function GoodsReceipts() {
 
   const calculateTotal = () => {
     const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.rate || "0") * item.quantity), 0);
-    const tax = items.reduce((sum, item) => {
-      const lineTotal = parseFloat(item.rate || "0") * item.quantity;
-      return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+    const lineDiscount = items.reduce((sum, item) => {
+      const lineBase = parseFloat(item.rate || "0") * item.quantity;
+      return sum + (lineBase * parseFloat(item.discountPercent || "0") / 100);
     }, 0);
-    return { subtotal, tax, total: subtotal + tax };
+    const headerDiscount = (subtotal - lineDiscount) * (parseFloat(discountRate || "0") / 100);
+    const taxable = subtotal - lineDiscount - headerDiscount;
+    const tax = items.reduce((sum, item) => {
+      const lineBase = parseFloat(item.rate || "0") * item.quantity;
+      const lineDisc = lineBase * parseFloat(item.discountPercent || "0") / 100;
+      const lineTaxable = lineBase - lineDisc;
+      const prorataHeaderDiscount = (subtotal - lineDiscount) > 0
+        ? (lineTaxable / (subtotal - lineDiscount)) * headerDiscount
+        : 0;
+      const finalTaxable = lineTaxable - prorataHeaderDiscount;
+      return sum + (finalTaxable * parseFloat(item.gstRate || "18") / 100);
+    }, 0);
+    return { subtotal, lineDiscount, headerDiscount, tax, total: taxable + tax };
   };
 
   const totals = calculateTotal();
@@ -406,17 +478,15 @@ export default function GoodsReceipts() {
                 <SelectItem value="Pending">Pending</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-              <SelectTrigger className="w-40" data-testid="select-grn-supplier">
-                <SelectValue placeholder="Supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Suppliers</SelectItem>
-                {suppliers.map(s => (
-                  <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={supplierFilter}
+              onValueChange={setSupplierFilter}
+              options={supplierFilterOptions}
+              placeholder="Supplier"
+              searchPlaceholder="Search supplier..."
+              dataTestId="select-grn-supplier"
+              className="w-40"
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -436,14 +506,25 @@ export default function GoodsReceipts() {
                     <TableHead>GRN Number</TableHead>
                     <TableHead>Supplier</TableHead>
                     <TableHead>Invoice No.</TableHead>
-                    <TableHead>Receipt Date</TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-0 font-medium"
+                        onClick={() => setReceiptDateSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                        data-testid="button-sort-grn-receipt-date"
+                      >
+                        Receipt Date
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    </TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-16">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredReceipts.map((grn) => (
+                  {sortedFilteredReceipts.map((grn) => (
                     <TableRow key={grn.id} data-testid={`row-grn-${grn.id}`}>
                       <TableCell className="font-mono font-medium">{grn.grnNumber}</TableCell>
                       <TableCell>{grn.supplierName}</TableCell>
@@ -481,18 +562,15 @@ export default function GoodsReceipts() {
               <div>
                 <Label>Select PO (Optional)</Label>
                 <div className="flex gap-2">
-                  <Select value={selectedPOId} onValueChange={setSelectedPOId}>
-                    <SelectTrigger className="flex-1 min-w-0" data-testid="select-grn-po">
-                      <SelectValue placeholder="Select PO" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {supplierPOs.map((po) => (
-                        <SelectItem key={po.id} value={po.id.toString()}>
-                          {po.poNumber} - {po.supplierName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={selectedPOId}
+                    onValueChange={setSelectedPOId}
+                    options={poOptions}
+                    placeholder="Select PO"
+                    searchPlaceholder="Search PO..."
+                    dataTestId="select-grn-po"
+                    className="flex-1 min-w-0"
+                  />
                   <Button variant="outline" onClick={loadFromPO} disabled={!selectedPOId} className="shrink-0" data-testid="button-load-po">
                     Load
                   </Button>
@@ -500,18 +578,14 @@ export default function GoodsReceipts() {
               </div>
               <div>
                 <Label>Supplier *</Label>
-                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                  <SelectTrigger data-testid="select-grn-supplier">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                        {supplier.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={selectedSupplierId}
+                  onValueChange={setSelectedSupplierId}
+                  options={supplierOptions}
+                  placeholder="Select supplier"
+                  searchPlaceholder="Search supplier..."
+                  dataTestId="select-grn-create-supplier"
+                />
               </div>
               <div>
                 <Label>Supplier Invoice No.</Label>
@@ -520,6 +594,19 @@ export default function GoodsReceipts() {
                   onChange={(e) => setSupplierInvoiceNo(e.target.value)} 
                   placeholder="Invoice number"
                   data-testid="input-grn-invoice"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label>GRN Discount Rate (%)</Label>
+                <NumericInput
+                  min={0}
+                  allowDecimal={true}
+                  value={parseFloat(discountRate) || 0}
+                  onChange={(value) => setDiscountRate(String(value))}
+                  data-testid="input-grn-discount-rate"
                 />
               </div>
             </div>
@@ -534,7 +621,12 @@ export default function GoodsReceipts() {
                       <TableHead className="w-28">Expiry *</TableHead>
                       <TableHead className="w-16">Qty</TableHead>
                       <TableHead className="w-16">Free</TableHead>
+                      <TableHead className="w-16">Unit</TableHead>
+                      <TableHead className="w-20">Units/Strip</TableHead>
                       <TableHead className="w-20">Rate</TableHead>
+                      <TableHead className="w-20">Selling</TableHead>
+                      <TableHead className="w-20">MRP</TableHead>
+                      <TableHead className="w-20">Disc %</TableHead>
                       <TableHead className="w-28">Scheme</TableHead>
                       <TableHead className="w-28">Location</TableHead>
                       <TableHead className="w-24 text-right">Total</TableHead>
@@ -585,11 +677,60 @@ export default function GoodsReceipts() {
                           />
                         </TableCell>
                         <TableCell>
+                          <Select
+                            value={item.purchaseUnit}
+                            onValueChange={(v) => updateItem(index, "purchaseUnit", v as "STRIP" | "TABLET")}
+                          >
+                            <SelectTrigger className="w-16">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="STRIP">Strip</SelectItem>
+                              <SelectItem value="TABLET">Tablet</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={1}
+                            value={item.unitsPerStrip}
+                            onChange={(value) => updateItem(index, "unitsPerStrip", value)}
+                            className="w-16"
+                          />
+                        </TableCell>
+                        <TableCell>
                           <NumericInput
                             min={0}
                             allowDecimal={true}
                             value={parseFloat(item.rate) || 0}
                             onChange={(value) => updateItem(index, "rate", String(value))}
+                            className="w-18"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.sellingPrice) || 0}
+                            onChange={(value) => updateItem(index, "sellingPrice", String(value))}
+                            className="w-18"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.mrp) || 0}
+                            onChange={(value) => updateItem(index, "mrp", String(value))}
+                            className="w-18"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.discountPercent) || 0}
+                            onChange={(value) => updateItem(index, "discountPercent", String(value))}
                             className="w-18"
                           />
                         </TableCell>
@@ -619,7 +760,7 @@ export default function GoodsReceipts() {
                           </Select>
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          ₹{(parseFloat(item.rate || "0") * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2)}
+                          ₹{((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -634,6 +775,14 @@ export default function GoodsReceipts() {
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span className="font-mono">₹{totals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Line Discount:</span>
+                    <span className="font-mono">₹{totals.lineDiscount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Header Discount:</span>
+                    <span className="font-mono">₹{totals.headerDiscount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Tax:</span>
