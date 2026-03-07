@@ -731,18 +731,39 @@ export async function registerRoutes(
         });
       }
       
-      const invoiceNo = await storage.getNextInvoiceNumber();
-      const saleWithInvoice = {
+      const baseSale = {
         ...sale,
-        invoiceNo,
         userId: req.session.userId || sale.userId || null,
       };
-      
-      const createdSale = await storage.createSale(saleWithInvoice, saleItems);
-      res.status(201).json(createdSale);
+
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const invoiceNo = await storage.getNextInvoiceNumber();
+          const createdSale = await storage.createSale({ ...baseSale, invoiceNo }, saleItems);
+          return res.status(201).json(createdSale);
+        } catch (error) {
+          const errorCode = (error as { code?: string })?.code;
+          const detailText = String((error as { detail?: string; message?: string })?.detail || (error as Error)?.message || "");
+          const isDuplicateInvoice =
+            errorCode === "23505" &&
+            (detailText.includes("sales_invoice_no_idx") || detailText.toLowerCase().includes("invoice_no"));
+
+          if (!isDuplicateInvoice) {
+            throw error;
+          }
+
+          lastError = error;
+        }
+      }
+
+      throw lastError || new Error("Failed to generate unique invoice number");
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
+        return res.status(400).json({
+          error: "Validation failed",
+          details: error.errors.map((entry) => `${entry.path.join(".")}: ${entry.message}`).join(", "),
+        });
       }
 
       const traceId = randomUUID();
@@ -1334,6 +1355,91 @@ export async function registerRoutes(
       }
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({ error: "Failed to create supplier rate", details: errorMessage });
+    }
+  });
+
+  app.post("/api/supplier-rates/import", async (req, res) => {
+    try {
+      const { rates } = req.body;
+      if (!Array.isArray(rates)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+
+      const [suppliers, medicines, existingRates] = await Promise.all([
+        storage.getSuppliers(),
+        storage.getMedicines(),
+        storage.getSupplierRates(),
+      ]);
+
+      const supplierByCode = new Map(
+        suppliers.map((supplier) => [supplier.code.trim().toLowerCase(), supplier])
+      );
+      const medicineByName = new Map(
+        medicines.map((medicine) => [medicine.name.trim().toLowerCase(), medicine])
+      );
+      const existingRateByPair = new Map(
+        existingRates.map((rate) => [`${rate.supplierId}-${rate.medicineId}`, rate])
+      );
+
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+
+      for (let index = 0; index < rates.length; index++) {
+        const rowNumber = index + 2;
+        const row = rates[index];
+
+        try {
+          const supplierCode = String(row?.supplierCode || "").trim();
+          const medicineName = String(row?.medicineName || "").trim();
+
+          if (!supplierCode) {
+            throw new Error("Supplier code is required");
+          }
+          if (!medicineName) {
+            throw new Error("Medicine name is required");
+          }
+
+          const supplier = supplierByCode.get(supplierCode.toLowerCase());
+          if (!supplier) {
+            throw new Error(`Supplier not found for code '${supplierCode}'`);
+          }
+
+          const medicine = medicineByName.get(medicineName.toLowerCase());
+          if (!medicine) {
+            throw new Error(`Medicine not found for name '${medicineName}'`);
+          }
+
+          const payload = insertSupplierRateSchema.parse({
+            supplierId: supplier.id,
+            medicineId: medicine.id,
+            rate: String(row?.rate || "0"),
+            mrp: row?.mrp ? String(row.mrp) : null,
+            discountPercent: row?.discountPercent ? String(row.discountPercent) : "0",
+            gstRate: row?.gstRate ? String(row.gstRate) : "18",
+            minOrderQty: parseInt(String(row?.minOrderQty || "1")) || 1,
+            leadTimeDays: parseInt(String(row?.leadTimeDays || "3")) || 3,
+          });
+
+          const key = `${supplier.id}-${medicine.id}`;
+          const existing = existingRateByPair.get(key);
+
+          if (existing) {
+            await storage.updateSupplierRate(existing.id, payload);
+          } else {
+            const created = await storage.createSupplierRate(payload);
+            existingRateByPair.set(key, created);
+          }
+
+          results.success++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: ${err instanceof Error ? err.message : "Unknown error"}`);
+        }
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error("Supplier rate import error:", error);
+      res.status(500).json({ error: "Failed to import supplier rates" });
     }
   });
 

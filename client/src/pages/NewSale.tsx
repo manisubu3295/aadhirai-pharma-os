@@ -87,6 +87,20 @@ interface SaleItem {
   displayQty: number;
 }
 
+const getSafePackSize = (packSize: number) => Math.max(1, Number(packSize) || 1);
+const getSafeAvailableQty = (availableQty: number) => Math.max(0, Number(availableQty) || 0);
+const isStripUnit = (unitType: SaleItem["unitType"] | string | null | undefined) =>
+  String(unitType || "").trim().toUpperCase() === "STRIP";
+
+const getMaxDisplayQty = (item: Pick<SaleItem, "unitType" | "availableQty" | "packSize">) => {
+  const availableQty = getSafeAvailableQty(item.availableQty);
+  if (isStripUnit(item.unitType)) {
+    const packSize = getSafePackSize(item.packSize);
+    return Math.max(1, Math.floor(availableQty / packSize));
+  }
+  return Math.max(1, availableQty);
+};
+
 const LIQUID_CATEGORIES = ["Syrups", "Drops", "Injections", "Cough & Cold"];
 const isLiquidCategory = (category: string | undefined) => {
   if (!category) return false;
@@ -250,7 +264,20 @@ export default function NewSale() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create sale");
+      if (!res.ok) {
+        let errorMessage = "Failed to create sale";
+        try {
+          const payload = await res.json();
+          if (payload?.details && typeof payload.details === "string") {
+            errorMessage = payload.details;
+          } else if (payload?.error && typeof payload.error === "string") {
+            errorMessage = payload.error;
+          }
+        } catch {
+          // Keep fallback message when response is not JSON.
+        }
+        throw new Error(errorMessage);
+      }
       return res.json();
     },
     onSuccess: (saleResult: { sale: Sale; items: SaleItemSchema[] }, variables) => {
@@ -274,8 +301,12 @@ export default function NewSale() {
       
       resetForm();
     },
-    onError: () => {
-      toast({ title: "Failed to create sale", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create sale",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -352,7 +383,7 @@ export default function NewSale() {
       }
     } else {
       const isLiquid = isLiquidCategory(medicine.category);
-      const packSize = isLiquid ? 1 : (medicine.packSize && medicine.packSize > 1 ? medicine.packSize : 10);
+      const packSize = isLiquid ? 1 : Math.max(1, Number(medicine.packSize) || 1);
       const stripPrice = Number(medicine.price);
       const tabletPrice = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : stripPrice / packSize;
       const defaultUnit = isLiquid ? "BOTTLE" : "STRIP";
@@ -443,11 +474,15 @@ export default function NewSale() {
             newQuantity = newDisplayQty;
           }
           
-          const maxQty = unitType === "STRIP" 
-            ? Math.floor(item.availableQty / item.packSize)
-            : item.availableQty;
+          const maxQty = getMaxDisplayQty({
+            unitType,
+            availableQty: item.availableQty,
+            packSize: item.packSize,
+          });
           const clampedDisplayQty = Math.max(1, Math.min(newDisplayQty, maxQty));
-          const clampedQuantity = unitType === "STRIP" ? clampedDisplayQty * item.packSize : clampedDisplayQty;
+          const clampedQuantity = unitType === "STRIP"
+            ? clampedDisplayQty * getSafePackSize(item.packSize)
+            : clampedDisplayQty;
           
           return { 
             ...item, 
@@ -466,11 +501,11 @@ export default function NewSale() {
     setItems(
       items.map((item) => {
         if (item.id === itemId) {
-          const maxDisplayQty = item.unitType === "STRIP" 
-            ? Math.floor(item.availableQty / item.packSize)
-            : item.availableQty;
+          const maxDisplayQty = getMaxDisplayQty(item);
           const clampedQty = Math.max(1, Math.min(displayQty, maxDisplayQty));
-          const baseQty = item.unitType === "STRIP" ? clampedQty * item.packSize : clampedQty;
+          const baseQty = isStripUnit(item.unitType)
+            ? clampedQty * getSafePackSize(item.packSize)
+            : clampedQty;
           return { ...item, displayQty: clampedQty, quantity: baseQty };
         }
         return item;
@@ -1110,9 +1145,7 @@ export default function NewSale() {
                       ) : (
                         items.map((item) => {
                           const itemTotal = item.price * item.displayQty - item.discount;
-                          const maxDisplayQty = item.unitType === "STRIP" 
-                            ? Math.floor(item.availableQty / item.packSize)
-                            : item.availableQty;
+                          const maxDisplayQty = getMaxDisplayQty(item);
 
                           return (
                             <TableRow key={item.id} data-testid={`sale-item-${item.id}`}>

@@ -440,6 +440,17 @@ console.log("Connected DB:", r.rows[0].db);
       -- New tables for supplier ledger, purchase returns, day closing
       ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS free_quantity INTEGER DEFAULT 0;
       ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS scheme_description TEXT;
+      ALTER TABLE medicines ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
+      ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price_per_unit DECIMAL(10,2);
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_type TEXT DEFAULT 'STRIP';
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS units_per_strip INTEGER DEFAULT 1;
+      ALTER TABLE goods_receipts ADD COLUMN IF NOT EXISTS discount_rate DECIMAL(5,2) DEFAULT 0;
+      ALTER TABLE goods_receipts ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS selling_price DECIMAL(10,2);
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS discount_percent DECIMAL(5,2) DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS purchase_unit TEXT DEFAULT 'STRIP';
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS units_per_strip INTEGER DEFAULT 1;
       
       CREATE TABLE IF NOT EXISTS supplier_transactions (
         id SERIAL PRIMARY KEY,
@@ -961,17 +972,77 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getNextInvoiceNumber(): Promise<string> {
-    const result = await pool.query(`
-      INSERT INTO sequences (name, current_value, prefix, updated_at)
-      VALUES ('invoice', 1, 'INV', NOW())
-      ON CONFLICT (name) DO UPDATE 
-      SET current_value = sequences.current_value + 1,
-          updated_at = NOW()
-      RETURNING prefix, current_value
-    `);
-    
-    const row = result.rows[0];
-    return `${row.prefix}-${row.current_value}`;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(`
+        INSERT INTO sequences (name, current_value, prefix, updated_at)
+        VALUES ('invoice', 0, 'INV', NOW())
+        ON CONFLICT (name) DO NOTHING
+      `);
+
+      const seqResult = await client.query<{
+        current_value: number;
+        prefix: string;
+      }>(`
+        SELECT current_value, prefix
+        FROM sequences
+        WHERE name = 'invoice'
+        FOR UPDATE
+      `);
+
+      const sequenceRow = seqResult.rows[0];
+      const prefix = sequenceRow?.prefix || "INV";
+      const currentValue = Number(sequenceRow?.current_value || 0);
+
+      const maxInvoiceResult = await client.query<{ max_no: number }>(
+        `
+          SELECT COALESCE(
+            MAX(
+              CASE
+                WHEN invoice_no ~ ('^' || $1 || '-[0-9]+$')
+                THEN LEAST(split_part(invoice_no, '-', 2)::numeric, 2147483647)::int
+                ELSE NULL
+              END
+            ),
+            0
+          ) AS max_no
+          FROM sales
+        `,
+        [prefix],
+      );
+
+      const maxExisting = Number(maxInvoiceResult.rows[0]?.max_no || 0);
+
+      if (currentValue >= 2147483647 || maxExisting >= 2147483647) {
+        await client.query("COMMIT");
+        const uniqueSuffix = `${Date.now()}${Math.floor(Math.random() * 1000)
+          .toString()
+          .padStart(3, "0")}`;
+        return `${prefix}-${uniqueSuffix}`;
+      }
+
+      const nextValue = Math.max(currentValue + 1, maxExisting + 1);
+
+      await client.query(
+        `
+          UPDATE sequences
+          SET current_value = $1,
+              updated_at = NOW()
+          WHERE name = 'invoice'
+        `,
+        [nextValue],
+      );
+
+      await client.query("COMMIT");
+      return `${prefix}-${nextValue}`;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getDashboardStats(): Promise<{
@@ -1199,18 +1270,114 @@ export class DatabaseStorage implements IStorage {
   async createGoodsReceipt(grn: InsertGoodsReceipt, items: InsertGoodsReceiptItem[]): Promise<GoodsReceipt> {
     const grnResult = await db.insert(goodsReceipts).values(grn).returning();
     const createdGrn = grnResult[0];
+    const headerDiscountRate = parseFloat(String(createdGrn.discountRate || "0")) || 0;
     
     if (items.length > 0) {
-      const itemsWithGrnId = items.map(item => ({ ...item, grnId: createdGrn.id }));
+      const resolvedItems: InsertGoodsReceiptItem[] = [];
+
+      for (const item of items) {
+        const sourceMedicine = await this.getMedicine(item.medicineId);
+        if (!sourceMedicine) {
+          throw new Error(`Medicine not found for GRN item: ${item.medicineId}`);
+        }
+
+        const normalizedBatch = String(item.batchNumber || sourceMedicine.batchNumber || "").trim();
+        if (!normalizedBatch) {
+          throw new Error("Batch number is required for GRN item");
+        }
+
+        let targetMedicine = sourceMedicine;
+
+        if (sourceMedicine.batchNumber !== normalizedBatch) {
+          const existingBatch = await db
+            .select()
+            .from(medicines)
+            .where(
+              and(
+                eq(medicines.name, sourceMedicine.name),
+                eq(medicines.manufacturer, sourceMedicine.manufacturer),
+                eq(medicines.batchNumber, normalizedBatch),
+              ),
+            )
+            .limit(1);
+
+          if (existingBatch[0]) {
+            targetMedicine = existingBatch[0];
+          } else {
+            const sellingPrice = parseFloat(String(item.sellingPrice || item.mrp || item.rate || sourceMedicine.price || "0")) || 0;
+            const unitsPerStrip = Math.max(1, parseInt(String(item.unitsPerStrip || item.packSize || sourceMedicine.packSize || 1)) || 1);
+            const purchaseUnit = String(item.purchaseUnit || item.unitType || "STRIP").toUpperCase();
+            const computedPricePerUnit = purchaseUnit === "STRIP"
+              ? sellingPrice / unitsPerStrip
+              : sellingPrice;
+
+            targetMedicine = await this.createMedicine({
+              name: sourceMedicine.name,
+              batchNumber: normalizedBatch,
+              manufacturer: sourceMedicine.manufacturer,
+              expiryDate: item.expiryDate || sourceMedicine.expiryDate,
+              quantity: 0,
+              price: sellingPrice.toFixed(2),
+              costPrice: String(item.rate || sourceMedicine.costPrice || sourceMedicine.price || "0"),
+              mrp: item.mrp ? String(item.mrp) : (sourceMedicine.mrp ? String(sourceMedicine.mrp) : null),
+              gstRate: String(item.gstRate || sourceMedicine.gstRate || "18"),
+              hsnCode: sourceMedicine.hsnCode,
+              category: sourceMedicine.category,
+              status: "Out of Stock",
+              reorderLevel: sourceMedicine.reorderLevel,
+              barcode: sourceMedicine.barcode,
+              minStock: sourceMedicine.minStock,
+              maxStock: sourceMedicine.maxStock,
+              locationId: item.locationId || sourceMedicine.locationId,
+              baseUnit: sourceMedicine.baseUnit,
+              packSize: unitsPerStrip,
+              pricePerUnit: computedPricePerUnit.toFixed(2),
+            });
+          }
+        }
+
+        resolvedItems.push({
+          ...item,
+          medicineId: targetMedicine.id,
+          batchNumber: normalizedBatch,
+          expiryDate: item.expiryDate || targetMedicine.expiryDate,
+        });
+      }
+
+      const itemsWithGrnId = resolvedItems.map(item => ({ ...item, grnId: createdGrn.id }));
       await db.insert(goodsReceiptItems).values(itemsWithGrnId);
       
-      for (const item of items) {
+      for (const item of resolvedItems) {
         // Update stock with quantity + free quantity
         const totalQty = item.quantity + (item.freeQuantity || 0);
         await this.updateMedicineStock(item.medicineId, totalQty);
+
+        const lineDiscountRate = parseFloat(String(item.discountPercent || "0")) || 0;
+        const baseRate = parseFloat(String(item.rate || "0")) || 0;
+        const effectivePurchaseRate = baseRate * (1 - lineDiscountRate / 100) * (1 - headerDiscountRate / 100);
+
+        const unitsPerStrip = Math.max(1, parseInt(String(item.unitsPerStrip || item.packSize || 1)) || 1);
+        const purchaseUnit = String(item.purchaseUnit || item.unitType || "STRIP").toUpperCase();
+
+        const sellingPrice = parseFloat(String(item.sellingPrice || item.mrp || item.rate || "0")) || 0;
+        const pricePerUnit = purchaseUnit === "STRIP"
+          ? sellingPrice / unitsPerStrip
+          : sellingPrice;
+
+        const medicineUpdate: Partial<InsertMedicine> = {
+          costPrice: effectivePurchaseRate.toFixed(2),
+          price: sellingPrice.toFixed(2),
+          mrp: item.mrp ? String(item.mrp) : null,
+          packSize: unitsPerStrip,
+          pricePerUnit: pricePerUnit.toFixed(2),
+        };
+
         if (item.locationId) {
-          await db.update(medicines).set({ locationId: item.locationId }).where(eq(medicines.id, item.medicineId));
+          medicineUpdate.locationId = item.locationId;
         }
+
+        await this.updateMedicine(item.medicineId, medicineUpdate);
+
         if (item.poItemId) {
           const poItem = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.id, item.poItemId)).limit(1);
           if (poItem[0]) {
@@ -1472,8 +1639,8 @@ export class DatabaseStorage implements IStorage {
     // Override with direct permissions (ensure type safety for local environments)
     for (const dm of directMenus) {
       const menuIdNum = Number(dm.menuId);
-      const canViewBool = dm.canView === true || dm.canView === 'true' || dm.canView === 't';
-      const canEditBool = dm.canEdit === true || dm.canEdit === 'true' || dm.canEdit === 't';
+      const canViewBool = Boolean(dm.canView);
+      const canEditBool = Boolean(dm.canEdit);
       const existing = permissionsMap.get(menuIdNum) || { canView: false, canEdit: false };
       permissionsMap.set(menuIdNum, {
         canView: existing.canView || canViewBool,

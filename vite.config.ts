@@ -5,14 +5,16 @@ import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { metaImagesPlugin } from "./vite-plugin-meta-images";
 
+const isReplit = process.env.REPL_ID !== undefined;
+
 export default defineConfig({
   plugins: [
     react(),
-    runtimeErrorOverlay(),
+    ...(isReplit ? [runtimeErrorOverlay()] : []),
     tailwindcss(),
     metaImagesPlugin(),
     ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
+    isReplit
       ? [
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer(),

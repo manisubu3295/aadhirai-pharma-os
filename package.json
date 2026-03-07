@@ -5,11 +5,13 @@
   "license": "MIT",
   "scripts": {
     "dev:client": "vite dev --port 5000",
-    "dev": "tsx server/index.ts",
+    "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
-    "start": "NODE_ENV=production node dist/index.cjs",
+    "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "reconcile:batches:dry": "node script/reconcile-grn-batches.cjs",
+    "reconcile:batches:apply": "node script/reconcile-grn-batches.cjs --apply"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -78,6 +80,7 @@
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
+    "xlsx": "^0.18.5",
     "zod": "^3.25.76",
     "zod-validation-error": "^3.4.0"
   },
@@ -97,6 +100,7 @@
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
+    "cross-env": "^7.0.3",
     "drizzle-kit": "^0.18.1",
     "esbuild": "^0.25.0",
     "postcss": "^8.5.6",
