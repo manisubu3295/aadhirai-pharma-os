@@ -35,9 +35,11 @@ import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
 import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, GoodsReceipt, GoodsReceiptItem } from "@shared/schema";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useSettings } from "@/contexts/SettingsContext";
 
 interface GRNItem {
   poItemId?: number;
+  poLineId?: number;
   medicineId: number;
   medicineName: string;
   batchNumber: string;
@@ -50,6 +52,9 @@ interface GRNItem {
   mrp: string;
   discountPercent: string;
   gstRate: string;
+  taxMode: "INCLUSIVE" | "EXCLUSIVE";
+  conversionFactorSnapshot: number;
+  ptr: string;
   purchaseUnit: "STRIP" | "TABLET";
   unitsPerStrip: number;
   pendingQty?: number;
@@ -67,6 +72,8 @@ export default function GoodsReceipts() {
   const [selectedPOId, setSelectedPOId] = useState<string>("");
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
   const [discountRate, setDiscountRate] = useState("0");
+  const [grnGstMode, setGrnGstMode] = useState<"item" | "header">("item");
+  const [headerGstRate, setHeaderGstRate] = useState("5");
   const [items, setItems] = useState<GRNItem[]>([]);
   
   const [fromDate, setFromDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
@@ -76,6 +83,7 @@ export default function GoodsReceipts() {
   const [receiptDateSortOrder, setReceiptDateSortOrder] = useState<"asc" | "desc">("desc");
 
   const { toast } = useToast();
+  const { settings: appSettings } = useSettings();
   const queryClient = useQueryClient();
 
   const { data: suppliers = [] } = useQuery<Supplier[]>({
@@ -117,6 +125,23 @@ export default function GoodsReceipts() {
     !selectedSupplierId || po.supplierId === parseInt(selectedSupplierId)
   );
 
+  const getConfiguredGstMode = (): "item" | "header" =>
+    appSettings.defaultGrnGstMode === "header" ? "header" : "item";
+
+  const getEffectiveItemGstRate = (item: GRNItem): string => {
+    if (grnGstMode === "header") {
+      const parsedHeaderRate = Number.parseFloat(String(headerGstRate || "5").trim());
+      return Number.isFinite(parsedHeaderRate) && parsedHeaderRate >= 0
+        ? String(parsedHeaderRate)
+        : "5";
+    }
+
+    const parsedItemRate = Number.parseFloat(String(item.gstRate || "5").trim());
+    return Number.isFinite(parsedItemRate) && parsedItemRate >= 0
+      ? String(parsedItemRate)
+      : "5";
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: { 
       supplierId: number; 
@@ -142,7 +167,7 @@ export default function GoodsReceipts() {
           ? (lineAfterLineDiscount / (subtotal - lineDiscountAmount || 1)) * headerDiscountAmount
           : 0;
         const lineTaxable = lineAfterLineDiscount - prorataHeaderDiscount;
-        return sum + (lineTaxable * parseFloat(item.gstRate || "18") / 100);
+        return sum + (lineTaxable * parseFloat(getEffectiveItemGstRate(item)) / 100);
       }, 0);
       
       const res = await fetch("/api/goods-receipts", {
@@ -160,27 +185,36 @@ export default function GoodsReceipts() {
           discountAmount: (lineDiscountAmount + headerDiscountAmount).toFixed(2),
           taxAmount: taxAmount.toFixed(2),
           totalAmount: (taxableAmount + taxAmount).toFixed(2),
-          items: data.items.map(item => ({
+          items: data.items.map(item => {
+            const effectiveGstRate = getEffectiveItemGstRate(item);
+            return {
             poItemId: item.poItemId || null,
+            poLineId: item.poLineId || item.poItemId || null,
             medicineId: item.medicineId,
             medicineName: item.medicineName,
             batchNumber: item.batchNumber,
             expiryDate: item.expiryDate,
             quantity: item.quantity,
             freeQuantity: item.freeQuantity || 0,
+            receivedQty: item.quantity,
+            freeQty: item.freeQuantity || 0,
             schemeDescription: item.schemeDescription || null,
             rate: item.rate,
+            ptr: item.ptr || null,
             sellingPrice: item.sellingPrice || null,
             mrp: item.mrp || null,
             discountPercent: item.discountPercent || "0",
             discountAmount: ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100).toFixed(2),
-            gstRate: item.gstRate || "18",
-            taxAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * parseFloat(item.gstRate || "18") / 100)).toFixed(2),
-            totalAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2),
+            gstRate: effectiveGstRate,
+            taxMode: item.taxMode || "EXCLUSIVE",
+            taxAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * parseFloat(effectiveGstRate) / 100)).toFixed(2),
+            totalAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(effectiveGstRate) / 100))).toFixed(2),
             purchaseUnit: item.purchaseUnit,
             unitsPerStrip: item.unitsPerStrip,
+            conversionFactorSnapshot: item.conversionFactorSnapshot || item.unitsPerStrip || 1,
             locationId: item.locationId || null,
-          })),
+            };
+          }),
         }),
       });
       if (!res.ok) throw new Error("Failed to create goods receipt");
@@ -204,6 +238,8 @@ export default function GoodsReceipts() {
     setSelectedPOId("");
     setSupplierInvoiceNo("");
     setDiscountRate("0");
+    setGrnGstMode(getConfiguredGstMode());
+    setHeaderGstRate("5");
     setItems([]);
   };
 
@@ -217,6 +253,7 @@ export default function GoodsReceipts() {
       .filter(item => item.quantity > item.receivedQty)
       .map(item => ({
         poItemId: item.id,
+        poLineId: item.id,
         medicineId: item.medicineId,
         medicineName: item.medicineName,
         batchNumber: "",
@@ -225,16 +262,27 @@ export default function GoodsReceipts() {
         freeQuantity: 0,
         schemeDescription: "",
         rate: item.rate,
+        ptr: item.rate,
         sellingPrice: item.mrp || item.rate,
         mrp: item.mrp || "",
         discountPercent: item.discountPercent || "0",
-        gstRate: item.gstRate || "18",
+        gstRate: item.gstRate || "5",
+        taxMode: "EXCLUSIVE" as const,
         purchaseUnit: (item.unitType as "STRIP" | "TABLET") || "STRIP",
         unitsPerStrip: item.unitsPerStrip || 1,
+        conversionFactorSnapshot: item.unitsPerStrip || 1,
         pendingQty: item.quantity - item.receivedQty,
       }));
     
     setItems(newItems);
+    const configuredDiscountRate = String(appSettings.defaultGrnDiscountRate || "5").trim();
+    const parsedDiscountRate = Number.parseFloat(configuredDiscountRate);
+    setDiscountRate(
+      Number.isFinite(parsedDiscountRate) && parsedDiscountRate >= 0
+        ? String(parsedDiscountRate)
+        : "5"
+    );
+    setGrnGstMode(getConfiguredGstMode());
     
     const po = purchaseOrders.find(p => p.id === parseInt(selectedPOId));
     if (po) {
@@ -247,6 +295,12 @@ export default function GoodsReceipts() {
   const updateItem = (index: number, field: keyof GRNItem, value: any) => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
+    if (field === "unitsPerStrip" || field === "purchaseUnit") {
+      const current = newItems[index];
+      newItems[index].conversionFactorSnapshot = current.purchaseUnit === "STRIP"
+        ? Math.max(1, Number(current.unitsPerStrip) || 1)
+        : 1;
+    }
     setItems(newItems);
   };
 
@@ -362,7 +416,7 @@ export default function GoodsReceipts() {
         ? (lineTaxable / (subtotal - lineDiscount)) * headerDiscount
         : 0;
       const finalTaxable = lineTaxable - prorataHeaderDiscount;
-      return sum + (finalTaxable * parseFloat(item.gstRate || "18") / 100);
+      return sum + (finalTaxable * parseFloat(getEffectiveItemGstRate(item)) / 100);
     }, 0);
     return { subtotal, lineDiscount, headerDiscount, tax, total: taxable + tax };
   };
@@ -552,89 +606,122 @@ export default function GoodsReceipts() {
       </Card>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Goods Receipt Note</DialogTitle>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b bg-muted/20">
+            <DialogTitle className="text-xl">Create Goods Receipt Note</DialogTitle>
           </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Select PO (Optional)</Label>
-                <div className="flex gap-2">
+
+          <div className="flex-1 overflow-y-auto p-4 lg:p-5 space-y-4">
+            <div className="rounded-lg border bg-card p-3 lg:p-4 space-y-3 lg:space-y-4">
+              <div className="grid grid-cols-2 gap-3 lg:gap-4">
+                <div className="space-y-1.5">
+                  <Label>Supplier *</Label>
                   <SearchableSelect
-                    value={selectedPOId}
-                    onValueChange={setSelectedPOId}
-                    options={poOptions}
-                    placeholder="Select PO"
-                    searchPlaceholder="Search PO..."
-                    dataTestId="select-grn-po"
-                    className="flex-1 min-w-0"
+                    value={selectedSupplierId}
+                    onValueChange={setSelectedSupplierId}
+                    options={supplierOptions}
+                    placeholder="Select supplier"
+                    searchPlaceholder="Search supplier..."
+                    dataTestId="select-grn-create-supplier"
                   />
-                  <Button variant="outline" onClick={loadFromPO} disabled={!selectedPOId} className="shrink-0" data-testid="button-load-po">
-                    Load
-                  </Button>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Supplier Invoice No.</Label>
+                  <Input
+                    value={supplierInvoiceNo}
+                    onChange={(e) => setSupplierInvoiceNo(e.target.value)}
+                    placeholder="Invoice number"
+                    data-testid="input-grn-invoice"
+                  />
                 </div>
               </div>
-              <div>
-                <Label>Supplier *</Label>
-                <SearchableSelect
-                  value={selectedSupplierId}
-                  onValueChange={setSelectedSupplierId}
-                  options={supplierOptions}
-                  placeholder="Select supplier"
-                  searchPlaceholder="Search supplier..."
-                  dataTestId="select-grn-create-supplier"
-                />
-              </div>
-              <div>
-                <Label>Supplier Invoice No.</Label>
-                <Input 
-                  value={supplierInvoiceNo} 
-                  onChange={(e) => setSupplierInvoiceNo(e.target.value)} 
-                  placeholder="Invoice number"
-                  data-testid="input-grn-invoice"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4">
+                <div className="space-y-1.5">
+                  <Label>GRN Discount Rate (%)</Label>
+                  <NumericInput
+                    min={0}
+                    allowDecimal={true}
+                    value={parseFloat(discountRate) || 0}
+                    onChange={(value) => setDiscountRate(String(value))}
+                    data-testid="input-grn-discount-rate"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>GRN GST Mode</Label>
+                  <Select value={grnGstMode} onValueChange={(value) => setGrnGstMode(value as "item" | "header")}> 
+                    <SelectTrigger data-testid="select-grn-gst-mode">
+                      <SelectValue placeholder="Select GST mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="item">Item-wise GST</SelectItem>
+                      <SelectItem value="header">Header override GST</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Header GST (%)</Label>
+                  <NumericInput
+                    min={0}
+                    allowDecimal={true}
+                    value={parseFloat(headerGstRate) || 5}
+                    onChange={(value) => setHeaderGstRate(String(value))}
+                    disabled={grnGstMode !== "header"}
+                    data-testid="input-grn-header-gst-rate"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>GRN Discount Rate (%)</Label>
-                <NumericInput
-                  min={0}
-                  allowDecimal={true}
-                  value={parseFloat(discountRate) || 0}
-                  onChange={(value) => setDiscountRate(String(value))}
-                  data-testid="input-grn-discount-rate"
-                />
+            <div className="rounded-lg border bg-card p-3 lg:p-4">
+              <div className="grid grid-cols-1 gap-3 lg:gap-4 items-end">
+                <div className="space-y-1.5">
+                  <Label>Select PO (Optional)</Label>
+                  <div className="flex gap-2">
+                    <SearchableSelect
+                      value={selectedPOId}
+                      onValueChange={setSelectedPOId}
+                      options={poOptions}
+                      placeholder="Select PO"
+                      searchPlaceholder="Search PO..."
+                      dataTestId="select-grn-po"
+                      className="flex-1 min-w-0"
+                    />
+                    <Button variant="outline" onClick={loadFromPO} disabled={!selectedPOId} className="shrink-0" data-testid="button-load-po">
+                      Load
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Load pending items from issued PO.</p>
+                </div>
               </div>
             </div>
 
             {items.length > 0 && (
-              <div className="border rounded-md overflow-x-auto">
-                <Table>
-                  <TableHeader>
+              <div className="rounded-lg border bg-card overflow-hidden">
+                <div className="px-3 lg:px-4 py-2.5 lg:py-3 border-b bg-muted/20 text-xs lg:text-sm font-medium">GRN Items</div>
+                <div className="overflow-x-auto">
+                <Table className="text-xs lg:text-sm">
+                  <TableHeader className="bg-muted/20">
                     <TableRow>
-                      <TableHead>Medicine</TableHead>
-                      <TableHead className="w-24">Batch No. *</TableHead>
-                      <TableHead className="w-28">Expiry *</TableHead>
-                      <TableHead className="w-16">Qty</TableHead>
-                      <TableHead className="w-16">Free</TableHead>
-                      <TableHead className="w-16">Unit</TableHead>
-                      <TableHead className="w-20">Units/Strip</TableHead>
-                      <TableHead className="w-20">Rate</TableHead>
-                      <TableHead className="w-20">Selling</TableHead>
-                      <TableHead className="w-20">MRP</TableHead>
-                      <TableHead className="w-20">Disc %</TableHead>
-                      <TableHead className="w-28">Scheme</TableHead>
-                      <TableHead className="w-28">Location</TableHead>
-                      <TableHead className="w-24 text-right">Total</TableHead>
+                      <TableHead className="h-9 whitespace-nowrap">Medicine</TableHead>
+                      <TableHead className="h-9 w-[120px] whitespace-nowrap">Batch No. *</TableHead>
+                      <TableHead className="h-9 w-[130px] whitespace-nowrap">Expiry *</TableHead>
+                      <TableHead className="h-9 w-[84px] whitespace-nowrap">Qty</TableHead>
+                      <TableHead className="h-9 w-[84px] whitespace-nowrap">Free</TableHead>
+                      <TableHead className="h-9 w-[98px] whitespace-nowrap">Unit</TableHead>
+                      <TableHead className="h-9 w-[120px] whitespace-nowrap">Units/Strip</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">Rate</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">Selling</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">MRP</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">Disc %</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">GST %</TableHead>
+                      <TableHead className="h-9 w-[120px] whitespace-nowrap">Scheme</TableHead>
+                      <TableHead className="h-9 w-[140px] whitespace-nowrap">Location</TableHead>
+                      <TableHead className="h-9 w-[120px] text-right whitespace-nowrap">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {items.map((item, index) => (
-                      <TableRow key={index}>
+                      <TableRow key={index} className="align-top">
                         <TableCell>
                           <div>
                             <span className="font-medium text-sm">{item.medicineName}</span>
@@ -648,7 +735,7 @@ export default function GoodsReceipts() {
                             value={item.batchNumber}
                             onChange={(e) => updateItem(index, "batchNumber", e.target.value)}
                             placeholder="Batch"
-                            className="w-20"
+                            className="h-8 w-[110px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -656,7 +743,7 @@ export default function GoodsReceipts() {
                             type="month"
                             value={item.expiryDate}
                             onChange={(e) => updateItem(index, "expiryDate", e.target.value)}
-                            className="w-28"
+                            className="h-8 w-[120px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -665,7 +752,7 @@ export default function GoodsReceipts() {
                             max={item.pendingQty}
                             value={item.quantity}
                             onChange={(value) => updateItem(index, "quantity", value)}
-                            className="w-14"
+                            className="h-8 w-[76px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -673,7 +760,7 @@ export default function GoodsReceipts() {
                             min={0}
                             value={item.freeQuantity || 0}
                             onChange={(value) => updateItem(index, "freeQuantity", value)}
-                            className="w-14"
+                            className="h-8 w-[76px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -681,7 +768,7 @@ export default function GoodsReceipts() {
                             value={item.purchaseUnit}
                             onValueChange={(v) => updateItem(index, "purchaseUnit", v as "STRIP" | "TABLET")}
                           >
-                            <SelectTrigger className="w-16">
+                            <SelectTrigger className="h-8 w-[90px]">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -695,7 +782,7 @@ export default function GoodsReceipts() {
                             min={1}
                             value={item.unitsPerStrip}
                             onChange={(value) => updateItem(index, "unitsPerStrip", value)}
-                            className="w-16"
+                            className="h-8 w-[110px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -704,7 +791,7 @@ export default function GoodsReceipts() {
                             allowDecimal={true}
                             value={parseFloat(item.rate) || 0}
                             onChange={(value) => updateItem(index, "rate", String(value))}
-                            className="w-18"
+                            className="h-8 w-[92px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -713,7 +800,7 @@ export default function GoodsReceipts() {
                             allowDecimal={true}
                             value={parseFloat(item.sellingPrice) || 0}
                             onChange={(value) => updateItem(index, "sellingPrice", String(value))}
-                            className="w-18"
+                            className="h-8 w-[92px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -722,7 +809,7 @@ export default function GoodsReceipts() {
                             allowDecimal={true}
                             value={parseFloat(item.mrp) || 0}
                             onChange={(value) => updateItem(index, "mrp", String(value))}
-                            className="w-18"
+                            className="h-8 w-[92px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -731,7 +818,17 @@ export default function GoodsReceipts() {
                             allowDecimal={true}
                             value={parseFloat(item.discountPercent) || 0}
                             onChange={(value) => updateItem(index, "discountPercent", String(value))}
-                            className="w-18"
+                            className="h-8 w-[92px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(getEffectiveItemGstRate(item)) || 5}
+                            onChange={(value) => updateItem(index, "gstRate", String(value))}
+                            disabled={grnGstMode === "header"}
+                            className="h-8 w-[92px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -739,7 +836,7 @@ export default function GoodsReceipts() {
                             value={item.schemeDescription || ""}
                             onChange={(e) => updateItem(index, "schemeDescription", e.target.value)}
                             placeholder="e.g. 10+2"
-                            className="w-24"
+                            className="h-8 w-[110px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -747,7 +844,7 @@ export default function GoodsReceipts() {
                             value={item.locationId?.toString() || ""}
                             onValueChange={(v) => updateItem(index, "locationId", v ? parseInt(v) : undefined)}
                           >
-                            <SelectTrigger className="w-24">
+                            <SelectTrigger className="h-8 w-[130px]">
                               <SelectValue placeholder="Select" />
                             </SelectTrigger>
                             <SelectContent>
@@ -760,18 +857,19 @@ export default function GoodsReceipts() {
                           </Select>
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          ₹{((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(item.gstRate || "18") / 100))).toFixed(2)}
+                          ₹{((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(getEffectiveItemGstRate(item)) / 100))).toFixed(2)}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             )}
 
             {items.length > 0 && (
               <div className="flex justify-end">
-                <div className="w-64 space-y-2 text-sm">
+                <div className="w-64 lg:w-72 rounded-lg border bg-card p-3 lg:p-4 space-y-1.5 lg:space-y-2 text-xs lg:text-sm">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span className="font-mono">₹{totals.subtotal.toFixed(2)}</span>
@@ -788,7 +886,7 @@ export default function GoodsReceipts() {
                     <span>Tax:</span>
                     <span className="font-mono">₹{totals.tax.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-lg border-t pt-2">
+                  <div className="flex justify-between font-bold text-base lg:text-lg border-t pt-2">
                     <span>Total:</span>
                     <span className="font-mono">₹{totals.total.toFixed(2)}</span>
                   </div>
@@ -797,14 +895,14 @@ export default function GoodsReceipts() {
             )}
 
             {items.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground border rounded-md">
+              <div className="text-center py-10 text-muted-foreground border rounded-lg bg-muted/10">
                 <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>Select a PO and click Load to add items</p>
               </div>
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-4 lg:px-6 py-3 lg:py-4 border-t bg-muted/20">
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending} data-testid="button-save-grn">
               {createMutation.isPending ? "Creating..." : "Create GRN & Update Inventory"}

@@ -9,11 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode, Printer, Calendar, CalendarDays, CalendarRange, Users, Package, RotateCcw, Search } from "lucide-react";
+import { FileSpreadsheet, FileText, CreditCard, Banknote, Wallet, QrCode, Printer, Calendar, CalendarDays, CalendarRange, Users, Package, RotateCcw, Search, Share2 } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
 import { format } from "date-fns";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/hooks/use-toast";
+import { generateSaleInvoicePdfBlob } from "@/lib/pdfUtils";
 import { endOfLocalDay, formatAppDate, formatAppDateTime, parseServerDate, startOfLocalDay } from "@/lib/dateTime";
 import type { Sale as SaleType, SaleItem } from "@shared/schema";
 
@@ -95,6 +97,7 @@ interface YearlyData {
 export default function Collections() {
   const { isPro } = usePlan();
   const { settings: appSettings } = useSettings();
+  const { toast } = useToast();
   const today = new Date();
   const currentYear = today.getFullYear();
   const [activeTab, setActiveTab] = useState("daily");
@@ -1097,6 +1100,108 @@ export default function Collections() {
             <Button variant="outline" onClick={() => setPrintDialogOpen(false)}>
               Close
             </Button>
+            {printSale?.customerPhone && (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (!printSale) return;
+
+                  try {
+                    const pdfBlob = await generateSaleInvoicePdfBlob(
+                      printSale as unknown as SaleType,
+                      printItems,
+                      {
+                        name: appSettings.storeName,
+                        address: appSettings.storeAddress,
+                        phone: appSettings.storePhone,
+                        gstin: appSettings.gstin,
+                        dlNo: appSettings.dlNo,
+                      },
+                      {
+                        showMrp: appSettings.showMrp,
+                        showGstBreakup: appSettings.showGstBreakup,
+                        showDoctor: appSettings.showDoctor,
+                        hideStoreGstin: true,
+                      },
+                    );
+
+                    const invoiceNo = printSale.invoiceNo || `INV-${printSale.id}`;
+                    const fileName = `Invoice_${invoiceNo}.pdf`;
+                    const shareText = `Invoice ${invoiceNo} from ${appSettings.storeName} is ready. Please find the attached PDF.`;
+                    const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" });
+
+                    const nav = navigator as Navigator & {
+                      canShare?: (data?: ShareData) => boolean;
+                    };
+                    const canShareWithFile = typeof nav.share === "function"
+                      && typeof nav.canShare === "function"
+                      && nav.canShare({ files: [pdfFile] });
+
+                    if (canShareWithFile) {
+                      await nav.share({
+                        files: [pdfFile],
+                        title: `Invoice ${invoiceNo}`,
+                        text: shareText,
+                      });
+                      toast({
+                        title: "Invoice ready to share",
+                        description: "Share sheet opened with PDF and message.",
+                      });
+                      return;
+                    }
+
+                    const blobUrl = URL.createObjectURL(pdfBlob);
+                    const anchor = document.createElement("a");
+                    anchor.href = blobUrl;
+                    anchor.download = fileName;
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                    document.body.removeChild(anchor);
+                    URL.revokeObjectURL(blobUrl);
+
+                    const phoneNumber = printSale.customerPhone?.replace(/\D/g, "");
+                    if (phoneNumber) {
+                      const message = encodeURIComponent(
+                        `Invoice ${invoiceNo} from ${appSettings.storeName} is ready. Please find the attached PDF.`
+                      );
+
+                      const localNumber = phoneNumber.startsWith("91") ? phoneNumber : `91${phoneNumber}`;
+                      const appUrl = `whatsapp://send?phone=${localNumber}&text=${message}`;
+                      const webUrl = `https://wa.me/${localNumber}?text=${message}`;
+
+                      const popup = window.open(appUrl, "_blank");
+                      if (!popup) {
+                        window.open(webUrl, "_blank");
+                      } else {
+                        setTimeout(() => {
+                          try {
+                            if (popup.closed) return;
+                            popup.location.href = webUrl;
+                          } catch {
+                            window.open(webUrl, "_blank");
+                          }
+                        }, 1200);
+                      }
+                    }
+
+                    toast({
+                      title: "Invoice PDF downloaded",
+                      description: "WhatsApp chat opened. Attach the downloaded PDF and tap Send.",
+                    });
+                  } catch {
+                    toast({
+                      title: "Unable to share invoice PDF",
+                      description: "Please try again.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                data-testid="button-whatsapp-share-reprint"
+              >
+                <Share2 className="h-4 w-4 mr-2" />
+                WhatsApp
+              </Button>
+            )}
             <Button onClick={executePrint} data-testid="button-print-invoice">
               <Printer className="h-4 w-4 mr-2" />
               Print

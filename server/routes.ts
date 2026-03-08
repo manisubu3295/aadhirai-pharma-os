@@ -5,8 +5,6 @@ import {
   insertMedicineSchema, 
   insertCustomerSchema, 
   insertDoctorSchema, 
-  insertSaleSchema,
-  createSaleItemSchema,
   insertLocationSchema,
   insertAuditLogSchema,
   insertCreditPaymentSchema,
@@ -15,8 +13,6 @@ import {
   insertSupplierRateSchema,
   insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema,
-  insertGoodsReceiptSchema,
-  insertGoodsReceiptItemSchema,
   insertSalesReturnSchema,
   insertSalesReturnItemSchema,
   insertPettyCashExpenseSchema,
@@ -25,11 +21,20 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
-import { randomUUID } from "crypto";
+import { inventoryPostingController } from "./controllers/inventory-posting.controller";
 
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+});
+
+const genericNamePayloadSchema = z.object({
+  name: z.string().trim().min(1, "Generic name is required").max(120, "Generic name is too long"),
+});
+
+const assignGenericPayloadSchema = z.object({
+  genericNameId: z.number().int().positive(),
+  medicineId: z.number().int().positive(),
 });
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -403,9 +408,39 @@ export async function registerRoutes(
   });
 
   app.patch("/api/medicines/:id", async (req, res) => {
+    const numericFieldLabels: Record<string, string> = {
+      quantity: "Quantity",
+      packSize: "Pack Size",
+      price: "Selling Price",
+      costPrice: "Cost Price",
+      mrp: "MRP",
+      gstRate: "GST Rate",
+      reorderLevel: "Reorder Level",
+      minStock: "Min Stock",
+      maxStock: "Max Stock",
+      locationId: "Location",
+    };
+
     try {
       const id = parseInt(req.params.id);
-      const data = insertMedicineSchema.partial().parse(req.body);
+      const payload = req.body as Record<string, unknown>;
+      const emptyNumericFields = Object.entries(numericFieldLabels)
+        .filter(([field]) => Object.prototype.hasOwnProperty.call(payload, field))
+        .filter(([field]) => {
+          if (typeof payload[field] !== "string") return false;
+          const raw = String(payload[field]).trim().toLowerCase();
+          return raw === "" || raw === "undefined" || raw === "null";
+        })
+        .map(([, label]) => label);
+
+      if (emptyNumericFields.length > 0) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: `${emptyNumericFields.join(", ")} cannot be empty. Enter a number or remove the value.`,
+        });
+      }
+
+      const data = insertMedicineSchema.partial().parse(payload);
       const medicine = await storage.updateMedicine(id, data);
       if (!medicine) {
         return res.status(404).json({ error: "Medicine not found" });
@@ -413,9 +448,13 @@ export async function registerRoutes(
       res.json(medicine);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
+        return res.status(400).json({
+          error: "Validation failed",
+          details: error.errors.map((entry) => `${entry.path.join(".")}: ${entry.message}`).join(", "),
+        });
       }
-      res.status(500).json({ error: "Failed to update medicine" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to update medicine", details: errorMessage });
     }
   });
 
@@ -429,6 +468,82 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete medicine" });
+    }
+  });
+
+  app.get("/api/generic-names", async (req, res) => {
+    try {
+      const includeInactive = String(req.query.includeInactive || "false").toLowerCase() === "true";
+      const items = await storage.getGenericNames(includeInactive);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch generic names" });
+    }
+  });
+
+  app.post("/api/generic-names", async (req, res) => {
+    try {
+      const payload = genericNamePayloadSchema.parse(req.body);
+      const created = await storage.createGenericName({ name: payload.name });
+      res.status(201).json(created);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors.map((e) => e.message).join(", ") });
+      }
+      res.status(400).json({ error: "Failed to create generic name", details: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.patch("/api/generic-names/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const payload = genericNamePayloadSchema.parse(req.body);
+      const updated = await storage.updateGenericName(id, { name: payload.name });
+      if (!updated) {
+        return res.status(404).json({ error: "Generic name not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors.map((e) => e.message).join(", ") });
+      }
+      res.status(400).json({ error: "Failed to update generic name", details: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/generic-names/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const removed = await storage.softDeleteGenericName(id);
+      if (!removed) {
+        return res.status(404).json({ error: "Generic name not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete generic name" });
+    }
+  });
+
+  app.post("/api/generic-names/assign", async (req, res) => {
+    try {
+      const payload = assignGenericPayloadSchema.parse(req.body);
+      const generic = (await storage.getGenericNames(true)).find((g) => g.id === payload.genericNameId);
+      if (!generic || !generic.isActive) {
+        return res.status(400).json({ error: "Invalid generic name" });
+      }
+
+      const medicine = await storage.getMedicine(payload.medicineId);
+      if (!medicine) {
+        return res.status(404).json({ error: "Medicine not found" });
+      }
+
+      const updated = await storage.updateMedicine(payload.medicineId, { genericName: generic.name });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors.map((e) => e.message).join(", ") });
+      }
+      res.status(500).json({ error: "Failed to assign generic name", details: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 
@@ -716,98 +831,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/sales", async (req, res) => {
-    try {
-      const { items, ...saleData } = req.body;
-      const sale = insertSaleSchema.parse(saleData);
-      const saleItems = z.array(createSaleItemSchema).parse(items);
-      
-      const paymentMethod = (sale.paymentMethod || "").toLowerCase();
-      const netAmount = parseFloat(String(sale.total || 0));
-      const receivedAmount = parseFloat(String(sale.receivedAmount || 0));
-      
-      if (paymentMethod !== "credit" && receivedAmount < netAmount) {
-        return res.status(400).json({ 
-          error: "Received amount cannot be less than net amount for non-credit payments." 
-        });
-      }
-      
-      const baseSale = {
-        ...sale,
-        userId: req.session.userId || sale.userId || null,
-      };
-
-      let lastError: unknown;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const invoiceNo = await storage.getNextInvoiceNumber();
-          const createdSale = await storage.createSale({ ...baseSale, invoiceNo }, saleItems);
-          return res.status(201).json(createdSale);
-        } catch (error) {
-          const errorCode = (error as { code?: string })?.code;
-          const detailText = String((error as { detail?: string; message?: string })?.detail || (error as Error)?.message || "");
-          const isDuplicateInvoice =
-            errorCode === "23505" &&
-            (detailText.includes("sales_invoice_no_idx") || detailText.toLowerCase().includes("invoice_no"));
-
-          if (!isDuplicateInvoice) {
-            throw error;
-          }
-
-          lastError = error;
-        }
-      }
-
-      throw lastError || new Error("Failed to generate unique invoice number");
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          error: "Validation failed",
-          details: error.errors.map((entry) => `${entry.path.join(".")}: ${entry.message}`).join(", "),
-        });
-      }
-
-      const traceId = randomUUID();
-      const errorObj = error as {
-        message?: string;
-        code?: string;
-        detail?: string;
-        table?: string;
-        column?: string;
-        constraint?: string;
-        where?: string;
-      };
-
-      console.error("[SALES_CREATE_FAILED]", {
-        traceId,
-        message: errorObj?.message || String(error),
-        code: errorObj?.code,
-        detail: errorObj?.detail,
-        table: errorObj?.table,
-        column: errorObj?.column,
-        constraint: errorObj?.constraint,
-        where: errorObj?.where,
-        itemCount: Array.isArray(req.body?.items) ? req.body.items.length : 0,
-        paymentMethod: req.body?.paymentMethod,
-        total: req.body?.total,
-      });
-
-      if (process.env.NODE_ENV === "production") {
-        return res.status(500).json({ error: "Failed to create sale", traceId });
-      }
-
-      return res.status(500).json({
-        error: "Failed to create sale",
-        traceId,
-        details: {
-          message: errorObj?.message || String(error),
-          code: errorObj?.code,
-          detail: errorObj?.detail,
-          table: errorObj?.table,
-          column: errorObj?.column,
-          constraint: errorObj?.constraint,
-        },
-      });
-    }
+    return inventoryPostingController.createSale(req, res);
   });
 
   app.get("/api/dashboard/stats", async (req, res) => {
@@ -1605,35 +1629,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/goods-receipts", async (req, res) => {
-    try {
-      const { items, ...grnData } = req.body;
-      const grn = insertGoodsReceiptSchema.parse(grnData);
-      const grnItems = z.array(insertGoodsReceiptItemSchema.omit({ grnId: true })).parse(items || []);
-      const itemsWithDummyGrnId = grnItems.map(item => ({ ...item, grnId: 0 }));
-      
-      const createdGrn = await storage.createGoodsReceipt(grn, itemsWithDummyGrnId);
-      
-      if (grn.poId) {
-        const poItems = await storage.getPurchaseOrderItems(grn.poId);
-        const allReceived = poItems.every(item => item.receivedQty >= item.quantity);
-        const someReceived = poItems.some(item => item.receivedQty > 0);
-        
-        if (allReceived) {
-          await storage.updatePurchaseOrder(grn.poId, { status: "Received" });
-        } else if (someReceived) {
-          await storage.updatePurchaseOrder(grn.poId, { status: "PartiallyReceived" });
-        }
-      }
-      
-      res.status(201).json(createdGrn);
-    } catch (error) {
-      console.error("Goods receipt creation error:", error);
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
-      }
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      res.status(500).json({ error: "Failed to create goods receipt", details: errorMessage });
-    }
+    return inventoryPostingController.createGoodsReceipt(req, res);
   });
 
   app.get("/api/sales-returns", async (req, res) => {

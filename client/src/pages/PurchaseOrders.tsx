@@ -759,8 +759,8 @@ export default function PurchaseOrders() {
           </DialogHeader>
           
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
                 <Label>Supplier *</Label>
                 <SearchableSelect
                   value={selectedSupplierId}
@@ -769,15 +769,16 @@ export default function PurchaseOrders() {
                   placeholder="Select supplier"
                   searchPlaceholder="Search supplier..."
                   dataTestId="select-po-create-supplier"
-                  className="w-full"
+                  className="w-full h-9"
                 />
               </div>
-              <div>
+              <div className="space-y-1.5">
                 <Label>Notes</Label>
                 <Input 
                   value={notes} 
                   onChange={(e) => setNotes(e.target.value)} 
                   placeholder="Optional notes"
+                  className="h-9"
                   data-testid="input-po-notes"
                 />
               </div>
@@ -1133,8 +1134,8 @@ export default function PurchaseOrders() {
           </DialogHeader>
           
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
                 <Label>Supplier *</Label>
                 <SearchableSelect
                   value={selectedSupplierId}
@@ -1143,15 +1144,16 @@ export default function PurchaseOrders() {
                   placeholder="Select supplier"
                   searchPlaceholder="Search supplier..."
                   dataTestId="select-edit-po-supplier"
-                  className="w-full"
+                  className="w-full h-9"
                 />
               </div>
-              <div>
+              <div className="space-y-1.5">
                 <Label>Notes</Label>
                 <Input 
                   value={notes} 
                   onChange={(e) => setNotes(e.target.value)} 
                   placeholder="Optional notes"
+                  className="h-9"
                   data-testid="input-edit-po-notes"
                 />
               </div>

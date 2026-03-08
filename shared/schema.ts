@@ -53,6 +53,8 @@ export type User = typeof users.$inferSelect;
 export const medicines = pgTable("medicines", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  genericName: text("generic_name"),
+  skuName: text("sku_name"),
   batchNumber: text("batch_number").notNull(),
   manufacturer: text("manufacturer").notNull(),
   expiryDate: text("expiry_date").notNull(),
@@ -72,6 +74,14 @@ export const medicines = pgTable("medicines", {
   baseUnit: text("base_unit").default("UNIT"),
   packSize: integer("pack_size").default(1),
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }),
+});
+
+export const genericNames = pgTable("generic_names", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const customers = pgTable("customers", {
@@ -182,6 +192,7 @@ export const saleItems = pgTable("sale_items", {
 });
 
 export const insertMedicineSchema = createInsertSchema(medicines).omit({ id: true });
+export const insertGenericNameSchema = createInsertSchema(genericNames).omit({ id: true, createdAt: true, updatedAt: true }).pick({ name: true, isActive: true });
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true });
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
 export const insertSaleSchema = createInsertSchema(sales).omit({ id: true, createdAt: true });
@@ -213,6 +224,9 @@ export const insertHeldBillSchema = createInsertSchema(heldBills).omit({ id: tru
 
 export type InsertMedicine = z.infer<typeof insertMedicineSchema>;
 export type Medicine = typeof medicines.$inferSelect;
+
+export type InsertGenericName = z.infer<typeof insertGenericNameSchema>;
+export type GenericName = typeof genericNames.$inferSelect;
 
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
 export type Customer = typeof customers.$inferSelect;

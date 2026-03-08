@@ -59,11 +59,19 @@ interface Location {
   description: string | null;
 }
 
+interface GenericNameOption {
+  id: number;
+  name: string;
+  isActive: boolean;
+}
+
 const CATEGORIES = ["Tablets", "Capsules", "Syrups", "Injections", "Drops", "Ointments", "Creams", "Powders", "Other"];
 const GST_RATES = ["5", "12", "18"];
 
 interface MedicineFormData {
   name: string;
+  genericName: string;
+  skuName: string;
   batchNumber: string;
   manufacturer: string;
   expiryDate: string;
@@ -84,6 +92,8 @@ interface MedicineFormData {
 
 const emptyForm: MedicineFormData = {
   name: "",
+  genericName: "",
+  skuName: "",
   batchNumber: "",
   manufacturer: "",
   expiryDate: "",
@@ -95,7 +105,7 @@ const emptyForm: MedicineFormData = {
   gstRate: "18",
   hsnCode: "",
   category: "Tablets",
-  reorderLevel: 50,
+  reorderLevel: 100,
   barcode: "",
   minStock: 10,
   maxStock: 500,
@@ -107,9 +117,19 @@ interface MedicineFormFieldsProps {
   setFormData: React.Dispatch<React.SetStateAction<MedicineFormData>>;
   isPro: boolean;
   locations: Location[];
+  genericOptions: string[];
+  fieldErrors: Partial<Record<keyof MedicineFormData, string>>;
+  clearFieldError: (field: keyof MedicineFormData) => void;
 }
 
-const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormData, isPro, locations }: MedicineFormFieldsProps) {
+const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormData, isPro, locations, genericOptions, fieldErrors, clearFieldError }: MedicineFormFieldsProps) {
+  const safeQuantity = Math.max(0, Number(formData.quantity) || 0);
+  const safePackSize = Math.max(1, Number(formData.packSize) || 1);
+  const fullStrips = Math.floor(safeQuantity / safePackSize);
+  const remainingUnits = safeQuantity % safePackSize;
+  const getFieldClass = (field: keyof MedicineFormData, baseClass = "mt-1.5") =>
+    `${baseClass}${fieldErrors[field] ? " border-destructive focus-visible:ring-destructive" : ""}`;
+
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
@@ -117,22 +137,51 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
         <Input
           id="name"
           value={formData.name}
-          onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+          onChange={(e) => {
+            clearFieldError("name");
+            setFormData(prev => ({ ...prev, name: e.target.value }));
+          }}
           placeholder="e.g., Paracetamol 500mg"
-          className="mt-1.5"
+          className={getFieldClass("name")}
           data-testid="input-medicine-name"
         />
+        {fieldErrors.name && <p className="text-xs text-destructive mt-1">{fieldErrors.name}</p>}
+      </div>
+      <div className="col-span-2">
+        <Label htmlFor="genericName">Generic Name</Label>
+        <Input
+          id="genericName"
+          list="generic-name-options"
+          value={formData.genericName}
+          onChange={(e) => {
+            clearFieldError("genericName");
+            setFormData(prev => ({ ...prev, genericName: e.target.value }));
+          }}
+          placeholder="Type new generic or select existing"
+          className={getFieldClass("genericName")}
+          data-testid="input-generic-name"
+        />
+        <datalist id="generic-name-options">
+          {genericOptions.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+        {fieldErrors.genericName && <p className="text-xs text-destructive mt-1">{fieldErrors.genericName}</p>}
       </div>
       <div>
         <Label htmlFor="batchNumber">Batch Number *</Label>
         <Input
           id="batchNumber"
           value={formData.batchNumber}
-          onChange={(e) => setFormData(prev => ({ ...prev, batchNumber: e.target.value }))}
+          onChange={(e) => {
+            clearFieldError("batchNumber");
+            setFormData(prev => ({ ...prev, batchNumber: e.target.value }));
+          }}
           placeholder="e.g., BT2024001"
-          className="mt-1.5"
+          className={getFieldClass("batchNumber")}
           data-testid="input-batch-number"
         />
+        {fieldErrors.batchNumber && <p className="text-xs text-destructive mt-1">{fieldErrors.batchNumber}</p>}
       </div>
       <div>
         <Label htmlFor="expiryDate">Expiry Date *</Label>
@@ -140,21 +189,29 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           id="expiryDate"
           type="date"
           value={formData.expiryDate}
-          onChange={(e) => setFormData(prev => ({ ...prev, expiryDate: e.target.value }))}
-          className="mt-1.5"
+          onChange={(e) => {
+            clearFieldError("expiryDate");
+            setFormData(prev => ({ ...prev, expiryDate: e.target.value }));
+          }}
+          className={getFieldClass("expiryDate")}
           data-testid="input-expiry-date"
         />
+        {fieldErrors.expiryDate && <p className="text-xs text-destructive mt-1">{fieldErrors.expiryDate}</p>}
       </div>
       <div>
         <Label htmlFor="manufacturer">Manufacturer *</Label>
         <Input
           id="manufacturer"
           value={formData.manufacturer}
-          onChange={(e) => setFormData(prev => ({ ...prev, manufacturer: e.target.value }))}
+          onChange={(e) => {
+            clearFieldError("manufacturer");
+            setFormData(prev => ({ ...prev, manufacturer: e.target.value }));
+          }}
           placeholder="e.g., Sun Pharma"
-          className="mt-1.5"
+          className={getFieldClass("manufacturer")}
           data-testid="input-manufacturer"
         />
+        {fieldErrors.manufacturer && <p className="text-xs text-destructive mt-1">{fieldErrors.manufacturer}</p>}
       </div>
       <div>
         <Label htmlFor="category">Category</Label>
@@ -170,35 +227,53 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
         </Select>
       </div>
       <div>
-        <Label htmlFor="quantity">Quantity (in base units)</Label>
+        <Label htmlFor="quantity">Quantity (base units)</Label>
         <NumericInput
           min={0}
           value={formData.quantity}
-          onChange={(value) => setFormData(prev => ({ ...prev, quantity: value }))}
-          className="mt-1.5"
+          onChange={(value) => {
+            clearFieldError("quantity");
+            setFormData(prev => ({ ...prev, quantity: value }));
+          }}
+          className={getFieldClass("quantity")}
           data-testid="input-quantity"
         />
+        {fieldErrors.quantity && <p className="text-xs text-destructive mt-1">{fieldErrors.quantity}</p>}
+        <p className="text-xs text-muted-foreground mt-1">
+          Enter tablet/unit count, not strips.
+        </p>
       </div>
       <div>
         <Label htmlFor="packSize">Pack Size (units per strip)</Label>
         <NumericInput
           min={1}
           value={formData.packSize}
-          onChange={(value) => setFormData(prev => ({ ...prev, packSize: value }))}
-          className="mt-1.5"
+          onChange={(value) => {
+            clearFieldError("packSize");
+            setFormData(prev => ({ ...prev, packSize: value }));
+          }}
+          className={getFieldClass("packSize")}
           data-testid="input-pack-size"
         />
+        {fieldErrors.packSize && <p className="text-xs text-destructive mt-1">{fieldErrors.packSize}</p>}
         <p className="text-xs text-muted-foreground mt-1">Units per strip/pack (e.g., 10 tablets per strip)</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Current equivalent: {fullStrips} strips + {remainingUnits} units ({safeQuantity} base units)
+        </p>
       </div>
       <div>
         <Label htmlFor="reorderLevel">Reorder Level</Label>
         <NumericInput
           min={0}
           value={formData.reorderLevel}
-          onChange={(value) => setFormData(prev => ({ ...prev, reorderLevel: value }))}
-          className="mt-1.5"
+          onChange={(value) => {
+            clearFieldError("reorderLevel");
+            setFormData(prev => ({ ...prev, reorderLevel: value }));
+          }}
+          className={getFieldClass("reorderLevel")}
           data-testid="input-reorder-level"
         />
+        {fieldErrors.reorderLevel && <p className="text-xs text-destructive mt-1">{fieldErrors.reorderLevel}</p>}
       </div>
       <div>
         <Label htmlFor="costPrice">Cost Price (₹)</Label>
@@ -206,11 +281,15 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           min={0}
           allowDecimal={true}
           value={parseFloat(formData.costPrice) || 0}
-          onChange={(value) => setFormData(prev => ({ ...prev, costPrice: String(value) }))}
+          onChange={(value) => {
+            clearFieldError("costPrice");
+            setFormData(prev => ({ ...prev, costPrice: String(value) }));
+          }}
           placeholder="0.00"
-          className="mt-1.5"
+          className={getFieldClass("costPrice")}
           data-testid="input-cost-price"
         />
+        {fieldErrors.costPrice && <p className="text-xs text-destructive mt-1">{fieldErrors.costPrice}</p>}
       </div>
       <div>
         <Label htmlFor="price">Selling Price (₹) *</Label>
@@ -218,11 +297,15 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           min={0}
           allowDecimal={true}
           value={parseFloat(formData.price) || 0}
-          onChange={(value) => setFormData(prev => ({ ...prev, price: String(value) }))}
+          onChange={(value) => {
+            clearFieldError("price");
+            setFormData(prev => ({ ...prev, price: String(value) }));
+          }}
           placeholder="0.00"
-          className="mt-1.5"
+          className={getFieldClass("price")}
           data-testid="input-price"
         />
+        {fieldErrors.price && <p className="text-xs text-destructive mt-1">{fieldErrors.price}</p>}
       </div>
       <div>
         <Label htmlFor="mrp">MRP (₹)</Label>
@@ -230,16 +313,23 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           min={0}
           allowDecimal={true}
           value={parseFloat(formData.mrp) || 0}
-          onChange={(value) => setFormData(prev => ({ ...prev, mrp: String(value) }))}
+          onChange={(value) => {
+            clearFieldError("mrp");
+            setFormData(prev => ({ ...prev, mrp: String(value) }));
+          }}
           placeholder="0.00"
-          className="mt-1.5"
+          className={getFieldClass("mrp")}
           data-testid="input-mrp"
         />
+        {fieldErrors.mrp && <p className="text-xs text-destructive mt-1">{fieldErrors.mrp}</p>}
       </div>
       <div>
         <Label htmlFor="gstRate">GST Rate (%)</Label>
-        <Select value={formData.gstRate} onValueChange={(v) => setFormData(prev => ({ ...prev, gstRate: v }))}>
-          <SelectTrigger className="mt-1.5" data-testid="select-gst-rate">
+        <Select value={formData.gstRate} onValueChange={(v) => {
+          clearFieldError("gstRate");
+          setFormData(prev => ({ ...prev, gstRate: v }));
+        }}>
+          <SelectTrigger className={getFieldClass("gstRate")} data-testid="select-gst-rate">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -248,6 +338,7 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
             ))}
           </SelectContent>
         </Select>
+        {fieldErrors.gstRate && <p className="text-xs text-destructive mt-1">{fieldErrors.gstRate}</p>}
       </div>
       <div>
         <Label htmlFor="hsnCode">HSN Code</Label>
@@ -304,20 +395,28 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
             <NumericInput
               min={0}
               value={formData.minStock}
-              onChange={(value) => setFormData(prev => ({ ...prev, minStock: value }))}
-              className="mt-1.5"
+              onChange={(value) => {
+                clearFieldError("minStock");
+                setFormData(prev => ({ ...prev, minStock: value }));
+              }}
+              className={getFieldClass("minStock")}
               data-testid="input-min-stock"
             />
+            {fieldErrors.minStock && <p className="text-xs text-destructive mt-1">{fieldErrors.minStock}</p>}
           </div>
           <div>
             <Label htmlFor="maxStock">Max Stock Level</Label>
             <NumericInput
               min={0}
               value={formData.maxStock}
-              onChange={(value) => setFormData(prev => ({ ...prev, maxStock: value }))}
-              className="mt-1.5"
+              onChange={(value) => {
+                clearFieldError("maxStock");
+                setFormData(prev => ({ ...prev, maxStock: value }));
+              }}
+              className={getFieldClass("maxStock")}
               data-testid="input-max-stock"
             />
+            {fieldErrors.maxStock && <p className="text-xs text-destructive mt-1">{fieldErrors.maxStock}</p>}
           </div>
         </>
       )}
@@ -340,6 +439,52 @@ export default function Inventory() {
   const [formData, setFormData] = useState<MedicineFormData>(emptyForm);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof MedicineFormData, string>>>({});
+
+  const fieldLabelToKey: Record<string, keyof MedicineFormData> = {
+    name: "name",
+    "generic name": "genericName",
+    "batch number": "batchNumber",
+    manufacturer: "manufacturer",
+    "expiry date": "expiryDate",
+    quantity: "quantity",
+    "pack size": "packSize",
+    "selling price": "price",
+    "cost price": "costPrice",
+    mrp: "mrp",
+    "gst rate": "gstRate",
+    "reorder level": "reorderLevel",
+    "min stock": "minStock",
+    "max stock": "maxStock",
+    location: "locationId",
+  };
+
+  const clearFieldError = (field: keyof MedicineFormData) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const applyInlineFieldErrors = (message: string) => {
+    const normalized = message.toLowerCase();
+    const nextErrors: Partial<Record<keyof MedicineFormData, string>> = {};
+
+    Object.entries(fieldLabelToKey).forEach(([label, key]) => {
+      if (normalized.includes(label)) {
+        nextErrors[key] = message;
+      }
+      if (normalized.includes(`${String(key).toLowerCase()}:`)) {
+        nextErrors[key] = message;
+      }
+    });
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors((prev) => ({ ...prev, ...nextErrors }));
+    }
+  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -379,6 +524,28 @@ export default function Inventory() {
     },
   });
 
+  const { data: genericMaster = [] } = useQuery<GenericNameOption[]>({
+    queryKey: ["/api/generic-names"],
+    queryFn: async () => {
+      const response = await fetch("/api/generic-names");
+      if (!response.ok) throw new Error("Failed to fetch generic names");
+      return response.json();
+    },
+  });
+
+  const genericOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const generic of genericMaster) {
+      const value = String(generic.name || "").trim();
+      if (value && generic.isActive) values.add(value);
+    }
+    for (const item of medicines) {
+      const value = String((item as any).genericName || "").trim();
+      if (value) values.add(value);
+    }
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [genericMaster, medicines]);
+
   const { data: locations = [] } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
   });
@@ -397,21 +564,35 @@ export default function Inventory() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...data,
-          status: data.quantity <= 0 ? "Out of Stock" : data.quantity <= data.reorderLevel ? "Low Stock" : "In Stock",
+          status: data.quantity <= 0 ? "Out of Stock" : data.quantity <= (data.reorderLevel ?? 100) ? "Low Stock" : "In Stock",
         }),
       });
-      if (!res.ok) throw new Error("Failed to create medicine");
+      if (!res.ok) {
+        let errorMessage = "Failed to create medicine";
+        try {
+          const payload = await res.json();
+          if (payload?.details && typeof payload.details === "string") {
+            errorMessage = payload.details;
+          } else if (payload?.error && typeof payload.error === "string") {
+            errorMessage = payload.error;
+          }
+        } catch {
+          // Keep fallback message when response is not JSON.
+        }
+        throw new Error(errorMessage);
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       setAddDialogOpen(false);
       setFormData(emptyForm);
+      setFieldErrors({});
       toast({ title: "Medicine added successfully" });
     },
-    onError: (error) => {
-      console.log("Create medicine error:", error);
-      toast({ title: "Failed to add medicine", variant: "destructive" });
+    onError: (error: Error) => {
+      applyInlineFieldErrors(error.message);
+      toast({ title: "Failed to add medicine", description: error.message, variant: "destructive" });
     },
   });
 
@@ -422,10 +603,23 @@ export default function Inventory() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...data,
-          status: Number(data.quantity) <= 0 ? "Out of Stock" : Number(data.quantity) <= (data.reorderLevel || 50) ? "Low Stock" : "In Stock",
+          status: Number(data.quantity) <= 0 ? "Out of Stock" : Number(data.quantity) <= (data.reorderLevel ?? 100) ? "Low Stock" : "In Stock",
         }),
       });
-      if (!res.ok) throw new Error("Failed to update medicine");
+      if (!res.ok) {
+        let errorMessage = "Failed to update medicine";
+        try {
+          const payload = await res.json();
+          if (payload?.details && typeof payload.details === "string") {
+            errorMessage = payload.details;
+          } else if (payload?.error && typeof payload.error === "string") {
+            errorMessage = payload.error;
+          }
+        } catch {
+          // Keep fallback message when response is not JSON.
+        }
+        throw new Error(errorMessage);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -433,10 +627,12 @@ export default function Inventory() {
       setEditDialogOpen(false);
       setSelectedMedicine(null);
       setFormData(emptyForm);
+      setFieldErrors({});
       toast({ title: "Medicine updated successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to update medicine", variant: "destructive" });
+    onError: (error: Error) => {
+      applyInlineFieldErrors(error.message);
+      toast({ title: "Failed to update medicine", description: error.message, variant: "destructive" });
     },
   });
 
@@ -472,6 +668,7 @@ export default function Inventory() {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
         item.name.toLowerCase().includes(searchLower) ||
+        ((item as any).genericName && String((item as any).genericName).toLowerCase().includes(searchLower)) ||
         item.batchNumber.toLowerCase().includes(searchLower) ||
         item.manufacturer.toLowerCase().includes(searchLower) ||
         (item.barcode && item.barcode.toLowerCase().includes(searchLower));
@@ -525,10 +722,36 @@ export default function Inventory() {
     });
   }, [medicines, searchTerm, filterStatus, sortField, sortDirection]);
 
+  const medicineTotals = useMemo(() => {
+    const grouped = new Map<string, { name: string; genericName: string; totalQty: number; batchCount: number }>();
+
+    for (const item of filteredMedicines) {
+      const genericName = String((item as any).genericName || "").trim();
+      const key = `${item.name.toLowerCase()}||${genericName.toLowerCase()}`;
+      const existing = grouped.get(key);
+
+      if (existing) {
+        existing.totalQty += Number(item.quantity) || 0;
+        existing.batchCount += 1;
+      } else {
+        grouped.set(key, {
+          name: item.name,
+          genericName,
+          totalQty: Number(item.quantity) || 0,
+          batchCount: 1,
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredMedicines]);
+
   const openEditDialog = (medicine: Medicine) => {
     setSelectedMedicine(medicine);
     setFormData({
       name: medicine.name,
+      genericName: (medicine as any).genericName || "",
+      skuName: (medicine as any).skuName || "",
       batchNumber: medicine.batchNumber,
       manufacturer: medicine.manufacturer,
       expiryDate: medicine.expiryDate,
@@ -540,13 +763,14 @@ export default function Inventory() {
       gstRate: String(medicine.gstRate),
       hsnCode: medicine.hsnCode || "",
       category: medicine.category,
-      reorderLevel: medicine.reorderLevel,
+      reorderLevel: Number(medicine.reorderLevel ?? 100) || 100,
       barcode: medicine.barcode || "",
       minStock: medicine.minStock || 10,
       maxStock: medicine.maxStock || 500,
       locationId: medicine.locationId || null,
     });
     setEditDialogOpen(true);
+    setFieldErrors({});
   };
 
   const printBarcodeLabel = (medicine: Medicine) => {
@@ -591,10 +815,21 @@ export default function Inventory() {
   };
 
   const handleSubmit = (isEdit: boolean) => {
-    if (!formData.name || !formData.batchNumber || !formData.manufacturer || !formData.expiryDate || !formData.price) {
+    const requiredErrors: Partial<Record<keyof MedicineFormData, string>> = {};
+    if (!formData.name) requiredErrors.name = "Medicine Name is required";
+    if (!formData.batchNumber) requiredErrors.batchNumber = "Batch Number is required";
+    if (!formData.manufacturer) requiredErrors.manufacturer = "Manufacturer is required";
+    if (!formData.expiryDate) requiredErrors.expiryDate = "Expiry Date is required";
+    if (!formData.price) requiredErrors.price = "Selling Price is required";
+
+    if (Object.keys(requiredErrors).length > 0) {
+      setFieldErrors(requiredErrors);
       toast({ title: "Please fill all required fields", variant: "destructive" });
       return;
     }
+
+    setFieldErrors({});
+
     if (isEdit && selectedMedicine) {
       updateMutation.mutate({ id: selectedMedicine.id, data: formData });
     } else {
@@ -603,10 +838,11 @@ export default function Inventory() {
   };
 
   const exportInventoryCSV = () => {
-    const headers = ["ID", "Name", "Batch Number", "Manufacturer", "Category", "Expiry Date", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock", "Status"];
+    const headers = ["ID", "Name", "Generic Name", "Batch Number", "Manufacturer", "Category", "Expiry Date", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock", "Status"];
     const rows = filteredMedicines.map(m => [
       m.id,
       m.name,
+      (m as any).genericName || "",
       m.batchNumber,
       m.manufacturer,
       m.category,
@@ -630,8 +866,8 @@ export default function Inventory() {
   };
 
   const downloadImportTemplate = () => {
-    const headers = ["Name", "Batch Number", "Manufacturer", "Category", "Expiry Date (YYYY-MM-DD)", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock"];
-    const sampleRow = ["Paracetamol 500mg", "BT2024001", "XYZ Pharma", "Tablets", "2025-12-31", "100", "50", "8.50", "10.00", "12.00", "12", "30049099", "", "10", "500"];
+    const headers = ["Name", "Generic Name", "Batch Number", "Manufacturer", "Category", "Expiry Date (YYYY-MM-DD)", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock"];
+    const sampleRow = ["Crocin 500mg", "Paracetamol", "BT2024001", "XYZ Pharma", "Tablets", "2025-12-31", "100", "50", "8.50", "10.00", "12.00", "12", "30049099", "", "10", "500"];
     const csv = generateCSV(headers, [sampleRow]);
     downloadFile(csv, "inventory_import_template.csv", "text/csv");
     toast({ title: "Template downloaded" });
@@ -651,6 +887,17 @@ export default function Inventory() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                window.location.href = "/generic-stock";
+              }}
+              data-testid="button-generic-stock-summary"
+            >
+              Generic Summary
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9" data-testid="button-export">
@@ -674,6 +921,7 @@ export default function Inventory() {
               className="h-9"
               onClick={() => {
                 setFormData(emptyForm);
+                setFieldErrors({});
                 setAddDialogOpen(true);
               }}
               data-testid="button-add-medicine"
@@ -687,7 +935,7 @@ export default function Inventory() {
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder={isPro ? "Search by name, batch, barcode..." : "Search by name, batch, manufacturer..."}
+                placeholder={isPro ? "Search by name, generic, batch, barcode..." : "Search by name, generic, batch, manufacturer..."}
                 className="pl-9 h-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -722,6 +970,7 @@ export default function Inventory() {
                   <TableRow>
                     <TableHead className="w-[80px]">ID</TableHead>
                     <SortableHeader field="name">Medicine Name</SortableHeader>
+                    <TableHead>Generic Name</TableHead>
                     <SortableHeader field="category">Category</SortableHeader>
                     <SortableHeader field="batchNumber">Batch No.</SortableHeader>
                     {isPro && <TableHead>Barcode</TableHead>}
@@ -743,6 +992,9 @@ export default function Inventory() {
                       <TableCell className="font-medium">
                         <div>{item.name}</div>
                         <div className="text-xs text-muted-foreground">{item.manufacturer}</div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {(item as any).genericName || "—"}
                       </TableCell>
                       <TableCell>{item.category}</TableCell>
                       <TableCell className="font-mono text-xs">{item.batchNumber}</TableCell>
@@ -830,6 +1082,30 @@ export default function Inventory() {
               </Table>
             </div>
           )}
+          {medicineTotals.length > 0 && (
+            <div className="mt-6 rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Medicine Name</TableHead>
+                    <TableHead>Generic Name</TableHead>
+                    <TableHead className="text-right">Batches</TableHead>
+                    <TableHead className="text-right">Total Stock (All Batches)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {medicineTotals.map((item) => (
+                    <TableRow key={`${item.name}-${item.genericName}`}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{item.genericName || "—"}</TableCell>
+                      <TableCell className="text-right">{item.batchCount}</TableCell>
+                      <TableCell className="text-right font-semibold">{item.totalQty}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
           <div className="mt-4 text-sm text-muted-foreground">
             Showing {filteredMedicines.length} of {medicines.length} items
           </div>
@@ -842,7 +1118,7 @@ export default function Inventory() {
             <DialogTitle>Add New Medicine</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} locations={locations} />
+            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} locations={locations} genericOptions={genericOptions} fieldErrors={fieldErrors} clearFieldError={clearFieldError} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
@@ -863,7 +1139,7 @@ export default function Inventory() {
             <DialogTitle>Edit Medicine</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} locations={locations} />
+            <MedicineFormFields formData={formData} setFormData={setFormData} isPro={isPro} locations={locations} genericOptions={genericOptions} fieldErrors={fieldErrors} clearFieldError={clearFieldError} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
@@ -903,13 +1179,14 @@ export default function Inventory() {
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         title="Import Medicines"
-        templateHeaders={["Name", "BatchNumber", "Manufacturer", "Category", "ExpiryDate", "Quantity", "ReorderLevel", "CostPrice", "Price", "MRP", "GSTRate", "HSNCode"]}
-        templateSampleData={[["Paracetamol 500mg", "BT2024001", "XYZ Pharma", "Tablets", "2025-12-31", "100", "50", "8.50", "10.00", "12.00", "12", "30049099"]]}
+        templateHeaders={["Name", "GenericName", "BatchNumber", "Manufacturer", "Category", "ExpiryDate", "Quantity", "ReorderLevel", "CostPrice", "Price", "MRP", "GSTRate", "HSNCode"]}
+        templateSampleData={[["Crocin 500mg", "Paracetamol", "BT2024001", "XYZ Pharma", "Tablets", "2025-12-31", "100", "50", "8.50", "10.00", "12.00", "12", "30049099"]]}
         templateFilename="medicines_import"
         entityName="medicines"
         onImport={async (data) => {
           const medicines = data.map(row => ({
             name: row.name || '',
+            genericName: row.genericname || null,
             batchNumber: row.batchnumber || `BATCH-${Date.now()}`,
             manufacturer: row.manufacturer || null,
             category: row.category || 'Tablets',

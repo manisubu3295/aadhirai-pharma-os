@@ -16,6 +16,8 @@ export interface AppSettings {
   showGstBreakup: boolean;
   showDoctor: boolean;
   printOnSave: boolean;
+  defaultGrnDiscountRate: string;
+  defaultGrnGstMode: "item" | "header";
 }
 
 const defaultSettings: AppSettings = {
@@ -33,6 +35,8 @@ const defaultSettings: AppSettings = {
   showGstBreakup: true,
   showDoctor: true,
   printOnSave: false,
+  defaultGrnDiscountRate: "5",
+  defaultGrnGstMode: "item",
 };
 
 interface SettingsContextType {
@@ -72,6 +76,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         showGstBreakup: rawSettings.showGstBreakup !== "false",
         showDoctor: rawSettings.showDoctor !== "false",
         printOnSave: rawSettings.printOnSave === "true",
+        defaultGrnDiscountRate: rawSettings.defaultGrnDiscountRate || defaultSettings.defaultGrnDiscountRate,
+        defaultGrnGstMode: rawSettings.defaultGrnGstMode === "header" ? "header" : "item",
       }
     : defaultSettings;
 

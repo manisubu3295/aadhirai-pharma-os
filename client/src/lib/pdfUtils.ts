@@ -1,6 +1,7 @@
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import type { TDocumentDefinitions, Content, TableCell, StyleDictionary } from "pdfmake/interfaces";
+import type { Sale, SaleItem } from "@shared/schema";
 
 pdfMake.vfs = pdfFonts.vfs;
 
@@ -41,6 +42,161 @@ interface DayClosingData {
   actualCash: string | null;
   difference: string | null;
   status: string;
+}
+
+interface StoreInfo {
+  name: string;
+  address: string;
+  phone: string;
+  gstin: string;
+  dlNo: string;
+}
+
+interface InvoiceSettings {
+  showMrp?: boolean;
+  showGstBreakup?: boolean;
+  showDoctor?: boolean;
+  hideTaxDetails?: boolean;
+  hideStoreGstin?: boolean;
+}
+
+export function generateSaleInvoicePdfBlob(
+  sale: Sale,
+  items: SaleItem[],
+  storeInfo: StoreInfo,
+  invoiceSettings?: InvoiceSettings,
+): Promise<Blob> {
+  const settings: Required<InvoiceSettings> = {
+    showMrp: invoiceSettings?.showMrp ?? true,
+    showGstBreakup: invoiceSettings?.showGstBreakup ?? true,
+    showDoctor: invoiceSettings?.showDoctor ?? true,
+    hideTaxDetails: invoiceSettings?.hideTaxDetails ?? false,
+    hideStoreGstin: invoiceSettings?.hideStoreGstin ?? false,
+  };
+
+  const tableHeader: TableCell[] = [
+    { text: "S.No", style: "tableHeader" },
+    { text: "Description", style: "tableHeader" },
+    { text: "HSN", style: "tableHeader" },
+    { text: "Batch", style: "tableHeader" },
+    { text: "Exp", style: "tableHeader" },
+    ...(settings.showMrp ? [{ text: "MRP", style: "tableHeader", alignment: "right" as const }] : []),
+    { text: "Qty", style: "tableHeader", alignment: "right" },
+    { text: "Rate", style: "tableHeader", alignment: "right" },
+    ...(!settings.hideTaxDetails ? [{ text: "GST%", style: "tableHeader", alignment: "right" as const }] : []),
+    { text: "Amount", style: "tableHeader", alignment: "right" },
+  ];
+
+  const tableRows: TableCell[][] = items.map((item, index) => {
+    const lineTax = Number(item.cgst || 0) + Number(item.sgst || 0);
+    const lineAmountExclTax = Number(item.total || 0) - lineTax;
+
+    return [
+      { text: String(index + 1), style: "tableCell" },
+      { text: item.medicineName, style: "tableCell" },
+      { text: item.hsnCode || "-", style: "tableCell" },
+      { text: item.batchNumber, style: "tableCell" },
+      { text: item.expiryDate, style: "tableCell" },
+      ...(settings.showMrp
+        ? [{ text: item.mrp ? `₹${Number(item.mrp).toFixed(2)}` : "-", style: "tableCell", alignment: "right" as const }]
+        : []),
+      { text: String(item.quantity), style: "tableCell", alignment: "right" as const },
+      { text: `₹${Number(item.price).toFixed(2)}`, style: "tableCell", alignment: "right" as const },
+      ...(!settings.hideTaxDetails
+        ? [{ text: `${item.gstRate || 0}%`, style: "tableCell", alignment: "right" as const }]
+        : []),
+      { text: `₹${lineAmountExclTax.toFixed(2)}`, style: "tableCell", alignment: "right" as const },
+    ];
+  });
+
+  const summaryRows: TableCell[][] = [
+    [{ text: "Subtotal:", style: "tableCell" }, { text: `₹${Number(sale.subtotal || 0).toFixed(2)}`, style: "tableCell", alignment: "right" }],
+    ...(Number(sale.discount || 0) > 0
+      ? [[{ text: "Discount:", style: "tableCell" }, { text: `-₹${Number(sale.discount || 0).toFixed(2)}`, style: "tableCell", alignment: "right" as const }]]
+      : []),
+    ...(!settings.hideTaxDetails && settings.showGstBreakup
+      ? [
+          [{ text: "CGST:", style: "tableCell" }, { text: `₹${Number(sale.cgst || 0).toFixed(2)}`, style: "tableCell", alignment: "right" as const }],
+          [{ text: "SGST:", style: "tableCell" }, { text: `₹${Number(sale.sgst || 0).toFixed(2)}`, style: "tableCell", alignment: "right" as const }],
+        ]
+      : []),
+    ...(!settings.hideTaxDetails && !settings.showGstBreakup
+      ? [[{ text: "GST:", style: "tableCell" }, { text: `₹${(Number(sale.cgst || 0) + Number(sale.sgst || 0)).toFixed(2)}`, style: "tableCell", alignment: "right" as const }]]
+      : []),
+    ...(Number(sale.roundOff || 0) !== 0
+      ? [[{ text: "Round Off:", style: "tableCell" }, { text: `₹${Number(sale.roundOff || 0).toFixed(2)}`, style: "tableCell", alignment: "right" as const }]]
+      : []),
+    [{ text: "TOTAL:", style: "total" }, { text: `₹${Number(sale.total || 0).toFixed(2)}`, style: "total", alignment: "right" }],
+  ];
+
+  const docDefinition: TDocumentDefinitions = {
+    pageSize: "A4",
+    pageMargins: [30, 30, 30, 30],
+    content: [
+      { text: storeInfo.name, style: "header", alignment: "center" },
+      { text: storeInfo.address, alignment: "center", margin: [0, 0, 0, 2] },
+      { text: `Phone: ${storeInfo.phone}${settings.hideStoreGstin ? "" : `   GSTIN: ${storeInfo.gstin}`}`, alignment: "center" },
+      { text: `D.L. No: ${storeInfo.dlNo}`, alignment: "center", margin: [0, 0, 0, 10] },
+      { text: settings.hideTaxDetails ? "INVOICE" : "TAX INVOICE", style: "subheader", alignment: "center" },
+      {
+        columns: [
+          {
+            width: "*",
+            text: [
+              `Invoice No: ${sale.invoiceNo || `INV-${sale.id}`}\n`,
+              `Date: ${new Date(sale.createdAt).toLocaleDateString("en-IN")}\n`,
+              `Time: ${new Date(sale.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`,
+            ],
+          },
+          {
+            width: "*",
+            alignment: "right",
+            text: [
+              `Customer: ${sale.customerName}\n`,
+              ...(sale.customerPhone ? [`Phone: ${sale.customerPhone}\n`] : []),
+              ...(sale.customerGstin ? [`GSTIN: ${sale.customerGstin}\n`] : []),
+              ...(settings.showDoctor && sale.doctorName ? [`Doctor: Dr. ${sale.doctorName}`] : []),
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 10],
+      },
+      {
+        table: {
+          headerRows: 1,
+          widths: settings.showMrp
+            ? (!settings.hideTaxDetails ? [25, "*", 45, 45, 40, 50, 35, 45, 35, 55] : [25, "*", 45, 45, 40, 50, 35, 45, 55])
+            : (!settings.hideTaxDetails ? [25, "*", 45, 45, 40, 35, 45, 35, 55] : [25, "*", 45, 45, 40, 35, 45, 55]),
+          body: [tableHeader, ...tableRows],
+        },
+        margin: [0, 0, 0, 10],
+      },
+      {
+        columns: [
+          { width: "*", text: `Payment: ${(sale.paymentMethod || "").toUpperCase()}` },
+          {
+            width: 200,
+            table: {
+              widths: ["*", "auto"],
+              body: summaryRows,
+            },
+            layout: "noBorders",
+          },
+        ],
+      },
+      { text: "Thank you for your purchase!", alignment: "center", margin: [0, 20, 0, 4] },
+      { text: "This is a computer-generated invoice.", style: "footer", alignment: "center" },
+    ],
+    styles,
+  };
+
+  return new Promise<Blob>((resolve, reject) => {
+    try {
+      pdfMake.createPdf(docDefinition).getBlob((blob) => resolve(blob));
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 export function generatePurchaseReturnPDF(data: PurchaseReturnData): void {
