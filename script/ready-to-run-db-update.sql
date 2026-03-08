@@ -233,6 +233,58 @@ CREATE TABLE IF NOT EXISTS sale_batch_allocations (
 CREATE INDEX IF NOT EXISTS idx_sale_batch_allocations_sale
   ON sale_batch_allocations (sale_id, medicine_id);
 
+CREATE TABLE IF NOT EXISTS stock_adjustments (
+  id SERIAL PRIMARY KEY,
+  medicine_id INTEGER NOT NULL,
+  medicine_name TEXT NOT NULL,
+  batch_number TEXT NOT NULL,
+  adjustment_qty INTEGER NOT NULL,
+  adjustment_type TEXT NOT NULL,
+  reason_code TEXT NOT NULL,
+  notes TEXT,
+  created_by_user_id VARCHAR(255) NOT NULL,
+  created_by_user_name TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+  IF to_regclass('public.stock_adjustments') IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'stock_adjustments'
+        AND column_name = 'quantity'
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'stock_adjustments'
+        AND column_name = 'adjustment_qty'
+    ) THEN
+      ALTER TABLE stock_adjustments RENAME COLUMN quantity TO adjustment_qty;
+    END IF;
+
+    ALTER TABLE stock_adjustments
+      ADD COLUMN IF NOT EXISTS medicine_id INTEGER,
+      ADD COLUMN IF NOT EXISTS medicine_name TEXT,
+      ADD COLUMN IF NOT EXISTS batch_number TEXT,
+      ADD COLUMN IF NOT EXISTS adjustment_qty INTEGER,
+      ADD COLUMN IF NOT EXISTS adjustment_type TEXT,
+      ADD COLUMN IF NOT EXISTS reason_code TEXT,
+      ADD COLUMN IF NOT EXISTS notes TEXT,
+      ADD COLUMN IF NOT EXISTS created_by_user_id VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS created_by_user_name TEXT,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+    UPDATE stock_adjustments
+    SET adjustment_qty = 0
+    WHERE adjustment_qty IS NULL;
+  END IF;
+END $$;
+
 INSERT INTO inventory_batches (
   medicine_id,
   warehouse_id,

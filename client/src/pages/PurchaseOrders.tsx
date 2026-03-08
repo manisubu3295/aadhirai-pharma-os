@@ -89,6 +89,13 @@ export default function PurchaseOrders() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const toBusinessDate = (value: string | Date | null | undefined): Date => {
+    if (!value) return new Date(NaN);
+    const raw = typeof value === "string" ? value : value.toISOString();
+    const datePart = raw.slice(0, 10);
+    return parseISO(datePart);
+  };
+
   const { data: suppliers = [] } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
     queryFn: async () => {
@@ -151,6 +158,7 @@ export default function PurchaseOrders() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           poNumber,
+          orderDate: format(new Date(), "yyyy-MM-dd"),
           supplierId: data.supplierId,
           supplierName: data.supplierName,
           notes: data.notes,
@@ -460,7 +468,7 @@ export default function PurchaseOrders() {
       po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       po.supplierName.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const poDate = new Date(po.orderDate);
+    const poDate = toBusinessDate(po.orderDate);
     const from = fromDate ? startOfDay(parseISO(fromDate)) : null;
     const to = toDate ? endOfDay(parseISO(toDate)) : null;
     const matchesDateRange = (!from || poDate >= from) && (!to || poDate <= to);
@@ -472,8 +480,8 @@ export default function PurchaseOrders() {
   });
 
   const sortedFilteredOrders = [...filteredOrders].sort((a, b) => {
-    const first = new Date(a.orderDate).getTime();
-    const second = new Date(b.orderDate).getTime();
+    const first = toBusinessDate(a.orderDate).getTime();
+    const second = toBusinessDate(b.orderDate).getTime();
     return orderDateSortOrder === "asc" ? first - second : second - first;
   });
 
@@ -501,7 +509,7 @@ export default function PurchaseOrders() {
   const handleExportPOs = () => {
     const exportData = filteredOrders.map(po => ({
       "PO Number": po.poNumber,
-      "Date": format(new Date(po.orderDate), "dd/MM/yyyy"),
+      "Date": format(toBusinessDate(po.orderDate), "dd/MM/yyyy"),
       "Supplier": po.supplierName,
       "Status": po.status,
       "Subtotal": po.subtotal,
@@ -706,7 +714,7 @@ export default function PurchaseOrders() {
                     <TableRow key={po.id} data-testid={`row-po-${po.id}`}>
                       <TableCell className="font-mono font-medium">{po.poNumber}</TableCell>
                       <TableCell>{po.supplierName}</TableCell>
-                      <TableCell>{format(new Date(po.orderDate), "dd MMM yyyy")}</TableCell>
+                      <TableCell>{format(toBusinessDate(po.orderDate), "dd MMM yyyy")}</TableCell>
                       <TableCell className="text-right font-mono">₹{po.totalAmount}</TableCell>
                       <TableCell>
                         <Badge className={statusColors[po.status]}>
@@ -978,7 +986,7 @@ export default function PurchaseOrders() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Order Date:</span>
-                  <p className="font-medium">{format(new Date(selectedPO.orderDate), "dd MMM yyyy")}</p>
+                  <p className="font-medium">{format(toBusinessDate(selectedPO.orderDate), "dd MMM yyyy")}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Status:</span>
@@ -1071,12 +1079,12 @@ export default function PurchaseOrders() {
                     <div class="info-grid">
                       <div>
                         <p><strong>PO Number:</strong> ${selectedPO?.poNumber}</p>
-                        <p><strong>Date:</strong> ${selectedPO ? format(new Date(selectedPO.orderDate), "dd MMM yyyy") : ""}</p>
+                        <p><strong>Date:</strong> ${selectedPO ? format(toBusinessDate(selectedPO.orderDate), "dd MMM yyyy") : ""}</p>
                         <p><strong>Status:</strong> ${selectedPO?.status}</p>
                       </div>
                       <div class="text-right">
                         <p><strong>Supplier:</strong> ${selectedPO?.supplierName}</p>
-                        ${selectedPO?.expectedDeliveryDate ? `<p><strong>Expected:</strong> ${format(new Date(selectedPO.expectedDeliveryDate), "dd MMM yyyy")}</p>` : ""}
+                        ${selectedPO?.expectedDeliveryDate ? `<p><strong>Expected:</strong> ${format(toBusinessDate(selectedPO.expectedDeliveryDate), "dd MMM yyyy")}</p>` : ""}
                       </div>
                     </div>
                     <table>

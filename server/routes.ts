@@ -379,6 +379,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/medicines/sale-list", async (req, res) => {
+    try {
+      const medicines = await storage.getSaleMedicines();
+      res.json(medicines);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sale medicines" });
+    }
+  });
+
   app.get("/api/medicines/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

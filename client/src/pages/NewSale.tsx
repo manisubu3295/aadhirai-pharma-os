@@ -205,11 +205,16 @@ export default function NewSale() {
   });
 
   const { data: medicines = [] } = useQuery<Medicine[]>({
-    queryKey: ["/api/medicines"],
+    queryKey: ["/api/medicines/sale-list"],
     queryFn: async () => {
-      const res = await fetch("/api/medicines");
-      if (!res.ok) throw new Error("Failed to fetch medicines");
-      return res.json();
+      const saleListResponse = await fetch("/api/medicines/sale-list");
+      if (saleListResponse.ok) {
+        return saleListResponse.json();
+      }
+
+      const fallbackResponse = await fetch("/api/medicines");
+      if (!fallbackResponse.ok) throw new Error("Failed to fetch medicines");
+      return fallbackResponse.json();
     },
   });
 
@@ -361,12 +366,17 @@ export default function NewSale() {
     );
   }, [customers, customerSearch]);
 
+  const getAvailableQty = (medicine: Medicine | undefined) => {
+    if (!medicine) return 0;
+    return Number((medicine as any).consolidatedQty ?? medicine.quantity ?? 0);
+  };
+
   const filteredMedicines = useMemo(() => {
-    if (!medicineSearch) return medicines.filter((m) => Number(m.quantity) > 0);
+    if (!medicineSearch) return medicines.filter((m) => getAvailableQty(m) > 0);
     const search = medicineSearch.toLowerCase();
     return medicines.filter(
       (m) =>
-        Number(m.quantity) > 0 &&
+        getAvailableQty(m) > 0 &&
         (m.name.toLowerCase().includes(search) ||
           ((m as any).genericName && String((m as any).genericName).toLowerCase().includes(search)) ||
           m.batchNumber.toLowerCase().includes(search))
@@ -374,7 +384,8 @@ export default function NewSale() {
   }, [medicines, medicineSearch]);
 
   const addMedicine = (medicine: Medicine) => {
-    if (Number(medicine.quantity) <= 0) {
+    const availableQty = getAvailableQty(medicine);
+    if (availableQty <= 0) {
       toast({
         title: "Out of stock",
         description: `${medicine.name} has no available stock right now.`,
@@ -388,7 +399,7 @@ export default function NewSale() {
     );
 
     if (existingItem) {
-      if (existingItem.quantity < Number(medicine.quantity)) {
+      if (existingItem.quantity < availableQty) {
         setItems(
           items.map((item) =>
             item.id === existingItem.id
@@ -420,7 +431,7 @@ export default function NewSale() {
         mrp: medicine.mrp ? Number(medicine.mrp) : null,
         gstRate: Number(medicine.gstRate),
         discount: 0,
-        availableQty: Number(medicine.quantity),
+        availableQty: availableQty,
         unitType: defaultUnit,
         packSize: packSize,
         pricePerUnit: tabletPrice,
@@ -626,7 +637,7 @@ export default function NewSale() {
 
         for (const item of items) {
           const latestMedicine = latestById.get(item.medicineId);
-          const availableBase = Number(latestMedicine?.quantity || 0);
+          const availableBase = getAvailableQty(latestMedicine);
           const requiredBase = Number(item.quantity || 0);
           if (!latestMedicine || availableBase < requiredBase) {
             toast({
@@ -1167,7 +1178,7 @@ export default function NewSale() {
                                   )}
                                   <div className="text-xs text-muted-foreground">
                                     Batch: {medicine.batchNumber} | Exp: {medicine.expiryDate} | 
-                                    Stock: {medicine.quantity} | Loc: {getLocationDisplay((medicine as any).locationId)}
+                                    Stock: {getAvailableQty(medicine)} | Loc: {getLocationDisplay((medicine as any).locationId)}
                                   </div>
                                 </div>
                                 <div className="text-right">

@@ -516,11 +516,16 @@ export default function Inventory() {
   const { isPro } = usePlan();
 
   const { data: medicines = [], isLoading } = useQuery<Medicine[]>({
-    queryKey: ["/api/medicines"],
+    queryKey: ["/api/medicines/inventory-list"],
     queryFn: async () => {
-      const response = await fetch("/api/medicines");
-      if (!response.ok) throw new Error("Failed to fetch medicines");
-      return response.json();
+      const batchResponse = await fetch("/api/medicines/sale-list");
+      if (batchResponse.ok) {
+        return batchResponse.json();
+      }
+
+      const fallbackResponse = await fetch("/api/medicines");
+      if (!fallbackResponse.ok) throw new Error("Failed to fetch medicines");
+      return fallbackResponse.json();
     },
   });
 
@@ -585,6 +590,8 @@ export default function Inventory() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
       setAddDialogOpen(false);
       setFormData(emptyForm);
       setFieldErrors({});
@@ -624,6 +631,8 @@ export default function Inventory() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
       setEditDialogOpen(false);
       setSelectedMedicine(null);
       setFormData(emptyForm);
@@ -643,6 +652,8 @@ export default function Inventory() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
       setDeleteDialogOpen(false);
       setSelectedMedicine(null);
       toast({ title: "Medicine deleted successfully" });
@@ -985,7 +996,7 @@ export default function Inventory() {
                 </TableHeader>
                 <TableBody>
                   {filteredMedicines.map((item) => (
-                    <TableRow key={item.id} data-testid={`row-medicine-${item.id}`}>
+                    <TableRow key={`${item.id}-${item.batchNumber}-${item.expiryDate}`} data-testid={`row-medicine-${item.id}-${item.batchNumber}`}>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         INV-{String(item.id).padStart(3, '0')}
                       </TableCell>
@@ -1209,7 +1220,11 @@ export default function Inventory() {
           if (!res.ok) throw new Error('Import failed');
           return res.json();
         }}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/medicines"] })}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
+        }}
       />
     </AppLayout>
   );
