@@ -1541,7 +1541,12 @@ export async function registerRoutes(
   app.post("/api/purchase-orders", async (req, res) => {
     try {
       const { items, ...poData } = req.body;
-      const po = insertPurchaseOrderSchema.parse(poData);
+      const normalizedPoData = {
+        ...poData,
+        ...(poData?.orderDate ? { orderDate: new Date(poData.orderDate) } : {}),
+        ...(poData?.expectedDeliveryDate ? { expectedDeliveryDate: new Date(poData.expectedDeliveryDate) } : {}),
+      };
+      const po = insertPurchaseOrderSchema.parse(normalizedPoData);
       const poItems = z.array(insertPurchaseOrderItemSchema.omit({ poId: true })).parse(items || []);
       const itemsWithDummyPoId = poItems.map(item => ({ ...item, poId: 0 }));
       
@@ -1573,7 +1578,12 @@ export async function registerRoutes(
       }
       
       const { items, ...poData } = req.body;
-      const data = insertPurchaseOrderSchema.partial().parse(poData);
+      const normalizedPoData = {
+        ...poData,
+        ...(poData?.orderDate ? { orderDate: new Date(poData.orderDate) } : {}),
+        ...(poData?.expectedDeliveryDate ? { expectedDeliveryDate: new Date(poData.expectedDeliveryDate) } : {}),
+      };
+      const data = insertPurchaseOrderSchema.partial().parse(normalizedPoData);
       const po = await storage.updatePurchaseOrder(id, data);
       
       if (items && Array.isArray(items)) {
