@@ -82,16 +82,92 @@ interface SaleItem {
   gstRate: number;
   discount: number;
   availableQty: number;
-  unitType: "STRIP" | "TABLET" | "BOTTLE";
+  unitType: SaleUnit;
   packSize: number;
   pricePerUnit: number | null;
   displayQty: number;
 }
 
+type SaleUnit = "STRIP" | "TABLET" | "CAPSULE" | "PACK" | "BOTTLE" | "VIAL" | "TUBE" | "SACHET" | "PIECE";
+
+const normalizeMedicineCategory = (value?: string | null): string => {
+  const normalized = String(value || "").trim().toLowerCase();
+  switch (normalized) {
+    case "tablet":
+    case "tablets":
+      return "tablet";
+    case "capsule":
+    case "capsules":
+      return "capsule";
+    case "syrup":
+    case "syrups":
+      return "syrup";
+    case "drops":
+    case "drop":
+      return "drops";
+    case "injection":
+    case "injections":
+      return "injection";
+    case "ointment":
+    case "ointments":
+      return "ointment";
+    case "cream":
+    case "creams":
+      return "cream";
+    case "powder":
+    case "powders":
+      return "powder";
+    case "device":
+    case "devices":
+      return "device";
+    case "other":
+    default:
+      return "other";
+  }
+};
+
+const getCategoryUnitOptions = (category?: string | null): Array<{ value: SaleUnit; label: string }> => {
+  switch (normalizeMedicineCategory(category)) {
+    case "tablet":
+      return [{ value: "STRIP", label: "Strip" }, { value: "TABLET", label: "Tablet" }];
+    case "capsule":
+      return [{ value: "STRIP", label: "Strip" }, { value: "CAPSULE", label: "Capsule" }];
+    case "syrup":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "drops":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "injection":
+      return [{ value: "PACK", label: "Pack" }, { value: "VIAL", label: "Vial" }];
+    case "ointment":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "cream":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "powder":
+      return [{ value: "PACK", label: "Pack" }, { value: "SACHET", label: "Sachet" }];
+    case "device":
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+    case "other":
+    default:
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+  }
+};
+
+const isPackLikeUnit = (unitType: SaleUnit | string | null | undefined) => {
+  const normalized = String(unitType || "").trim().toUpperCase();
+  return normalized === "STRIP" || normalized === "PACK";
+};
+
+const getDefaultSaleUnit = (category?: string | null): SaleUnit => {
+  const options = getCategoryUnitOptions(category);
+  const stripOption = options.find((option) => option.value === "STRIP");
+  if (stripOption) return "STRIP";
+  return options[1]?.value ?? options[0].value;
+};
+
 const getSafePackSize = (packSize: number) => Math.max(1, Number(packSize) || 1);
 const getSafeAvailableQty = (availableQty: number) => Math.max(0, Number(availableQty) || 0);
 const isStripUnit = (unitType: SaleItem["unitType"] | string | null | undefined) =>
-  String(unitType || "").trim().toUpperCase() === "STRIP";
+  isPackLikeUnit(unitType);
 
 const getMaxDisplayQty = (item: Pick<SaleItem, "unitType" | "availableQty" | "packSize">) => {
   const availableQty = getSafeAvailableQty(item.availableQty);
@@ -103,12 +179,6 @@ const getMaxDisplayQty = (item: Pick<SaleItem, "unitType" | "availableQty" | "pa
     return Math.floor(availableQty / packSize);
   }
   return availableQty;
-};
-
-const LIQUID_CATEGORIES = ["Syrups", "Drops", "Injections", "Cough & Cold"];
-const isLiquidCategory = (category: string | undefined) => {
-  if (!category) return false;
-  return LIQUID_CATEGORIES.some(c => category.toLowerCase().includes(c.toLowerCase()));
 };
 
 function QuantityInput({ value, max, onChange, testId }: { value: number; max: number; onChange: (qty: number) => void; testId: string }) {
@@ -411,11 +481,14 @@ export default function NewSale() {
         toast({ title: "Insufficient stock", variant: "destructive" });
       }
     } else {
-      const isLiquid = isLiquidCategory(medicine.category);
-      const packSize = isLiquid ? 1 : Math.max(1, Number(medicine.packSize) || 1);
+      const unitOptions = getCategoryUnitOptions(medicine.category);
+      const defaultUnit = getDefaultSaleUnit(medicine.category);
+      const isPackBased = isPackLikeUnit(defaultUnit);
+      const packSize = Math.max(1, Number(medicine.packSize) || 1);
       const stripPrice = Number(medicine.price);
       const tabletPrice = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : stripPrice / packSize;
-      const defaultUnit = isLiquid ? "BOTTLE" : "STRIP";
+      const defaultPrice = isPackBased ? stripPrice : tabletPrice;
+      const defaultQuantity = isPackBased ? packSize : 1;
       const newItem: SaleItem = {
         id: `${medicine.id}-${medicine.batchNumber}-${Date.now()}`,
         medicineId: medicine.id,
@@ -424,8 +497,8 @@ export default function NewSale() {
         expiryDate: medicine.expiryDate,
         hsnCode: medicine.hsnCode,
         category: medicine.category,
-        quantity: isLiquid ? 1 : packSize,
-        price: stripPrice,
+        quantity: defaultQuantity,
+        price: defaultPrice,
         stripPrice: stripPrice,
         tabletPrice: tabletPrice,
         mrp: medicine.mrp ? Number(medicine.mrp) : null,
@@ -477,30 +550,29 @@ export default function NewSale() {
     );
   };
 
-  const updateItemUnit = (itemId: string, unitType: "STRIP" | "TABLET") => {
+  const updateItemUnit = (itemId: string, unitType: SaleUnit) => {
     setItems(
       items.map((item) => {
         if (item.id === itemId) {
           let newDisplayQty: number;
           let newPrice: number;
-          let newQuantity: number;
+          const nextIsPackBased = isPackLikeUnit(unitType);
+          const currentIsPackBased = isPackLikeUnit(item.unitType);
           
-          if (unitType === "STRIP") {
-            if (item.unitType === "TABLET") {
+          if (nextIsPackBased) {
+            if (!currentIsPackBased) {
               newDisplayQty = Math.max(1, Math.floor(item.displayQty / item.packSize));
             } else {
               newDisplayQty = item.displayQty;
             }
             newPrice = item.stripPrice;
-            newQuantity = newDisplayQty * item.packSize;
           } else {
-            if (item.unitType === "STRIP") {
+            if (currentIsPackBased) {
               newDisplayQty = item.displayQty * item.packSize;
             } else {
               newDisplayQty = item.displayQty;
             }
             newPrice = item.tabletPrice;
-            newQuantity = newDisplayQty;
           }
           
           const maxQty = getMaxDisplayQty({
@@ -509,7 +581,7 @@ export default function NewSale() {
             packSize: item.packSize,
           });
           const clampedDisplayQty = maxQty > 0 ? Math.max(1, Math.min(newDisplayQty, maxQty)) : 0;
-          const clampedQuantity = unitType === "STRIP"
+          const clampedQuantity = isPackLikeUnit(unitType)
             ? clampedDisplayQty * getSafePackSize(item.packSize)
             : clampedDisplayQty;
           
@@ -792,7 +864,7 @@ export default function NewSale() {
         gstRate: Number(item.gstRate),
         discount: Number(item.discount),
         availableQty: Number(item.availableQty),
-        unitType: (item.unitType as "STRIP" | "TABLET" | "BOTTLE") || "STRIP",
+        unitType: (item.unitType as SaleUnit) || getDefaultSaleUnit(item.category),
         packSize: Number(item.packSize || 1),
         pricePerUnit: item.pricePerUnit ? Number(item.pricePerUnit) : null,
         displayQty: Number(item.displayQty || item.quantity || 1),
@@ -1226,7 +1298,7 @@ export default function NewSale() {
                                 <div className="text-sm">{item.name}</div>
                                 {item.packSize > 1 && (
                                   <div className="text-[10px] text-muted-foreground">
-                                    {item.packSize}/strip
+                                    {item.packSize}/{isPackLikeUnit(item.unitType) ? "pack" : "unit"}
                                   </div>
                                 )}
                               </TableCell>
@@ -1247,22 +1319,21 @@ export default function NewSale() {
                                 )}
                               </TableCell>
                               <TableCell className="py-2">
-                                {isLiquidCategory(item.category) ? (
-                                  <span className="text-xs font-medium px-1.5 py-0.5 bg-muted rounded">Bottle</span>
-                                ) : (
-                                  <Select
-                                    value={item.unitType}
-                                    onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
-                                  >
-                                    <SelectTrigger className="h-7 w-[80px] text-xs" data-testid={`select-unit-${item.id}`}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="STRIP">Strip</SelectItem>
-                                      <SelectItem value="TABLET">Tablet</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                )}
+                                <Select
+                                  value={item.unitType}
+                                  onValueChange={(v) => updateItemUnit(item.id, v as SaleUnit)}
+                                >
+                                  <SelectTrigger className="h-7 w-[88px] text-xs" data-testid={`select-unit-${item.id}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {getCategoryUnitOptions(item.category).map((option) => (
+                                      <SelectItem key={`${item.id}-${option.value}`} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </TableCell>
                               <TableCell className="text-right py-2">
                                 {isOwnerOrAdmin ? (

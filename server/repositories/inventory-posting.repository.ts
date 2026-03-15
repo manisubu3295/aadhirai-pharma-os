@@ -82,6 +82,8 @@ export interface GrnPostingLineInput {
   freeQty?: number;
   conversionFactorSnapshot?: number;
   purchaseUnit?: string;
+  unitsPerStrip?: number;
+  packSize?: number;
   rate: string;
   ptr?: string | null;
   sellingPrice?: string | null;

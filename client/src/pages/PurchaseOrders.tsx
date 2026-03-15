@@ -37,18 +37,93 @@ import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, Medicine, PurchaseOrder, PurchaseOrderItem, SupplierRate } from "@shared/schema";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
+type PoUnit = "STRIP" | "TABLET" | "CAPSULE" | "PACK" | "BOTTLE" | "VIAL" | "TUBE" | "SACHET" | "PIECE";
+
 interface POItem {
   medicineId: number;
   medicineName: string;
+  medicineCategory?: string;
   quantity: number;
   rate: string;
-  unitType: "STRIP" | "TABLET";
+  unitType: PoUnit;
   unitsPerStrip: number;
   mrp: string;
   gstRate: string;
   discountPercent: string;
   supplierRateId?: number;
 }
+
+const normalizeMedicineCategory = (value?: string | null): string => {
+  const normalized = String(value || "").trim().toLowerCase();
+  switch (normalized) {
+    case "tablet":
+    case "tablets":
+      return "tablet";
+    case "capsule":
+    case "capsules":
+      return "capsule";
+    case "syrup":
+    case "syrups":
+      return "syrup";
+    case "drops":
+    case "drop":
+      return "drops";
+    case "injection":
+    case "injections":
+      return "injection";
+    case "ointment":
+    case "ointments":
+      return "ointment";
+    case "cream":
+    case "creams":
+      return "cream";
+    case "powder":
+    case "powders":
+      return "powder";
+    case "device":
+    case "devices":
+      return "device";
+    case "other":
+    default:
+      return "other";
+  }
+};
+
+const getCategoryUnitOptions = (category?: string | null): Array<{ value: PoUnit; label: string }> => {
+  switch (normalizeMedicineCategory(category)) {
+    case "tablet":
+      return [{ value: "STRIP", label: "Strip" }, { value: "TABLET", label: "Tablet" }];
+    case "capsule":
+      return [{ value: "STRIP", label: "Strip" }, { value: "CAPSULE", label: "Capsule" }];
+    case "syrup":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "drops":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "injection":
+      return [{ value: "PACK", label: "Pack" }, { value: "VIAL", label: "Vial" }];
+    case "ointment":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "cream":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "powder":
+      return [{ value: "PACK", label: "Pack" }, { value: "SACHET", label: "Sachet" }];
+    case "device":
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+    case "other":
+    default:
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+  }
+};
+
+const getDefaultPoUnit = (category?: string | null, existingUnitType?: string | null): PoUnit => {
+  const options = getCategoryUnitOptions(category);
+  const normalizedUnit = String(existingUnitType || "").trim().toUpperCase();
+  const matched = options.find((option) => option.value === normalizedUnit);
+  if (matched) return matched.value;
+  const stripOption = options.find((option) => option.value === "STRIP");
+  if (stripOption) return stripOption.value;
+  return options[0].value;
+};
 
 const statusColors: Record<string, string> = {
   Draft: "bg-gray-100 text-gray-800",
@@ -283,12 +358,14 @@ export default function PurchaseOrders() {
     if (!supplierRates.length) return;
     const newItems: POItem[] = supplierRates.map(rate => {
       const medicine = medicines.find(m => m.id === rate.medicineId);
+      const unitType = getDefaultPoUnit(medicine?.category);
       return {
         medicineId: rate.medicineId,
         medicineName: medicine?.name || "Unknown",
+        medicineCategory: medicine?.category || "Other",
         quantity: rate.minOrderQty || 1,
         rate: rate.rate,
-        unitType: "STRIP",
+        unitType,
         unitsPerStrip: medicine?.packSize || 1,
         mrp: rate.mrp || "",
         gstRate: rate.gstRate || "18",
@@ -338,10 +415,16 @@ export default function PurchaseOrders() {
       const medicine = medicines.find(m => m.id === medicineId);
       if (medicine) {
         newItems[index].medicineName = medicine.name;
+        newItems[index].medicineCategory = medicine.category || "Other";
         newItems[index].rate = medicine.costPrice || medicine.price;
         newItems[index].mrp = medicine.mrp || "";
         newItems[index].gstRate = medicine.gstRate || "18";
         newItems[index].unitsPerStrip = medicine.packSize || 1;
+        const options = getCategoryUnitOptions(medicine.category);
+        const currentUnit = String(newItems[index].unitType || "").toUpperCase();
+        if (!options.some((option) => option.value === currentUnit)) {
+          newItems[index].unitType = getDefaultPoUnit(medicine.category);
+        }
       }
     }
     setItems(newItems);
@@ -419,11 +502,15 @@ export default function PurchaseOrders() {
     if (res.ok) {
       const poItems: PurchaseOrderItem[] = await res.json();
       const editItems: POItem[] = poItems.map(item => ({
+        medicineCategory: medicines.find((medicine) => medicine.id === item.medicineId)?.category || "Other",
         medicineId: item.medicineId,
         medicineName: item.medicineName,
         quantity: item.quantity,
         rate: item.rate,
-        unitType: (item.unitType as "STRIP" | "TABLET") || "STRIP",
+        unitType: getDefaultPoUnit(
+          medicines.find((medicine) => medicine.id === item.medicineId)?.category,
+          item.unitType,
+        ),
         unitsPerStrip: item.unitsPerStrip || 1,
         mrp: item.mrp || "",
         gstRate: item.gstRate || "18",
@@ -861,14 +948,17 @@ export default function PurchaseOrders() {
                         <TableCell>
                           <Select
                             value={item.unitType}
-                            onValueChange={(v) => updateItem(index, "unitType", v as "STRIP" | "TABLET")}
+                            onValueChange={(v) => updateItem(index, "unitType", v as PoUnit)}
                           >
                             <SelectTrigger className="w-20">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="STRIP">Strip</SelectItem>
-                              <SelectItem value="TABLET">Tablet</SelectItem>
+                              {getCategoryUnitOptions(item.medicineCategory).map((option) => (
+                                <SelectItem key={`${item.medicineId}-${option.value}-${index}`} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -1217,14 +1307,17 @@ export default function PurchaseOrders() {
                         <TableCell>
                           <Select
                             value={item.unitType}
-                            onValueChange={(v) => updateItem(index, "unitType", v as "STRIP" | "TABLET")}
+                            onValueChange={(v) => updateItem(index, "unitType", v as PoUnit)}
                           >
                             <SelectTrigger className="w-20">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="STRIP">Strip</SelectItem>
-                              <SelectItem value="TABLET">Tablet</SelectItem>
+                              {getCategoryUnitOptions(item.medicineCategory).map((option) => (
+                                <SelectItem key={`edit-${item.medicineId}-${option.value}-${index}`} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </TableCell>

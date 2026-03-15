@@ -29,11 +29,16 @@ export class InventoryPostingService {
       const grn = await this.repository.createGrnHeader(tx, header);
 
       for (const line of input.lines) {
+        const purchaseUnit = String(line.purchaseUnit || "STRIP").toUpperCase();
+        const isPackBasedUnit = purchaseUnit === "STRIP" || purchaseUnit === "PACK";
+        const fallbackConversionFactor = isPackBasedUnit
+          ? Math.max(1, Number(line.unitsPerStrip ?? line.packSize ?? 1) || 1)
+          : 1;
         const conversionFactorSnapshot = Math.max(
           1,
           Number(
             line.conversionFactorSnapshot ??
-            (String(line.purchaseUnit || "STRIP").toUpperCase() === "STRIP" ? 1 : 1),
+            fallbackConversionFactor,
           ) || 1,
         );
 
@@ -162,11 +167,12 @@ export class InventoryPostingService {
 
       for (const line of input.lines) {
         const unit = String(line.unitType || "TABLET").toUpperCase();
+        const isPackBasedUnit = unit === "STRIP" || unit === "PACK";
         const conversionFactorSnapshot = Math.max(
           1,
           Number(
             line.conversionFactorSnapshot ??
-            (unit === "STRIP" ? line.packSize : 1) ??
+            (isPackBasedUnit ? line.packSize : 1) ??
             1,
           ) || 1,
         );

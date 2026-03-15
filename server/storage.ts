@@ -1918,13 +1918,13 @@ export class DatabaseStorage implements IStorage {
             conversion_factor_snapshot = GREATEST(COALESCE(units_per_strip, 1), 1),
             unit_snapshot = COALESCE(unit_type, 'STRIP'),
             ordered_qty_base = CASE
-              WHEN UPPER(COALESCE(unit_type, 'STRIP')) = 'STRIP'
+              WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
                 THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
               ELSE COALESCE(quantity, 0)
             END,
             received_qty_base = 0,
             pending_qty_base = CASE
-              WHEN UPPER(COALESCE(unit_type, 'STRIP')) = 'STRIP'
+              WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
                 THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
               ELSE COALESCE(quantity, 0)
             END,
@@ -1965,12 +1965,12 @@ export class DatabaseStorage implements IStorage {
               conversion_factor_snapshot = GREATEST(COALESCE(units_per_strip, 1), 1),
               unit_snapshot = COALESCE(unit_type, 'STRIP'),
               ordered_qty_base = CASE
-                WHEN UPPER(COALESCE(unit_type, 'STRIP')) = 'STRIP'
+                WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
                   THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
                 ELSE COALESCE(quantity, 0)
               END,
               pending_qty_base = CASE
-                WHEN UPPER(COALESCE(unit_type, 'STRIP')) = 'STRIP'
+                WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
                   THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
                 ELSE COALESCE(quantity, 0)
               END,
@@ -1992,14 +1992,14 @@ export class DatabaseStorage implements IStorage {
         UPDATE purchase_order_items
         SET
           received_qty_base = CASE
-            WHEN UPPER(COALESCE(unit_snapshot, unit_type, 'STRIP')) = 'STRIP'
+            WHEN UPPER(COALESCE(unit_snapshot, unit_type, 'STRIP')) IN ('STRIP', 'PACK')
               THEN COALESCE(received_qty, 0) * GREATEST(COALESCE(conversion_factor_snapshot, units_per_strip, 1), 1)
             ELSE COALESCE(received_qty, 0)
           END,
           pending_qty_base = GREATEST(
             ordered_qty_base -
             CASE
-              WHEN UPPER(COALESCE(unit_snapshot, unit_type, 'STRIP')) = 'STRIP'
+              WHEN UPPER(COALESCE(unit_snapshot, unit_type, 'STRIP')) IN ('STRIP', 'PACK')
                 THEN COALESCE(received_qty, 0) * GREATEST(COALESCE(conversion_factor_snapshot, units_per_strip, 1), 1)
               ELSE COALESCE(received_qty, 0)
             END,
@@ -2066,7 +2066,7 @@ export class DatabaseStorage implements IStorage {
             const sellingPrice = parseFloat(String(item.sellingPrice || item.mrp || item.rate || sourceMedicine.price || "0")) || 0;
             const unitsPerStrip = Math.max(1, parseInt(String(item.unitsPerStrip || item.packSize || sourceMedicine.packSize || 1)) || 1);
             const purchaseUnit = String(item.purchaseUnit || item.unitType || "STRIP").toUpperCase();
-            const computedPricePerUnit = purchaseUnit === "STRIP"
+            const computedPricePerUnit = purchaseUnit === "STRIP" || purchaseUnit === "PACK"
               ? sellingPrice / unitsPerStrip
               : sellingPrice;
 
@@ -2112,7 +2112,7 @@ export class DatabaseStorage implements IStorage {
         const purchasedQty = Math.max(0, Number(item.quantity) || 0);
         const freeQty = Math.max(0, Number(item.freeQuantity) || 0);
         const totalQty = purchasedQty + freeQty;
-        const stockUnitsToAdd = purchaseUnit === "STRIP"
+        const stockUnitsToAdd = purchaseUnit === "STRIP" || purchaseUnit === "PACK"
           ? totalQty * unitsPerStrip
           : totalQty;
 
@@ -2123,7 +2123,7 @@ export class DatabaseStorage implements IStorage {
         const effectivePurchaseRate = baseRate * (1 - lineDiscountRate / 100) * (1 - headerDiscountRate / 100);
 
         const sellingPrice = parseFloat(String(item.sellingPrice || item.mrp || item.rate || "0")) || 0;
-        const pricePerUnit = purchaseUnit === "STRIP"
+        const pricePerUnit = purchaseUnit === "STRIP" || purchaseUnit === "PACK"
           ? sellingPrice / unitsPerStrip
           : sellingPrice;
 

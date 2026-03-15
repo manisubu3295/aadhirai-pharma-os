@@ -110,13 +110,22 @@ export class InventoryPostingController {
       const payload = grnPostingRequestSchema.parse(req.body);
       const { items, allowExcessReceipt, ...grnHeader } = payload;
 
-      const normalizedLines = items.map((item) => ({
-        ...item,
-        poLineId: item.poLineId ?? item.poItemId ?? null,
-        receivedQty: item.receivedQty ?? item.quantity ?? 0,
-        freeQty: item.freeQty ?? item.freeQuantity ?? 0,
-        conversionFactorSnapshot: item.conversionFactorSnapshot ?? item.unitsPerStrip ?? 1,
-      }));
+      const normalizedLines = items.map((item) => {
+        const purchaseUnit = String(item.purchaseUnit || "STRIP").toUpperCase();
+        const conversionFactorSnapshot = item.conversionFactorSnapshot ?? (
+          purchaseUnit === "STRIP" || purchaseUnit === "PACK"
+            ? Math.max(1, Number(item.unitsPerStrip || 1) || 1)
+            : 1
+        );
+
+        return {
+          ...item,
+          poLineId: item.poLineId ?? item.poItemId ?? null,
+          receivedQty: item.receivedQty ?? item.quantity ?? 0,
+          freeQty: item.freeQty ?? item.freeQuantity ?? 0,
+          conversionFactorSnapshot,
+        };
+      });
 
       const result = await postingService.postGoodsReceipt({
         header: {

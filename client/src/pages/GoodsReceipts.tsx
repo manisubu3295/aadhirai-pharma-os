@@ -37,11 +37,14 @@ import type { Supplier, PurchaseOrder, PurchaseOrderItem, GoodsReceipt, GoodsRec
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useSettings } from "@/contexts/SettingsContext";
 
+type GrnUnit = "STRIP" | "TABLET" | "CAPSULE" | "PACK" | "BOTTLE" | "VIAL" | "TUBE" | "SACHET" | "PIECE";
+
 interface GRNItem {
   poItemId?: number;
   poLineId?: number;
   medicineId: number;
   medicineName: string;
+  medicineCategory?: string;
   batchNumber: string;
   expiryDate: string;
   quantity: number;
@@ -55,11 +58,87 @@ interface GRNItem {
   taxMode: "INCLUSIVE" | "EXCLUSIVE";
   conversionFactorSnapshot: number;
   ptr: string;
-  purchaseUnit: "STRIP" | "TABLET";
+  purchaseUnit: GrnUnit;
   unitsPerStrip: number;
   pendingQty?: number;
   locationId?: number;
 }
+
+const normalizeMedicineCategory = (value?: string | null): string => {
+  const normalized = String(value || "").trim().toLowerCase();
+  switch (normalized) {
+    case "tablet":
+    case "tablets":
+      return "tablet";
+    case "capsule":
+    case "capsules":
+      return "capsule";
+    case "syrup":
+    case "syrups":
+      return "syrup";
+    case "drops":
+    case "drop":
+      return "drops";
+    case "injection":
+    case "injections":
+      return "injection";
+    case "ointment":
+    case "ointments":
+      return "ointment";
+    case "cream":
+    case "creams":
+      return "cream";
+    case "powder":
+    case "powders":
+      return "powder";
+    case "device":
+    case "devices":
+      return "device";
+    case "other":
+    default:
+      return "other";
+  }
+};
+
+const getCategoryUnitOptions = (category?: string | null): Array<{ value: GrnUnit; label: string }> => {
+  switch (normalizeMedicineCategory(category)) {
+    case "tablet":
+      return [{ value: "STRIP", label: "Strip" }, { value: "TABLET", label: "Tablet" }];
+    case "capsule":
+      return [{ value: "STRIP", label: "Strip" }, { value: "CAPSULE", label: "Capsule" }];
+    case "syrup":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "drops":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "injection":
+      return [{ value: "PACK", label: "Pack" }, { value: "VIAL", label: "Vial" }];
+    case "ointment":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "cream":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "powder":
+      return [{ value: "PACK", label: "Pack" }, { value: "SACHET", label: "Sachet" }];
+    case "device":
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+    case "other":
+    default:
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+  }
+};
+
+const getDefaultGrnUnit = (category?: string | null, poUnitType?: string | null): GrnUnit => {
+  const options = getCategoryUnitOptions(category);
+  if (String(poUnitType || "").trim().toUpperCase() === "STRIP") {
+    const hasStrip = options.some((option) => option.value === "STRIP");
+    if (hasStrip) return "STRIP";
+  }
+  return options[1]?.value ?? options[0].value;
+};
+
+const isPackBasedGrnUnit = (unit?: string | null): boolean => {
+  const normalized = String(unit || "").trim().toUpperCase();
+  return normalized === "STRIP" || normalized === "PACK";
+};
 
 export default function GoodsReceipts() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -116,6 +195,21 @@ export default function GoodsReceipts() {
   const { data: locations = [] } = useQuery<{ id: number; rack: string; row: string; bin: string }[]>({
     queryKey: ["/api/locations"],
   });
+
+  const { data: medicines = [] } = useQuery<{ id: number; category?: string | null }[]>({
+    queryKey: ["/api/medicines"],
+    queryFn: async () => {
+      const response = await fetch("/api/medicines");
+      if (!response.ok) throw new Error("Failed to fetch medicines");
+      return response.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const getMedicineCategory = (medicineId: number): string => {
+    const medicine = medicines.find((entry) => entry.id === medicineId);
+    return String(medicine?.category || "Other");
+  };
 
   const openPOs = purchaseOrders.filter(po => 
     po.status === "Issued" || po.status === "PartiallyReceived"
@@ -211,7 +305,9 @@ export default function GoodsReceipts() {
             totalAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(effectiveGstRate) / 100))).toFixed(2),
             purchaseUnit: item.purchaseUnit,
             unitsPerStrip: item.unitsPerStrip,
-            conversionFactorSnapshot: item.conversionFactorSnapshot || item.unitsPerStrip || 1,
+            conversionFactorSnapshot: isPackBasedGrnUnit(item.purchaseUnit)
+              ? (item.unitsPerStrip || 1)
+              : 1,
             locationId: item.locationId || null,
             };
           }),
@@ -251,28 +347,33 @@ export default function GoodsReceipts() {
     
     const newItems: GRNItem[] = poItems
       .filter(item => item.quantity > item.receivedQty)
-      .map(item => ({
-        poItemId: item.id,
-        poLineId: item.id,
-        medicineId: item.medicineId,
-        medicineName: item.medicineName,
-        batchNumber: "",
-        expiryDate: "",
-        quantity: item.quantity - item.receivedQty,
-        freeQuantity: 0,
-        schemeDescription: "",
-        rate: item.rate,
-        ptr: item.rate,
-        sellingPrice: item.mrp || item.rate,
-        mrp: item.mrp || "",
-        discountPercent: item.discountPercent || "0",
-        gstRate: item.gstRate || "5",
-        taxMode: "EXCLUSIVE" as const,
-        purchaseUnit: (item.unitType as "STRIP" | "TABLET") || "STRIP",
-        unitsPerStrip: item.unitsPerStrip || 1,
-        conversionFactorSnapshot: item.unitsPerStrip || 1,
-        pendingQty: item.quantity - item.receivedQty,
-      }));
+      .map(item => {
+        const medicineCategory = getMedicineCategory(item.medicineId);
+        const purchaseUnit = getDefaultGrnUnit(medicineCategory, item.unitType);
+        return {
+          poItemId: item.id,
+          poLineId: item.id,
+          medicineId: item.medicineId,
+          medicineName: item.medicineName,
+          medicineCategory,
+          batchNumber: "",
+          expiryDate: "",
+          quantity: item.quantity - item.receivedQty,
+          freeQuantity: 0,
+          schemeDescription: "",
+          rate: item.rate,
+          ptr: item.rate,
+          sellingPrice: item.mrp || item.rate,
+          mrp: item.mrp || "",
+          discountPercent: item.discountPercent || "0",
+          gstRate: item.gstRate || "5",
+          taxMode: "EXCLUSIVE" as const,
+          purchaseUnit,
+          unitsPerStrip: item.unitsPerStrip || 1,
+          conversionFactorSnapshot: isPackBasedGrnUnit(purchaseUnit) ? (item.unitsPerStrip || 1) : 1,
+          pendingQty: item.quantity - item.receivedQty,
+        };
+      });
     
     setItems(newItems);
     const configuredDiscountRate = String(appSettings.defaultGrnDiscountRate || "5").trim();
@@ -297,7 +398,7 @@ export default function GoodsReceipts() {
     newItems[index] = { ...newItems[index], [field]: value };
     if (field === "unitsPerStrip" || field === "purchaseUnit") {
       const current = newItems[index];
-      newItems[index].conversionFactorSnapshot = current.purchaseUnit === "STRIP"
+      newItems[index].conversionFactorSnapshot = isPackBasedGrnUnit(current.purchaseUnit)
         ? Math.max(1, Number(current.unitsPerStrip) || 1)
         : 1;
     }
@@ -766,14 +867,17 @@ export default function GoodsReceipts() {
                         <TableCell>
                           <Select
                             value={item.purchaseUnit}
-                            onValueChange={(v) => updateItem(index, "purchaseUnit", v as "STRIP" | "TABLET")}
+                            onValueChange={(v) => updateItem(index, "purchaseUnit", v as GrnUnit)}
                           >
                             <SelectTrigger className="h-8 w-[90px]">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="STRIP">Strip</SelectItem>
-                              <SelectItem value="TABLET">Tablet</SelectItem>
+                              {getCategoryUnitOptions(item.medicineCategory).map((option) => (
+                                <SelectItem key={`${item.medicineId}-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </TableCell>
