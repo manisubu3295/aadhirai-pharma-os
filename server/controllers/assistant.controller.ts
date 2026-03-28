@@ -6,7 +6,7 @@ import { assistantService } from "../services/assistant.service";
 export class AssistantController {
   async reply(req: Request, res: Response): Promise<Response> {
     try {
-      if (!req.session.userId || !req.session.userRole) {
+      if (!req.session.userId) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
@@ -14,7 +14,7 @@ export class AssistantController {
       const response = await assistantService.reply(
         {
           userId: req.session.userId,
-          role: req.session.userRole,
+          role: req.session.userRole || "unknown",
         },
         payload,
       );
