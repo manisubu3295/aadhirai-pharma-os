@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { 
+  type User as AppUser,
   insertMedicineSchema, 
   insertCustomerSchema, 
   insertDoctorSchema, 
@@ -41,6 +42,27 @@ const assignGenericPayloadSchema = z.object({
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const debugAuthLogs = process.env.DEBUG_AUTH_LOGS === "true";
 
+declare global {
+  namespace Express {
+    interface User extends AppUser {}
+
+    interface Request {
+      user?: AppUser;
+    }
+  }
+}
+
+function getSessionDebugSnapshot(req: Request) {
+  return {
+    sessionId: req.sessionID || null,
+    hasSession: Boolean(req.session),
+    sessionKeys: req.session ? Object.keys(req.session).filter((key) => key !== "cookie") : [],
+    userId: req.session?.userId || null,
+    userRole: req.session?.userRole || null,
+    lastActivity: req.session?.lastActivity || null,
+  };
+}
+
 function writeAuthDebugLog(label: string, req: Request, extra: Record<string, unknown> = {}) {
   if (!debugAuthLogs) {
     return;
@@ -50,11 +72,12 @@ function writeAuthDebugLog(label: string, req: Request, extra: Record<string, un
     label,
     method: req.method,
     path: req.path,
-    sessionId: req.sessionID || null,
-    hasSession: Boolean(req.session),
+    session: getSessionDebugSnapshot(req),
     hasUserId: Boolean(req.session?.userId),
     hasUserRole: Boolean(req.session?.userRole),
-    lastActivity: req.session?.lastActivity || null,
+    hasUser: Boolean(req.user),
+    requestUserId: req.user?.id || null,
+    requestUserRole: req.user?.role || null,
     cookieHeaderPresent: Boolean(req.headers.cookie),
     origin: req.headers.origin || null,
     referer: req.headers.referer || null,
@@ -73,9 +96,110 @@ function parseDateQueryEnd(value: string): Date {
   return new Date(`${value}T23:59:59.999`);
 }
 
+function regenerateSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+function saveSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+function destroySession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.destroy((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+async function hydrateAuthenticatedUser(req: Request, _res: Response, next: NextFunction) {
+  writeAuthDebugLog("auth.restore.start", req);
+
+  if (!req.session?.userId) {
+    writeAuthDebugLog("auth.restore.noSessionUser", req);
+    return next();
+  }
+
+  try {
+    const user = await storage.getUser(req.session.userId);
+
+    if (!user) {
+      writeAuthDebugLog("auth.restore.userNotFound", req, {
+        sessionUserId: req.session.userId,
+      });
+      await destroySession(req);
+      return next();
+    }
+
+    if (!user.isActive) {
+      writeAuthDebugLog("auth.restore.userInactive", req, {
+        sessionUserId: req.session.userId,
+      });
+      await destroySession(req);
+      return next();
+    }
+
+    req.user = user;
+
+    const shouldPersistSession = req.session.userRole !== user.role || !req.session.lastActivity;
+    req.session.userRole = user.role;
+
+    if (!req.session.lastActivity) {
+      req.session.lastActivity = Date.now();
+    }
+
+    if (shouldPersistSession) {
+      await saveSession(req);
+    }
+
+    writeAuthDebugLog("auth.restore.success", req, {
+      restoredUserId: user.id,
+      restoredUserRole: user.role,
+      sessionPersisted: shouldPersistSession,
+    });
+
+    return next();
+  } catch (error) {
+    console.error("Auth restoration error:", error);
+    return next(error);
+  }
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
+  writeAuthDebugLog("requireAuth.check", req);
+
   if (!req.session.userId) {
     writeAuthDebugLog("requireAuth.unauthorized", req);
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!req.user) {
+    writeAuthDebugLog("requireAuth.userMissing", req, {
+      sessionUserId: req.session.userId,
+    });
     return res.status(401).json({ error: "Unauthorized" });
   }
   
@@ -97,7 +221,12 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
   
   req.session.lastActivity = now;
-  next();
+  req.session.userRole = req.user.role;
+  writeAuthDebugLog("requireAuth.authorized", req, {
+    authenticatedUserId: req.user.id,
+    authenticatedUserRole: req.user.role,
+  });
+  return next();
 }
 
 function requireRole(...roles: string[]) {
@@ -105,11 +234,15 @@ function requireRole(...roles: string[]) {
     if (!req.session.userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    const user = await storage.getUser(req.session.userId);
+
+    const user = req.user || await storage.getUser(req.session.userId);
+
     if (!user || !roles.includes(user.role)) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    next();
+
+    req.user = user;
+    return next();
   };
 }
 
@@ -117,6 +250,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.use(hydrateAuthenticatedUser);
   
   // Health check endpoint for production verification
   app.get("/api/health", async (req, res) => {
@@ -143,35 +277,66 @@ export async function registerRoutes(
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = loginSchema.parse(req.body);
+      writeAuthDebugLog("auth.login.attempt", req, { username });
       const user = await storage.getUserByUsername(username);
-      console.log("Login attempt for user:", user);
-      console.log("Login attempt for username:", username);
-      console.log("Login attempt for Response:", res);
+
       if (!user) {
+        writeAuthDebugLog("auth.login.invalidUser", req, { username });
         return res.status(401).json({ error: "Invalid credentials" });
       }
       
       if (!user.isActive) {
+        writeAuthDebugLog("auth.login.inactiveUser", req, {
+          username,
+          userId: user.id,
+        });
         return res.status(401).json({ error: "Account is disabled" });
       }
       
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
+        writeAuthDebugLog("auth.login.invalidPassword", req, {
+          username,
+          userId: user.id,
+        });
         return res.status(401).json({ error: "Invalid credentials" });
       }
+
+      const previousSessionId = req.sessionID || null;
+      await regenerateSession(req);
+      writeAuthDebugLog("auth.login.sessionRegenerated", req, {
+        previousSessionId,
+      });
       
       req.session.userId = user.id;
       req.session.userRole = user.role;
       req.session.lastActivity = Date.now();
+      req.user = user;
+
+      writeAuthDebugLog("auth.login.sessionAssigned", req, {
+        authenticatedUserId: user.id,
+        authenticatedUserRole: user.role,
+      });
+
+      await saveSession(req);
+
+      writeAuthDebugLog("auth.login.sessionSaved", req, {
+        authenticatedUserId: user.id,
+        authenticatedUserRole: user.role,
+      });
       
       const { password: _, ...userWithoutPassword } = user;
-      res.json({ user: userWithoutPassword });
+      return res.json({ user: userWithoutPassword });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: error instanceof Error ? error.message : " "});
-      //res.status(500).json({ error: "Login failed" });
+
+      console.error("Login error:", error);
+      writeAuthDebugLog("auth.login.failed", req, {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Login failed" });
     }
   });
 
@@ -180,7 +345,9 @@ export async function registerRoutes(
       if (err) {
         return res.status(500).json({ error: "Logout failed" });
       }
-      res.json({ message: "Logged out successfully" });
+
+      writeAuthDebugLog("auth.logout.success", req);
+      return res.json({ message: "Logged out successfully" });
     });
   });
 
@@ -213,10 +380,10 @@ export async function registerRoutes(
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       await storage.updateUser(user.id, { password: hashedPassword });
       
-      res.json({ message: "Password changed successfully" });
+      return res.json({ message: "Password changed successfully" });
     } catch (error) {
       console.error("Change password error:", error);
-      res.status(500).json({ message: "Failed to change password" });
+      return res.status(500).json({ message: "Failed to change password" });
     }
   });
 
@@ -226,16 +393,22 @@ export async function registerRoutes(
       return res.status(401).json({ error: "Not authenticated" });
     }
     
-    const user = await storage.getUser(req.session.userId);
+    const user = req.user || await storage.getUser(req.session.userId);
     if (!user) {
       writeAuthDebugLog("auth.me.userNotFound", req, {
         sessionUserId: req.session.userId,
       });
       return res.status(401).json({ error: "User not found" });
     }
+
+    req.user = user;
     
     const { password: _, ...userWithoutPassword } = user;
-    res.json({ user: userWithoutPassword });
+    writeAuthDebugLog("auth.me.success", req, {
+      authenticatedUserId: user.id,
+      authenticatedUserRole: user.role,
+    });
+    return res.json({ user: userWithoutPassword });
   });
 
   app.post("/api/assistant/query", requireAuth, async (req, res) => {

@@ -12,11 +12,19 @@ const app = express();
 const httpServer = createServer(app);
 
 const isProduction = process.env.NODE_ENV === "production";
+const debugAuthLogs = process.env.DEBUG_AUTH_LOGS === "true";
 const allowedOrigin = (process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || "").trim();
-const sessionCookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || (allowedOrigin ? "none" : "lax")).trim().toLowerCase() as "lax" | "strict" | "none";
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS || "1");
+const requestedSessionCookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || (allowedOrigin ? "none" : "lax"))
+  .trim()
+  .toLowerCase() as "lax" | "strict" | "none";
+const sessionCookieSecure = isProduction && process.env.SESSION_COOKIE_SECURE !== "false";
+const sessionCookieSameSite = requestedSessionCookieSameSite === "none" && !sessionCookieSecure
+  ? "lax"
+  : requestedSessionCookieSameSite;
 
 if (isProduction) {
-  app.set("trust proxy", 1);
+  app.set("trust proxy", trustProxyHops);
 }
 
 declare module "http" {
@@ -46,6 +54,21 @@ const sessionStore = process.env.DATABASE_URL
       checkPeriod: 86400000,
     });
 
+if (debugAuthLogs) {
+  console.warn("[auth.session.config]", JSON.stringify({
+    isProduction,
+    trustProxy: isProduction ? trustProxyHops : 0,
+    allowedOrigin: allowedOrigin || null,
+    sessionStore: process.env.DATABASE_URL ? "postgres" : "memory",
+    cookie: {
+      secure: sessionCookieSecure,
+      httpOnly: true,
+      sameSite: sessionCookieSameSite,
+      maxAgeMs: 24 * 60 * 60 * 1000,
+    },
+  }));
+}
+
 if (allowedOrigin) {
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -68,12 +91,14 @@ if (allowedOrigin) {
 
 app.use(
   session({
+    name: process.env.SESSION_COOKIE_NAME || "sid",
     secret: process.env.SESSION_SECRET || "pharmacy-management-secret-key-change-in-production",
+    proxy: isProduction,
     resave: false,
     saveUninitialized: false,
     store: sessionStore,
     cookie: {
-      secure: isProduction,
+      secure: sessionCookieSecure,
       httpOnly: true,
       sameSite: sessionCookieSameSite,
       maxAge: 24 * 60 * 60 * 1000,
@@ -137,12 +162,16 @@ app.use((req, res, next) => {
   
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) {
+      return next(err);
+    }
+
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    console.error("[server.error]", err);
+    return res.status(status).json({ message });
   });
 
   // importantly only setup vite in development and after
