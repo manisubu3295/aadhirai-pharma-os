@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { useAssistant } from "@/hooks/use-assistant";
 
 interface Medicine {
   id: number;
@@ -37,6 +38,7 @@ interface Notification {
 
 export function Header({ title, onToggleSidebar }: { title: string; onToggleSidebar: () => void }) {
   const { user } = useAuth();
+  const { setOpen: setAssistantOpen } = useAssistant();
   const [, navigate] = useLocation();
   const [open, setOpen] = useState(false);
   const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([]);
@@ -236,7 +238,11 @@ export function Header({ title, onToggleSidebar }: { title: string; onToggleSide
           </PopoverContent>
         </Popover>
 
-        <button className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors" data-testid="button-help">
+        <button
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+          data-testid="button-help"
+          onClick={() => setAssistantOpen(true)}
+        >
           <HelpCircle className="w-4 h-4" />
         </button>
       </div>
