@@ -42,6 +42,8 @@ import StockAdjustments from "@/pages/StockAdjustments";
 import ShiftHandover from "@/pages/ShiftHandover";
 import MyActivity from "@/pages/MyActivity";
 import MySales from "@/pages/MySales";
+import { AssistantProvider } from "@/hooks/use-assistant";
+import { AssistantRoot } from "@/components/assistant/AssistantRoot";
 
 function Router() {
   return (
@@ -225,10 +227,13 @@ function App() {
         <SettingsProvider>
           <AuthProvider>
             <NavigationProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Router />
-              </TooltipProvider>
+              <AssistantProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <Router />
+                  <AssistantRoot />
+                </TooltipProvider>
+              </AssistantProvider>
             </NavigationProvider>
           </AuthProvider>
         </SettingsProvider>

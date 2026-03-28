@@ -22,6 +22,7 @@ import {
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { inventoryPostingController } from "./controllers/inventory-posting.controller";
+import { assistantController } from "./controllers/assistant.controller";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -201,6 +202,10 @@ export async function registerRoutes(
     
     const { password: _, ...userWithoutPassword } = user;
     res.json({ user: userWithoutPassword });
+  });
+
+  app.post("/api/assistant/query", requireAuth, async (req, res) => {
+    return assistantController.reply(req, res);
   });
 
   app.put("/api/profile", async (req, res) => {
