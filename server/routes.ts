@@ -39,6 +39,31 @@ const assignGenericPayloadSchema = z.object({
 });
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const debugAuthLogs = process.env.DEBUG_AUTH_LOGS === "true";
+
+function writeAuthDebugLog(label: string, req: Request, extra: Record<string, unknown> = {}) {
+  if (!debugAuthLogs) {
+    return;
+  }
+
+  console.warn("[auth.debug]", JSON.stringify({
+    label,
+    method: req.method,
+    path: req.path,
+    sessionId: req.sessionID || null,
+    hasSession: Boolean(req.session),
+    hasUserId: Boolean(req.session?.userId),
+    hasUserRole: Boolean(req.session?.userRole),
+    lastActivity: req.session?.lastActivity || null,
+    cookieHeaderPresent: Boolean(req.headers.cookie),
+    origin: req.headers.origin || null,
+    referer: req.headers.referer || null,
+    host: req.headers.host || null,
+    forwardedProto: req.headers["x-forwarded-proto"] || null,
+    userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 160) : null,
+    ...extra,
+  }));
+}
 
 function parseDateQueryStart(value: string): Date {
   return new Date(`${value}T00:00:00`);
@@ -50,6 +75,7 @@ function parseDateQueryEnd(value: string): Date {
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
+    writeAuthDebugLog("requireAuth.unauthorized", req);
     return res.status(401).json({ error: "Unauthorized" });
   }
   
@@ -57,6 +83,10 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   const lastActivity = req.session.lastActivity || now;
   
   if (now - lastActivity > IDLE_TIMEOUT_MS) {
+    writeAuthDebugLog("requireAuth.sessionExpired", req, {
+      idleMs: now - lastActivity,
+      idleTimeoutMs: IDLE_TIMEOUT_MS,
+    });
     req.session.destroy((err) => {
       if (err) console.error("Session destroy error:", err);
     });
@@ -192,11 +222,15 @@ export async function registerRoutes(
 
   app.get("/api/auth/me", async (req, res) => {
     if (!req.session.userId) {
+      writeAuthDebugLog("auth.me.notAuthenticated", req);
       return res.status(401).json({ error: "Not authenticated" });
     }
     
     const user = await storage.getUser(req.session.userId);
     if (!user) {
+      writeAuthDebugLog("auth.me.userNotFound", req, {
+        sessionUserId: req.session.userId,
+      });
       return res.status(401).json({ error: "User not found" });
     }
     

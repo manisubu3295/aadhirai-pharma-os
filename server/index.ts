@@ -11,6 +11,8 @@ const app = express();
 const httpServer = createServer(app);
 
 const isProduction = process.env.NODE_ENV === "production";
+const allowedOrigin = (process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || "").trim();
+const sessionCookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || (allowedOrigin ? "none" : "lax")).trim().toLowerCase() as "lax" | "strict" | "none";
 
 if (isProduction) {
   app.set("trust proxy", 1);
@@ -32,6 +34,26 @@ declare module "express-session" {
 
 const MemoryStoreSession = MemoryStore(session);
 
+if (allowedOrigin) {
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+
+    if (origin && origin === allowedOrigin) {
+      res.header("Access-Control-Allow-Origin", origin);
+      res.header("Access-Control-Allow-Credentials", "true");
+      res.header("Vary", "Origin");
+      res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+      res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    }
+
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+
+    next();
+  });
+}
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "pharmacy-management-secret-key-change-in-production",
@@ -43,7 +65,7 @@ app.use(
     cookie: {
       secure: isProduction,
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: sessionCookieSameSite,
       maxAge: 24 * 60 * 60 * 1000,
     },
   })

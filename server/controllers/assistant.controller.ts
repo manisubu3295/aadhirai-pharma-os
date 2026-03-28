@@ -3,10 +3,29 @@ import { ZodError } from "zod";
 import { assistantRequestSchema } from "@shared/assistant";
 import { assistantService } from "../services/assistant.service";
 
+const debugAuthLogs = process.env.DEBUG_AUTH_LOGS === "true";
+
 export class AssistantController {
   async reply(req: Request, res: Response): Promise<Response> {
     try {
       if (!req.session.userId) {
+        if (debugAuthLogs) {
+          console.warn("[assistant.auth.debug]", JSON.stringify({
+            label: "assistant.reply.unauthorized",
+            method: req.method,
+            path: req.path,
+            sessionId: req.sessionID || null,
+            hasSession: Boolean(req.session),
+            hasUserId: Boolean(req.session?.userId),
+            hasUserRole: Boolean(req.session?.userRole),
+            cookieHeaderPresent: Boolean(req.headers.cookie),
+            origin: req.headers.origin || null,
+            referer: req.headers.referer || null,
+            host: req.headers.host || null,
+            forwardedProto: req.headers["x-forwarded-proto"] || null,
+            userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 160) : null,
+          }));
+        }
         return res.status(401).json({ error: "Unauthorized" });
       }
 
