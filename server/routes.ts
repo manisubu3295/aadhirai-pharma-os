@@ -5,8 +5,6 @@ import {
   insertMedicineSchema, 
   insertCustomerSchema, 
   insertDoctorSchema, 
-  insertSaleSchema,
-  createSaleItemSchema,
   insertLocationSchema,
   insertAuditLogSchema,
   insertCreditPaymentSchema,
@@ -15,8 +13,6 @@ import {
   insertSupplierRateSchema,
   insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema,
-  insertGoodsReceiptSchema,
-  insertGoodsReceiptItemSchema,
   insertSalesReturnSchema,
   insertSalesReturnItemSchema,
   insertPettyCashExpenseSchema,
@@ -25,13 +21,31 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcrypt";
+import { inventoryPostingController } from "./controllers/inventory-posting.controller";
 
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
 });
 
+const genericNamePayloadSchema = z.object({
+  name: z.string().trim().min(1, "Generic name is required").max(120, "Generic name is too long"),
+});
+
+const assignGenericPayloadSchema = z.object({
+  genericNameId: z.number().int().positive(),
+  medicineId: z.number().int().positive(),
+});
+
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+
+function parseDateQueryStart(value: string): Date {
+  return new Date(`${value}T00:00:00`);
+}
+
+function parseDateQueryEnd(value: string): Date {
+  return new Date(`${value}T23:59:59.999`);
+}
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
@@ -365,6 +379,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/medicines/sale-list", async (req, res) => {
+    try {
+      const medicines = await storage.getSaleMedicines();
+      res.json(medicines);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sale medicines" });
+    }
+  });
+
   app.get("/api/medicines/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -394,9 +417,39 @@ export async function registerRoutes(
   });
 
   app.patch("/api/medicines/:id", async (req, res) => {
+    const numericFieldLabels: Record<string, string> = {
+      quantity: "Quantity",
+      packSize: "Pack Size",
+      price: "Selling Price",
+      costPrice: "Cost Price",
+      mrp: "MRP",
+      gstRate: "GST Rate",
+      reorderLevel: "Reorder Level",
+      minStock: "Min Stock",
+      maxStock: "Max Stock",
+      locationId: "Location",
+    };
+
     try {
       const id = parseInt(req.params.id);
-      const data = insertMedicineSchema.partial().parse(req.body);
+      const payload = req.body as Record<string, unknown>;
+      const emptyNumericFields = Object.entries(numericFieldLabels)
+        .filter(([field]) => Object.prototype.hasOwnProperty.call(payload, field))
+        .filter(([field]) => {
+          if (typeof payload[field] !== "string") return false;
+          const raw = String(payload[field]).trim().toLowerCase();
+          return raw === "" || raw === "undefined" || raw === "null";
+        })
+        .map(([, label]) => label);
+
+      if (emptyNumericFields.length > 0) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: `${emptyNumericFields.join(", ")} cannot be empty. Enter a number or remove the value.`,
+        });
+      }
+
+      const data = insertMedicineSchema.partial().parse(payload);
       const medicine = await storage.updateMedicine(id, data);
       if (!medicine) {
         return res.status(404).json({ error: "Medicine not found" });
@@ -404,9 +457,13 @@ export async function registerRoutes(
       res.json(medicine);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
+        return res.status(400).json({
+          error: "Validation failed",
+          details: error.errors.map((entry) => `${entry.path.join(".")}: ${entry.message}`).join(", "),
+        });
       }
-      res.status(500).json({ error: "Failed to update medicine" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ error: "Failed to update medicine", details: errorMessage });
     }
   });
 
@@ -420,6 +477,82 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete medicine" });
+    }
+  });
+
+  app.get("/api/generic-names", async (req, res) => {
+    try {
+      const includeInactive = String(req.query.includeInactive || "false").toLowerCase() === "true";
+      const items = await storage.getGenericNames(includeInactive);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch generic names" });
+    }
+  });
+
+  app.post("/api/generic-names", async (req, res) => {
+    try {
+      const payload = genericNamePayloadSchema.parse(req.body);
+      const created = await storage.createGenericName({ name: payload.name });
+      res.status(201).json(created);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors.map((e) => e.message).join(", ") });
+      }
+      res.status(400).json({ error: "Failed to create generic name", details: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.patch("/api/generic-names/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const payload = genericNamePayloadSchema.parse(req.body);
+      const updated = await storage.updateGenericName(id, { name: payload.name });
+      if (!updated) {
+        return res.status(404).json({ error: "Generic name not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors.map((e) => e.message).join(", ") });
+      }
+      res.status(400).json({ error: "Failed to update generic name", details: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/generic-names/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const removed = await storage.softDeleteGenericName(id);
+      if (!removed) {
+        return res.status(404).json({ error: "Generic name not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete generic name" });
+    }
+  });
+
+  app.post("/api/generic-names/assign", async (req, res) => {
+    try {
+      const payload = assignGenericPayloadSchema.parse(req.body);
+      const generic = (await storage.getGenericNames(true)).find((g) => g.id === payload.genericNameId);
+      if (!generic || !generic.isActive) {
+        return res.status(400).json({ error: "Invalid generic name" });
+      }
+
+      const medicine = await storage.getMedicine(payload.medicineId);
+      if (!medicine) {
+        return res.status(404).json({ error: "Medicine not found" });
+      }
+
+      const updated = await storage.updateMedicine(payload.medicineId, { genericName: generic.name });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors.map((e) => e.message).join(", ") });
+      }
+      res.status(500).json({ error: "Failed to assign generic name", details: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 
@@ -644,8 +777,8 @@ export async function registerRoutes(
       const userRole = req.session.userRole;
       const isOwnerOrAdmin = userRole === "owner" || userRole === "admin";
       
-      const from = req.query.from ? new Date(req.query.from as string) : undefined;
-      const to = req.query.to ? new Date(req.query.to as string + "T23:59:59") : undefined;
+      const from = req.query.from ? parseDateQueryStart(req.query.from as string) : undefined;
+      const to = req.query.to ? parseDateQueryEnd(req.query.to as string) : undefined;
       const search = req.query.search as string | undefined;
       
       if (isOwnerOrAdmin) {
@@ -707,32 +840,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/sales", async (req, res) => {
-    try {
-      const { items, ...saleData } = req.body;
-      const sale = insertSaleSchema.parse(saleData);
-      const saleItems = z.array(createSaleItemSchema).parse(items);
-      
-      const paymentMethod = (sale.paymentMethod || "").toLowerCase();
-      const netAmount = parseFloat(String(sale.total || 0));
-      const receivedAmount = parseFloat(String(sale.receivedAmount || 0));
-      
-      if (paymentMethod !== "credit" && receivedAmount < netAmount) {
-        return res.status(400).json({ 
-          error: "Received amount cannot be less than net amount for non-credit payments." 
-        });
-      }
-      
-      const invoiceNo = await storage.getNextInvoiceNumber();
-      const saleWithInvoice = { ...sale, invoiceNo };
-      
-      const createdSale = await storage.createSale(saleWithInvoice, saleItems);
-      res.status(201).json(createdSale);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
-      }
-      res.status(500).json({ error: "Failed to create sale" });
-    }
+    return inventoryPostingController.createSale(req, res);
   });
 
   app.get("/api/dashboard/stats", async (req, res) => {
@@ -872,10 +980,15 @@ export async function registerRoutes(
       const { from, to } = req.query;
       const allSales = await storage.getSales(10000);
       
-      const fromDate = from ? new Date(from as string) : new Date();
-      const toDate = to ? new Date(to as string) : new Date();
-      fromDate.setHours(0, 0, 0, 0);
-      toDate.setHours(23, 59, 59, 999);
+      const fromDate = from ? parseDateQueryStart(from as string) : new Date();
+      const toDate = to ? parseDateQueryEnd(to as string) : new Date();
+
+      if (!from) {
+        fromDate.setHours(0, 0, 0, 0);
+      }
+      if (!to) {
+        toDate.setHours(23, 59, 59, 999);
+      }
       
       const filteredSales = allSales.filter(sale => {
         const saleDate = new Date(sale.createdAt);
@@ -989,8 +1102,8 @@ export async function registerRoutes(
 
   app.get("/api/audit-logs", requireRole("owner"), async (req, res) => {
     try {
-      const from = req.query.from ? new Date(req.query.from as string) : undefined;
-      const to = req.query.to ? new Date(req.query.to as string) : undefined;
+      const from = req.query.from ? parseDateQueryStart(req.query.from as string) : undefined;
+      const to = req.query.to ? parseDateQueryEnd(req.query.to as string) : undefined;
       const logs = await storage.getAuditLogs(from, to);
       res.json(logs);
     } catch (error) {
@@ -1278,6 +1391,91 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/supplier-rates/import", async (req, res) => {
+    try {
+      const { rates } = req.body;
+      if (!Array.isArray(rates)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+
+      const [suppliers, medicines, existingRates] = await Promise.all([
+        storage.getSuppliers(),
+        storage.getMedicines(),
+        storage.getSupplierRates(),
+      ]);
+
+      const supplierByCode = new Map(
+        suppliers.map((supplier) => [supplier.code.trim().toLowerCase(), supplier])
+      );
+      const medicineByName = new Map(
+        medicines.map((medicine) => [medicine.name.trim().toLowerCase(), medicine])
+      );
+      const existingRateByPair = new Map(
+        existingRates.map((rate) => [`${rate.supplierId}-${rate.medicineId}`, rate])
+      );
+
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+
+      for (let index = 0; index < rates.length; index++) {
+        const rowNumber = index + 2;
+        const row = rates[index];
+
+        try {
+          const supplierCode = String(row?.supplierCode || "").trim();
+          const medicineName = String(row?.medicineName || "").trim();
+
+          if (!supplierCode) {
+            throw new Error("Supplier code is required");
+          }
+          if (!medicineName) {
+            throw new Error("Medicine name is required");
+          }
+
+          const supplier = supplierByCode.get(supplierCode.toLowerCase());
+          if (!supplier) {
+            throw new Error(`Supplier not found for code '${supplierCode}'`);
+          }
+
+          const medicine = medicineByName.get(medicineName.toLowerCase());
+          if (!medicine) {
+            throw new Error(`Medicine not found for name '${medicineName}'`);
+          }
+
+          const payload = insertSupplierRateSchema.parse({
+            supplierId: supplier.id,
+            medicineId: medicine.id,
+            rate: String(row?.rate || "0"),
+            mrp: row?.mrp ? String(row.mrp) : null,
+            discountPercent: row?.discountPercent ? String(row.discountPercent) : "0",
+            gstRate: row?.gstRate ? String(row.gstRate) : "18",
+            minOrderQty: parseInt(String(row?.minOrderQty || "1")) || 1,
+            leadTimeDays: parseInt(String(row?.leadTimeDays || "3")) || 3,
+          });
+
+          const key = `${supplier.id}-${medicine.id}`;
+          const existing = existingRateByPair.get(key);
+
+          if (existing) {
+            await storage.updateSupplierRate(existing.id, payload);
+          } else {
+            const created = await storage.createSupplierRate(payload);
+            existingRateByPair.set(key, created);
+          }
+
+          results.success++;
+        } catch (err) {
+          results.failed++;
+          results.errors.push(`Row ${rowNumber}: ${err instanceof Error ? err.message : "Unknown error"}`);
+        }
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error("Supplier rate import error:", error);
+      res.status(500).json({ error: "Failed to import supplier rates" });
+    }
+  });
+
   app.put("/api/supplier-rates/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -1343,7 +1541,12 @@ export async function registerRoutes(
   app.post("/api/purchase-orders", async (req, res) => {
     try {
       const { items, ...poData } = req.body;
-      const po = insertPurchaseOrderSchema.parse(poData);
+      const normalizedPoData = {
+        ...poData,
+        ...(poData?.orderDate ? { orderDate: new Date(poData.orderDate) } : {}),
+        ...(poData?.expectedDeliveryDate ? { expectedDeliveryDate: new Date(poData.expectedDeliveryDate) } : {}),
+      };
+      const po = insertPurchaseOrderSchema.parse(normalizedPoData);
       const poItems = z.array(insertPurchaseOrderItemSchema.omit({ poId: true })).parse(items || []);
       const itemsWithDummyPoId = poItems.map(item => ({ ...item, poId: 0 }));
       
@@ -1375,7 +1578,12 @@ export async function registerRoutes(
       }
       
       const { items, ...poData } = req.body;
-      const data = insertPurchaseOrderSchema.partial().parse(poData);
+      const normalizedPoData = {
+        ...poData,
+        ...(poData?.orderDate ? { orderDate: new Date(poData.orderDate) } : {}),
+        ...(poData?.expectedDeliveryDate ? { expectedDeliveryDate: new Date(poData.expectedDeliveryDate) } : {}),
+      };
+      const data = insertPurchaseOrderSchema.partial().parse(normalizedPoData);
       const po = await storage.updatePurchaseOrder(id, data);
       
       if (items && Array.isArray(items)) {
@@ -1440,35 +1648,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/goods-receipts", async (req, res) => {
-    try {
-      const { items, ...grnData } = req.body;
-      const grn = insertGoodsReceiptSchema.parse(grnData);
-      const grnItems = z.array(insertGoodsReceiptItemSchema.omit({ grnId: true })).parse(items || []);
-      const itemsWithDummyGrnId = grnItems.map(item => ({ ...item, grnId: 0 }));
-      
-      const createdGrn = await storage.createGoodsReceipt(grn, itemsWithDummyGrnId);
-      
-      if (grn.poId) {
-        const poItems = await storage.getPurchaseOrderItems(grn.poId);
-        const allReceived = poItems.every(item => item.receivedQty >= item.quantity);
-        const someReceived = poItems.some(item => item.receivedQty > 0);
-        
-        if (allReceived) {
-          await storage.updatePurchaseOrder(grn.poId, { status: "Received" });
-        } else if (someReceived) {
-          await storage.updatePurchaseOrder(grn.poId, { status: "PartiallyReceived" });
-        }
-      }
-      
-      res.status(201).json(createdGrn);
-    } catch (error) {
-      console.error("Goods receipt creation error:", error);
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
-      }
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      res.status(500).json({ error: "Failed to create goods receipt", details: errorMessage });
-    }
+    return inventoryPostingController.createGoodsReceipt(req, res);
   });
 
   app.get("/api/sales-returns", async (req, res) => {
@@ -2137,10 +2317,10 @@ export async function registerRoutes(
         filters.action = req.query.action as string;
       }
       if (req.query.from) {
-        filters.from = new Date(req.query.from as string);
+        filters.from = parseDateQueryStart(req.query.from as string);
       }
       if (req.query.to) {
-        filters.to = new Date(req.query.to as string);
+        filters.to = parseDateQueryEnd(req.query.to as string);
       }
       
       const logs = await storage.getActivityLogs(filters);
@@ -2248,8 +2428,8 @@ export async function registerRoutes(
       const filters: { status?: string; type?: string; from?: Date; to?: Date } = {};
       if (req.query.status) filters.status = req.query.status as string;
       if (req.query.type) filters.type = req.query.type as string;
-      if (req.query.from) filters.from = new Date(req.query.from as string);
-      if (req.query.to) filters.to = new Date(req.query.to as string);
+      if (req.query.from) filters.from = parseDateQueryStart(req.query.from as string);
+      if (req.query.to) filters.to = parseDateQueryEnd(req.query.to as string);
       
       const requests = await storage.getApprovalRequests(filters);
       res.json(requests);
@@ -2341,8 +2521,8 @@ export async function registerRoutes(
       const filters: { medicineId?: number; reasonCode?: string; from?: Date; to?: Date } = {};
       if (req.query.medicineId) filters.medicineId = parseInt(req.query.medicineId as string);
       if (req.query.reasonCode) filters.reasonCode = req.query.reasonCode as string;
-      if (req.query.from) filters.from = new Date(req.query.from as string);
-      if (req.query.to) filters.to = new Date(req.query.to as string);
+      if (req.query.from) filters.from = parseDateQueryStart(req.query.from as string);
+      if (req.query.to) filters.to = parseDateQueryEnd(req.query.to as string);
       
       const adjustments = await storage.getStockAdjustments(filters);
       res.json(adjustments);

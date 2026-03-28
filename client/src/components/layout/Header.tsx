@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bell, HelpCircle, Package, AlertTriangle, CreditCard, X } from "lucide-react";
+import { Bell, HelpCircle, Package, AlertTriangle, CreditCard, X, PanelLeft, Menu } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -35,7 +35,7 @@ interface Notification {
   link: string;
 }
 
-export function Header({ title }: { title: string }) {
+export function Header({ title, onToggleSidebar }: { title: string; onToggleSidebar: () => void }) {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const [open, setOpen] = useState(false);
@@ -163,6 +163,14 @@ export function Header({ title }: { title: string }) {
   return (
     <header className="h-14 border-b border-slate-200 bg-white px-6 flex items-center justify-between sticky top-0 z-30">
       <div className="flex items-center gap-4">
+        <button
+          onClick={onToggleSidebar}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+          data-testid="button-toggle-sidebar"
+        >
+          <Menu className="w-4 h-4 lg:hidden" />
+          <PanelLeft className="w-4 h-4 hidden lg:block" />
+        </button>
         <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
       </div>
 

@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { FileSpreadsheet, Download, Settings, ShoppingCart, Package, CreditCard, Calculator } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
 import { format, startOfMonth, endOfMonth } from "date-fns";
+import { endOfLocalDay, formatAppDate, parseServerDate, startOfLocalDay } from "@/lib/dateTime";
 
 interface Sale {
   id: number;
@@ -67,10 +68,9 @@ export default function TallyExport() {
   }
 
   const filteredSales = sales.filter((sale) => {
-    const saleDate = new Date(sale.createdAt);
-    const fromDate = new Date(dateFrom);
-    const toDate = new Date(dateTo);
-    toDate.setHours(23, 59, 59, 999);
+    const saleDate = parseServerDate(sale.createdAt);
+    const fromDate = startOfLocalDay(dateFrom);
+    const toDate = endOfLocalDay(dateTo);
     return saleDate >= fromDate && saleDate <= toDate;
   });
 
@@ -82,7 +82,7 @@ export default function TallyExport() {
     
     const rows = filteredSales.map(sale => [
       "Sales",
-      format(new Date(sale.createdAt), "dd-MM-yyyy"),
+      formatAppDate(sale.createdAt, "dd-MM-yyyy"),
       sale.invoiceNo || `INV-${sale.id}`,
       sale.customerName,
       ledgerConfig.salesLedger,
@@ -105,7 +105,7 @@ export default function TallyExport() {
     
     const rows = cashSales.map(sale => [
       "Receipt",
-      format(new Date(sale.createdAt), "dd-MM-yyyy"),
+      formatAppDate(sale.createdAt, "dd-MM-yyyy"),
       `RCP-${sale.id}`,
       ledgerConfig.cashLedger,
       sale.customerName,
@@ -123,7 +123,7 @@ export default function TallyExport() {
     
     const rows = filteredSales.map(sale => [
       sale.invoiceNo || `INV-${sale.id}`,
-      format(new Date(sale.createdAt), "dd-MM-yyyy"),
+      formatAppDate(sale.createdAt, "dd-MM-yyyy"),
       sale.customerName,
       sale.customerGstin || "",
       sale.subtotal,

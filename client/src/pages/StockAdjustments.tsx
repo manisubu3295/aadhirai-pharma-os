@@ -32,6 +32,7 @@ import { Plus, ArrowUp, ArrowDown, Filter, Package } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth } from "date-fns";
+import { formatAppDateTime } from "@/lib/dateTime";
 
 interface StockAdjustment {
   id: number;
@@ -240,7 +241,7 @@ export default function StockAdjustments() {
                 <TableBody>
                   {adjustments.map((adjustment) => (
                     <TableRow key={adjustment.id} data-testid={`row-adjustment-${adjustment.id}`}>
-                      <TableCell>{format(new Date(adjustment.createdAt), "dd/MM/yyyy HH:mm")}</TableCell>
+                      <TableCell>{formatAppDateTime(adjustment.createdAt, "dd/MM/yyyy HH:mm")}</TableCell>
                       <TableCell className="font-medium">{adjustment.medicineName}</TableCell>
                       <TableCell>{adjustment.batchNumber}</TableCell>
                       <TableCell>

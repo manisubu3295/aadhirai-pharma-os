@@ -28,13 +28,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, RotateCcw, Package, CheckCircle2, Download, FileText, Printer } from "lucide-react";
+import { Search, Plus, Eye, RotateCcw, Package, CheckCircle2, Download, FileText, Printer, ArrowUpDown } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfDay, endOfDay, parseISO } from "date-fns";
 import type { Supplier, GoodsReceipt, GoodsReceiptItem, PurchaseReturn, PurchaseReturnItem } from "@shared/schema";
 import { exportToCSV } from "@/lib/exportUtils";
 import { generatePurchaseReturnPDF, generatePurchaseReturnsListPDF } from "@/lib/pdfUtils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,6 +70,7 @@ export default function PurchaseReturns() {
   
   const [fromDate, setFromDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [toDate, setToDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [returnDateSortOrder, setReturnDateSortOrder] = useState<"asc" | "desc">("desc");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -249,6 +251,24 @@ export default function PurchaseReturns() {
     
     return matchesSearch && matchesDateRange;
   });
+
+  const sortedFilteredReturns = [...filteredReturns].sort((a, b) => {
+    const first = new Date(a.returnDate).getTime();
+    const second = new Date(b.returnDate).getTime();
+    return returnDateSortOrder === "asc" ? first - second : second - first;
+  });
+
+  const supplierOptions = suppliers.map((supplier) => ({
+    value: supplier.id.toString(),
+    label: supplier.name,
+    keywords: [supplier.name, supplier.code || ""],
+  }));
+
+  const grnOptions = supplierGRNs.map((grn) => ({
+    value: grn.id.toString(),
+    label: `${grn.grnNumber} - ${grn.supplierName}`,
+    keywords: [grn.grnNumber, grn.supplierName, grn.supplierInvoiceNo || ""],
+  }));
 
   const calculateTotal = () => {
     const itemsToReturn = items.filter(item => item.quantityReturned > 0);
@@ -443,14 +463,25 @@ export default function PurchaseReturns() {
                   <TableRow>
                     <TableHead>Return Number</TableHead>
                     <TableHead>Supplier</TableHead>
-                    <TableHead>Return Date</TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-0 font-medium"
+                        onClick={() => setReturnDateSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                        data-testid="button-sort-return-date"
+                      >
+                        Return Date
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    </TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-16">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredReturns.map((pr) => (
+                  {sortedFilteredReturns.map((pr) => (
                     <TableRow key={pr.id} data-testid={`row-return-${pr.id}`}>
                       <TableCell className="font-mono font-medium">{pr.returnNumber}</TableCell>
                       <TableCell>{pr.supplierName}</TableCell>
@@ -487,18 +518,15 @@ export default function PurchaseReturns() {
               <div>
                 <Label>Select GRN (Optional)</Label>
                 <div className="flex gap-2">
-                  <Select value={selectedGRNId} onValueChange={setSelectedGRNId}>
-                    <SelectTrigger className="flex-1 min-w-0" data-testid="select-return-grn">
-                      <SelectValue placeholder="Select GRN" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {supplierGRNs.map((grn) => (
-                        <SelectItem key={grn.id} value={grn.id.toString()}>
-                          {grn.grnNumber} - {grn.supplierName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={selectedGRNId}
+                    onValueChange={setSelectedGRNId}
+                    options={grnOptions}
+                    placeholder="Select GRN"
+                    searchPlaceholder="Search GRN..."
+                    dataTestId="select-return-grn"
+                    className="flex-1 min-w-0"
+                  />
                   <Button variant="outline" onClick={loadFromGRN} disabled={!selectedGRNId} className="shrink-0" data-testid="button-load-grn">
                     Load
                   </Button>
@@ -506,18 +534,15 @@ export default function PurchaseReturns() {
               </div>
               <div>
                 <Label>Supplier *</Label>
-                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                  <SelectTrigger data-testid="select-return-supplier">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                        {supplier.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={selectedSupplierId}
+                  onValueChange={setSelectedSupplierId}
+                  options={supplierOptions}
+                  placeholder="Select supplier"
+                  searchPlaceholder="Search supplier..."
+                  dataTestId="select-return-supplier"
+                  className="w-full"
+                />
               </div>
               <div>
                 <Label>Reason for Return</Label>

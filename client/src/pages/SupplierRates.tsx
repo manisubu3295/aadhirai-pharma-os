@@ -28,14 +28,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Trash2, Tag, Package, IndianRupee, FileDown, FileSpreadsheet, Download } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Trash2, Tag, Package, IndianRupee, FileDown, FileSpreadsheet, Download, Upload, Check, ChevronsUpDown } from "lucide-react";
+import { ImportDialog } from "@/components/ui/import-dialog";
 import { downloadFile, generateCSV } from "@/lib/exportUtils";
+import { cn } from "@/lib/utils";
 import { useState, memo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { Supplier, SupplierRate, Medicine } from "@shared/schema";
@@ -71,45 +86,115 @@ interface RateFormFieldsProps {
 }
 
 const RateFormFields = memo(function RateFormFields({ formData, setFormData, suppliers, medicines, isEdit }: RateFormFieldsProps) {
+  const [supplierOpen, setSupplierOpen] = useState(false);
+  const [medicineOpen, setMedicineOpen] = useState(false);
+
+  const selectedSupplier = suppliers.find((supplier) => supplier.id === formData.supplierId);
+  const selectedMedicine = medicines.find((medicine) => medicine.id === formData.medicineId);
+
   return (
     <div className="grid grid-cols-2 gap-4">
       <div>
         <Label htmlFor="supplierId">Supplier *</Label>
-        <Select
-          value={formData.supplierId.toString()}
-          onValueChange={(value) => setFormData(prev => ({ ...prev, supplierId: parseInt(value) }))}
-          disabled={isEdit}
-        >
-          <SelectTrigger data-testid="select-rate-supplier">
-            <SelectValue placeholder="Select supplier" />
-          </SelectTrigger>
-          <SelectContent>
-            {suppliers.map((supplier) => (
-              <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                {supplier.name} ({supplier.code})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover open={supplierOpen} onOpenChange={setSupplierOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={supplierOpen}
+              className="w-full justify-between font-normal"
+              data-testid="select-rate-supplier"
+              disabled={isEdit}
+            >
+              <span className="truncate">
+                {selectedSupplier
+                  ? `${selectedSupplier.name} (${selectedSupplier.code})`
+                  : "Search supplier..."}
+              </span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[360px] p-0">
+            <Command>
+              <CommandInput placeholder="Search supplier..." data-testid="input-rate-supplier-search" />
+              <CommandList>
+                <CommandEmpty>No supplier found.</CommandEmpty>
+                <CommandGroup>
+                  {suppliers.map((supplier) => (
+                    <CommandItem
+                      key={supplier.id}
+                      value={`${supplier.name} ${supplier.code}`}
+                      keywords={[supplier.name, supplier.code]}
+                      onSelect={() => {
+                        setFormData((prev) => ({ ...prev, supplierId: supplier.id }));
+                        setSupplierOpen(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          formData.supplierId === supplier.id ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      {supplier.name} ({supplier.code})
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
       <div>
         <Label htmlFor="medicineId">Medicine *</Label>
-        <Select
-          value={formData.medicineId.toString()}
-          onValueChange={(value) => setFormData(prev => ({ ...prev, medicineId: parseInt(value) }))}
-          disabled={isEdit}
-        >
-          <SelectTrigger data-testid="select-rate-medicine">
-            <SelectValue placeholder="Select medicine" />
-          </SelectTrigger>
-          <SelectContent>
-            {medicines.map((medicine) => (
-              <SelectItem key={medicine.id} value={medicine.id.toString()}>
-                {medicine.name} - {medicine.manufacturer}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover open={medicineOpen} onOpenChange={setMedicineOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={medicineOpen}
+              className="w-full justify-between font-normal"
+              data-testid="select-rate-medicine"
+              disabled={isEdit}
+            >
+              <span className="truncate">
+                {selectedMedicine
+                  ? `${selectedMedicine.name} - ${selectedMedicine.manufacturer || ""}`
+                  : "Search medicine..."}
+              </span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[420px] p-0">
+            <Command>
+              <CommandInput placeholder="Search medicine..." data-testid="input-rate-medicine-search" />
+              <CommandList>
+                <CommandEmpty>No medicine found.</CommandEmpty>
+                <CommandGroup>
+                  {medicines.map((medicine) => (
+                    <CommandItem
+                      key={medicine.id}
+                      value={`${medicine.name} ${medicine.manufacturer || ""}`}
+                      keywords={[medicine.name, medicine.manufacturer || ""]}
+                      onSelect={() => {
+                        setFormData((prev) => ({ ...prev, medicineId: medicine.id }));
+                        setMedicineOpen(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          formData.medicineId === medicine.id ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      {medicine.name} - {medicine.manufacturer}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
       <div>
         <Label htmlFor="rate">Purchase Rate *</Label>
@@ -191,6 +276,7 @@ export default function SupplierRates() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedRate, setSelectedRate] = useState<SupplierRate | null>(null);
   const [formData, setFormData] = useState<RateFormData>(emptyForm);
 
@@ -445,6 +531,9 @@ export default function SupplierRates() {
                   <DropdownMenuItem onClick={downloadRatesTemplate} data-testid="menu-download-rates-template">
                     <Download className="mr-2 h-4 w-4" /> Download Import Template
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setImportDialogOpen(true)} data-testid="menu-import-rates">
+                    <Upload className="mr-2 h-4 w-4" /> Import from Excel/CSV
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button onClick={() => { setFormData(emptyForm); setAddDialogOpen(true); }} data-testid="button-add-rate">
@@ -561,6 +650,38 @@ export default function SupplierRates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Supplier Rates"
+        templateHeaders={["SupplierCode", "MedicineName", "Rate", "MRP", "DiscountPercent", "GSTRate", "MinOrderQty", "LeadTimeDays"]}
+        templateSampleData={[["SUP001", "Paracetamol 500mg", "8.50", "12.00", "5", "12", "50", "3"]]}
+        templateFilename="supplier_rates_import"
+        entityName="supplier rates"
+        onImport={async (data) => {
+          const rates = data.map((row) => ({
+            supplierCode: row.suppliercode || "",
+            medicineName: row.medicinename || "",
+            rate: row.rate || "0",
+            mrp: row.mrp || null,
+            discountPercent: row.discountpercent || "0",
+            gstRate: row.gstrate || "18",
+            minOrderQty: parseInt(row.minorderqty) || 1,
+            leadTimeDays: parseInt(row.leadtimedays) || 3,
+          }));
+
+          const res = await fetch("/api/supplier-rates/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rates }),
+          });
+
+          if (!res.ok) throw new Error("Import failed");
+          return res.json();
+        }}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/supplier-rates"] })}
+      />
     </AppLayout>
   );
 }

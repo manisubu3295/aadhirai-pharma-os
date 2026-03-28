@@ -63,6 +63,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
 import { useSettings } from "@/contexts/SettingsContext";
+import { generateSaleInvoicePdfBlob } from "@/lib/pdfUtils";
 import type { Customer, Doctor, Medicine, HeldBill, Sale, SaleItem as SaleItemSchema } from "@shared/schema";
 
 interface SaleItem {
@@ -81,20 +82,108 @@ interface SaleItem {
   gstRate: number;
   discount: number;
   availableQty: number;
-  unitType: "STRIP" | "TABLET" | "BOTTLE";
+  unitType: SaleUnit;
   packSize: number;
   pricePerUnit: number | null;
   displayQty: number;
 }
 
-const LIQUID_CATEGORIES = ["Syrups", "Drops", "Injections", "Cough & Cold"];
-const isLiquidCategory = (category: string | undefined) => {
-  if (!category) return false;
-  return LIQUID_CATEGORIES.some(c => category.toLowerCase().includes(c.toLowerCase()));
+type SaleUnit = "STRIP" | "TABLET" | "CAPSULE" | "PACK" | "BOTTLE" | "VIAL" | "TUBE" | "SACHET" | "PIECE";
+
+const normalizeMedicineCategory = (value?: string | null): string => {
+  const normalized = String(value || "").trim().toLowerCase();
+  switch (normalized) {
+    case "tablet":
+    case "tablets":
+      return "tablet";
+    case "capsule":
+    case "capsules":
+      return "capsule";
+    case "syrup":
+    case "syrups":
+      return "syrup";
+    case "drops":
+    case "drop":
+      return "drops";
+    case "injection":
+    case "injections":
+      return "injection";
+    case "ointment":
+    case "ointments":
+      return "ointment";
+    case "cream":
+    case "creams":
+      return "cream";
+    case "powder":
+    case "powders":
+      return "powder";
+    case "device":
+    case "devices":
+      return "device";
+    case "other":
+    default:
+      return "other";
+  }
+};
+
+const getCategoryUnitOptions = (category?: string | null): Array<{ value: SaleUnit; label: string }> => {
+  switch (normalizeMedicineCategory(category)) {
+    case "tablet":
+      return [{ value: "STRIP", label: "Strip" }, { value: "TABLET", label: "Tablet" }];
+    case "capsule":
+      return [{ value: "STRIP", label: "Strip" }, { value: "CAPSULE", label: "Capsule" }];
+    case "syrup":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "drops":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "injection":
+      return [{ value: "PACK", label: "Pack" }, { value: "VIAL", label: "Vial" }];
+    case "ointment":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "cream":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "powder":
+      return [{ value: "PACK", label: "Pack" }, { value: "SACHET", label: "Sachet" }];
+    case "device":
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+    case "other":
+    default:
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+  }
+};
+
+const isPackLikeUnit = (unitType: SaleUnit | string | null | undefined) => {
+  const normalized = String(unitType || "").trim().toUpperCase();
+  return normalized === "STRIP" || normalized === "PACK";
+};
+
+const getDefaultSaleUnit = (category?: string | null): SaleUnit => {
+  const options = getCategoryUnitOptions(category);
+  const stripOption = options.find((option) => option.value === "STRIP");
+  if (stripOption) return "STRIP";
+  return options[1]?.value ?? options[0].value;
+};
+
+const getSafePackSize = (packSize: number) => Math.max(1, Number(packSize) || 1);
+const getSafeAvailableQty = (availableQty: number) => Math.max(0, Number(availableQty) || 0);
+const isStripUnit = (unitType: SaleItem["unitType"] | string | null | undefined) =>
+  isPackLikeUnit(unitType);
+
+const getMaxDisplayQty = (item: Pick<SaleItem, "unitType" | "availableQty" | "packSize">) => {
+  const availableQty = getSafeAvailableQty(item.availableQty);
+  if (availableQty <= 0) {
+    return 0;
+  }
+  if (isStripUnit(item.unitType)) {
+    const packSize = getSafePackSize(item.packSize);
+    return Math.floor(availableQty / packSize);
+  }
+  return availableQty;
 };
 
 function QuantityInput({ value, max, onChange, testId }: { value: number; max: number; onChange: (qty: number) => void; testId: string }) {
   const [inputValue, setInputValue] = useState(String(value));
+  const hasStock = max > 0;
   
   useEffect(() => {
     setInputValue(String(value));
@@ -105,6 +194,7 @@ function QuantityInput({ value, max, onChange, testId }: { value: number; max: n
       type="text"
       inputMode="numeric"
       value={inputValue}
+      disabled={!hasStock}
       onChange={(e) => {
         const val = e.target.value;
         if (val === '' || /^\d*$/.test(val)) {
@@ -112,8 +202,10 @@ function QuantityInput({ value, max, onChange, testId }: { value: number; max: n
         }
       }}
       onBlur={() => {
-        const qty = parseInt(inputValue) || 1;
-        const clampedQty = Math.max(1, Math.min(qty, max));
+        const qty = parseInt(inputValue) || (hasStock ? 1 : 0);
+        const clampedQty = hasStock
+          ? Math.max(1, Math.min(qty, max))
+          : 0;
         setInputValue(String(clampedQty));
         onChange(clampedQty);
       }}
@@ -133,6 +225,7 @@ export default function NewSale() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { settings: appSettings } = useSettings();
+  const isGstEnabled = appSettings.autoGst;
   const isOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
 
   const [items, setItems] = useState<SaleItem[]>([]);
@@ -182,11 +275,16 @@ export default function NewSale() {
   });
 
   const { data: medicines = [] } = useQuery<Medicine[]>({
-    queryKey: ["/api/medicines"],
+    queryKey: ["/api/medicines/sale-list"],
     queryFn: async () => {
-      const res = await fetch("/api/medicines");
-      if (!res.ok) throw new Error("Failed to fetch medicines");
-      return res.json();
+      const saleListResponse = await fetch("/api/medicines/sale-list");
+      if (saleListResponse.ok) {
+        return saleListResponse.json();
+      }
+
+      const fallbackResponse = await fetch("/api/medicines");
+      if (!fallbackResponse.ok) throw new Error("Failed to fetch medicines");
+      return fallbackResponse.json();
     },
   });
 
@@ -249,7 +347,20 @@ export default function NewSale() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create sale");
+      if (!res.ok) {
+        let errorMessage = "Failed to create sale";
+        try {
+          const payload = await res.json();
+          if (payload?.details && typeof payload.details === "string") {
+            errorMessage = payload.details;
+          } else if (payload?.error && typeof payload.error === "string") {
+            errorMessage = payload.error;
+          }
+        } catch {
+          // Keep fallback message when response is not JSON.
+        }
+        throw new Error(errorMessage);
+      }
       return res.json();
     },
     onSuccess: (saleResult: { sale: Sale; items: SaleItemSchema[] }, variables) => {
@@ -273,8 +384,12 @@ export default function NewSale() {
       
       resetForm();
     },
-    onError: () => {
-      toast({ title: "Failed to create sale", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create sale",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -321,24 +436,40 @@ export default function NewSale() {
     );
   }, [customers, customerSearch]);
 
+  const getAvailableQty = (medicine: Medicine | undefined) => {
+    if (!medicine) return 0;
+    return Number((medicine as any).consolidatedQty ?? medicine.quantity ?? 0);
+  };
+
   const filteredMedicines = useMemo(() => {
-    if (!medicineSearch) return medicines.filter((m) => Number(m.quantity) > 0);
+    if (!medicineSearch) return medicines.filter((m) => getAvailableQty(m) > 0);
     const search = medicineSearch.toLowerCase();
     return medicines.filter(
       (m) =>
-        Number(m.quantity) > 0 &&
+        getAvailableQty(m) > 0 &&
         (m.name.toLowerCase().includes(search) ||
+          ((m as any).genericName && String((m as any).genericName).toLowerCase().includes(search)) ||
           m.batchNumber.toLowerCase().includes(search))
     );
   }, [medicines, medicineSearch]);
 
   const addMedicine = (medicine: Medicine) => {
+    const availableQty = getAvailableQty(medicine);
+    if (availableQty <= 0) {
+      toast({
+        title: "Out of stock",
+        description: `${medicine.name} has no available stock right now.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const existingItem = items.find(
       (item) => item.medicineId === medicine.id && item.batchNumber === medicine.batchNumber
     );
 
     if (existingItem) {
-      if (existingItem.quantity < Number(medicine.quantity)) {
+      if (existingItem.quantity < availableQty) {
         setItems(
           items.map((item) =>
             item.id === existingItem.id
@@ -350,11 +481,14 @@ export default function NewSale() {
         toast({ title: "Insufficient stock", variant: "destructive" });
       }
     } else {
-      const isLiquid = isLiquidCategory(medicine.category);
-      const packSize = isLiquid ? 1 : (medicine.packSize && medicine.packSize > 1 ? medicine.packSize : 10);
+      const unitOptions = getCategoryUnitOptions(medicine.category);
+      const defaultUnit = getDefaultSaleUnit(medicine.category);
+      const isPackBased = isPackLikeUnit(defaultUnit);
+      const packSize = Math.max(1, Number(medicine.packSize) || 1);
       const stripPrice = Number(medicine.price);
       const tabletPrice = medicine.pricePerUnit ? Number(medicine.pricePerUnit) : stripPrice / packSize;
-      const defaultUnit = isLiquid ? "BOTTLE" : "STRIP";
+      const defaultPrice = isPackBased ? stripPrice : tabletPrice;
+      const defaultQuantity = isPackBased ? packSize : 1;
       const newItem: SaleItem = {
         id: `${medicine.id}-${medicine.batchNumber}-${Date.now()}`,
         medicineId: medicine.id,
@@ -363,14 +497,14 @@ export default function NewSale() {
         expiryDate: medicine.expiryDate,
         hsnCode: medicine.hsnCode,
         category: medicine.category,
-        quantity: isLiquid ? 1 : packSize,
-        price: stripPrice,
+        quantity: defaultQuantity,
+        price: defaultPrice,
         stripPrice: stripPrice,
         tabletPrice: tabletPrice,
         mrp: medicine.mrp ? Number(medicine.mrp) : null,
         gstRate: Number(medicine.gstRate),
         discount: 0,
-        availableQty: Number(medicine.quantity),
+        availableQty: availableQty,
         unitType: defaultUnit,
         packSize: packSize,
         pricePerUnit: tabletPrice,
@@ -416,37 +550,40 @@ export default function NewSale() {
     );
   };
 
-  const updateItemUnit = (itemId: string, unitType: "STRIP" | "TABLET") => {
+  const updateItemUnit = (itemId: string, unitType: SaleUnit) => {
     setItems(
       items.map((item) => {
         if (item.id === itemId) {
           let newDisplayQty: number;
           let newPrice: number;
-          let newQuantity: number;
+          const nextIsPackBased = isPackLikeUnit(unitType);
+          const currentIsPackBased = isPackLikeUnit(item.unitType);
           
-          if (unitType === "STRIP") {
-            if (item.unitType === "TABLET") {
+          if (nextIsPackBased) {
+            if (!currentIsPackBased) {
               newDisplayQty = Math.max(1, Math.floor(item.displayQty / item.packSize));
             } else {
               newDisplayQty = item.displayQty;
             }
             newPrice = item.stripPrice;
-            newQuantity = newDisplayQty * item.packSize;
           } else {
-            if (item.unitType === "STRIP") {
+            if (currentIsPackBased) {
               newDisplayQty = item.displayQty * item.packSize;
             } else {
               newDisplayQty = item.displayQty;
             }
             newPrice = item.tabletPrice;
-            newQuantity = newDisplayQty;
           }
           
-          const maxQty = unitType === "STRIP" 
-            ? Math.floor(item.availableQty / item.packSize)
-            : item.availableQty;
-          const clampedDisplayQty = Math.max(1, Math.min(newDisplayQty, maxQty));
-          const clampedQuantity = unitType === "STRIP" ? clampedDisplayQty * item.packSize : clampedDisplayQty;
+          const maxQty = getMaxDisplayQty({
+            unitType,
+            availableQty: item.availableQty,
+            packSize: item.packSize,
+          });
+          const clampedDisplayQty = maxQty > 0 ? Math.max(1, Math.min(newDisplayQty, maxQty)) : 0;
+          const clampedQuantity = isPackLikeUnit(unitType)
+            ? clampedDisplayQty * getSafePackSize(item.packSize)
+            : clampedDisplayQty;
           
           return { 
             ...item, 
@@ -465,11 +602,11 @@ export default function NewSale() {
     setItems(
       items.map((item) => {
         if (item.id === itemId) {
-          const maxDisplayQty = item.unitType === "STRIP" 
-            ? Math.floor(item.availableQty / item.packSize)
-            : item.availableQty;
-          const clampedQty = Math.max(1, Math.min(displayQty, maxDisplayQty));
-          const baseQty = item.unitType === "STRIP" ? clampedQty * item.packSize : clampedQty;
+          const maxDisplayQty = getMaxDisplayQty(item);
+          const clampedQty = maxDisplayQty > 0 ? Math.max(1, Math.min(displayQty, maxDisplayQty)) : 0;
+          const baseQty = isStripUnit(item.unitType)
+            ? clampedQty * getSafePackSize(item.packSize)
+            : clampedQty;
           return { ...item, displayQty: clampedQty, quantity: baseQty };
         }
         return item;
@@ -497,10 +634,9 @@ export default function NewSale() {
 
   const calculations = useMemo(() => {
     let subtotal = 0;
-    let totalCgst = 0;
-    let totalSgst = 0;
     let totalMRP = 0;
     let totalItemDiscount = 0;
+    let itemLevelTaxTotal = 0;
 
     items.forEach((item) => {
       const mrpValue = item.mrp || item.price;
@@ -508,15 +644,19 @@ export default function NewSale() {
       totalItemDiscount += item.discount;
       const itemTotal = item.price * item.displayQty - item.discount;
       subtotal += itemTotal;
-      const gstAmount = (itemTotal * item.gstRate) / 100;
-      totalCgst += gstAmount / 2;
-      totalSgst += gstAmount / 2;
+      if (isGstEnabled) {
+        itemLevelTaxTotal += itemTotal * (item.gstRate / 100);
+      }
     });
 
     const discountPercent = Number(billDiscountPercent) || 0;
     const discountAmount = (subtotal * discountPercent) / 100;
-    const tax = totalCgst + totalSgst;
-    const netAmount = subtotal - discountAmount + tax;
+    const discountedSubtotal = subtotal - discountAmount;
+    const taxAdjustmentFactor = subtotal > 0 ? discountedSubtotal / subtotal : 1;
+    const tax = isGstEnabled ? itemLevelTaxTotal * taxAdjustmentFactor : 0;
+    const cgst = tax / 2;
+    const sgst = tax / 2;
+    const netAmount = discountedSubtotal + tax;
     const roundedNet = Math.round(netAmount);
     const roundOff = roundedNet - netAmount;
     const received = Number(receivedAmount) || 0;
@@ -524,8 +664,8 @@ export default function NewSale() {
 
     return {
       subtotal,
-      cgst: totalCgst,
-      sgst: totalSgst,
+      cgst,
+      sgst,
       tax,
       discountPercent,
       discount: discountAmount,
@@ -536,7 +676,7 @@ export default function NewSale() {
       totalMRP,
       totalItemDiscount,
     };
-  }, [items, billDiscountPercent, receivedAmount]);
+  }, [items, billDiscountPercent, receivedAmount, isGstEnabled]);
 
   const resetForm = () => {
     setItems([]);
@@ -557,53 +697,96 @@ export default function NewSale() {
       return;
     }
 
-    const customerName = selectedCustomer?.name || "Walk-in Customer";
-    const customerPhone = selectedCustomer?.phone || "";
+    const validateLatestStockAndSubmit = async () => {
+      try {
+        const res = await fetch("/api/medicines");
+        if (!res.ok) {
+          throw new Error("Failed to validate latest stock");
+        }
 
-    const saleData = {
-      customerId: selectedCustomer?.id || null,
-      customerName,
-      customerPhone,
-      customerGstin: selectedCustomer?.gstin || null,
-      doctorId: selectedDoctor?.id || null,
-      doctorName: selectedDoctor?.name || null,
-      subtotal: calculations.subtotal.toFixed(2),
-      discount: calculations.discount.toFixed(2),
-      discountPercent: calculations.discountPercent.toFixed(2),
-      cgst: calculations.cgst.toFixed(2),
-      sgst: calculations.sgst.toFixed(2),
-      tax: calculations.tax.toFixed(2),
-      total: calculations.netAmount.toFixed(2),
-      roundOff: calculations.roundOff.toFixed(2),
-      paymentMethod,
-      paymentReference: paymentReference || null,
-      receivedAmount: calculations.received.toFixed(2),
-      changeAmount: calculations.change.toFixed(2),
-      status: "Completed",
-      printInvoice,
-      sendViaEmail,
-      items: items.map((item) => {
-        const itemTotal = item.price * item.displayQty - item.discount;
-        const gstAmount = (itemTotal * item.gstRate) / 100;
-        return {
-          medicineId: item.medicineId,
-          medicineName: item.name,
-          batchNumber: item.batchNumber,
-          expiryDate: item.expiryDate,
-          hsnCode: item.hsnCode,
-          quantity: item.quantity,
-          price: item.price.toFixed(2),
-          mrp: item.mrp?.toFixed(2) || null,
-          gstRate: item.gstRate.toFixed(2),
-          cgst: (gstAmount / 2).toFixed(2),
-          sgst: (gstAmount / 2).toFixed(2),
-          discount: item.discount.toFixed(2),
-          total: (itemTotal + gstAmount).toFixed(2),
+        const latestMedicines: Medicine[] = await res.json();
+        const latestById = new Map<number, Medicine>(latestMedicines.map((medicine) => [medicine.id, medicine]));
+
+        for (const item of items) {
+          const latestMedicine = latestById.get(item.medicineId);
+          const availableBase = getAvailableQty(latestMedicine);
+          const requiredBase = Number(item.quantity || 0);
+          if (!latestMedicine || availableBase < requiredBase) {
+            toast({
+              title: "Insufficient stock",
+              description: `${item.name} has only ${availableBase} in stock, required ${requiredBase}. Please refresh items.`,
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+
+        const customerName = selectedCustomer?.name || "Walk-in Customer";
+        const customerPhone = selectedCustomer?.phone || "";
+
+        const saleData = {
+          customerId: selectedCustomer?.id || null,
+          customerName,
+          customerPhone,
+          customerGstin: selectedCustomer?.gstin || null,
+          doctorId: selectedDoctor?.id || null,
+          doctorName: selectedDoctor?.name || null,
+          subtotal: calculations.subtotal.toFixed(2),
+          discount: calculations.discount.toFixed(2),
+          discountPercent: calculations.discountPercent.toFixed(2),
+          cgst: calculations.cgst.toFixed(2),
+          sgst: calculations.sgst.toFixed(2),
+          tax: calculations.tax.toFixed(2),
+          total: calculations.netAmount.toFixed(2),
+          roundOff: calculations.roundOff.toFixed(2),
+          paymentMethod,
+          paymentReference: paymentReference || null,
+          receivedAmount: calculations.received.toFixed(2),
+          changeAmount: calculations.change.toFixed(2),
+          status: "Completed",
+          printInvoice,
+          sendViaEmail,
+          items: items.map((item) => {
+            const itemTotal = item.price * item.displayQty - item.discount;
+            const itemDiscountPercent = Number(billDiscountPercent) || 0;
+            const discountedItemTotal = itemTotal - (itemTotal * itemDiscountPercent) / 100;
+            const itemTax = isGstEnabled ? discountedItemTotal * (item.gstRate / 100) : 0;
+            const itemCgst = itemTax / 2;
+            const itemSgst = itemTax / 2;
+            return {
+              medicineId: item.medicineId,
+              medicineName: item.name,
+              batchNumber: item.batchNumber,
+              expiryDate: item.expiryDate,
+              hsnCode: item.hsnCode,
+              soldQty: item.displayQty,
+              soldQtyBase: item.quantity,
+              quantity: item.quantity,
+              conversionFactorSnapshot: isStripUnit(item.unitType) ? getSafePackSize(item.packSize) : 1,
+              unitType: item.unitType,
+              packSize: getSafePackSize(item.packSize),
+              price: item.price.toFixed(2),
+              mrp: item.mrp?.toFixed(2) || null,
+              gstRate: isGstEnabled ? item.gstRate.toFixed(2) : "0.00",
+              cgst: itemCgst.toFixed(2),
+              sgst: itemSgst.toFixed(2),
+              discount: item.discount.toFixed(2),
+              taxMode: "EXCLUSIVE",
+              total: (discountedItemTotal + itemTax).toFixed(2),
+            };
+          }),
         };
-      }),
-    };
 
-    createSaleMutation.mutate(saleData);
+        createSaleMutation.mutate(saleData);
+      } catch {
+        toast({
+          title: "Unable to validate stock",
+          description: "Please try again.",
+          variant: "destructive",
+        });
+      }
+    };
+    void validateLatestStockAndSubmit();
   };
 
   const handleInvoiceSearch = async () => {
@@ -681,7 +864,7 @@ export default function NewSale() {
         gstRate: Number(item.gstRate),
         discount: Number(item.discount),
         availableQty: Number(item.availableQty),
-        unitType: (item.unitType as "STRIP" | "TABLET" | "BOTTLE") || "STRIP",
+        unitType: (item.unitType as SaleUnit) || getDefaultSaleUnit(item.category),
         packSize: Number(item.packSize || 1),
         pricePerUnit: item.pricePerUnit ? Number(item.pricePerUnit) : null,
         displayQty: Number(item.displayQty || item.quantity || 1),
@@ -1037,7 +1220,7 @@ export default function NewSale() {
                     <PopoverContent className="w-[450px] p-0" align="end">
                       <Command>
                         <CommandInput
-                          placeholder="Search by name or batch..."
+                          placeholder="Search by name, generic or batch..."
                           value={medicineSearch}
                           onValueChange={setMedicineSearch}
                           data-testid="input-medicine-search"
@@ -1060,9 +1243,14 @@ export default function NewSale() {
                                       <AlertTriangle className="h-3 w-3 text-orange-500" />
                                     )}
                                   </div>
+                                  {!!(medicine as any).genericName && (
+                                    <div className="text-xs text-muted-foreground">
+                                      Generic: {String((medicine as any).genericName)}
+                                    </div>
+                                  )}
                                   <div className="text-xs text-muted-foreground">
                                     Batch: {medicine.batchNumber} | Exp: {medicine.expiryDate} | 
-                                    Stock: {medicine.quantity} | Loc: {getLocationDisplay((medicine as any).locationId)}
+                                    Stock: {getAvailableQty(medicine)} | Loc: {getLocationDisplay((medicine as any).locationId)}
                                   </div>
                                 </div>
                                 <div className="text-right">
@@ -1102,9 +1290,7 @@ export default function NewSale() {
                       ) : (
                         items.map((item) => {
                           const itemTotal = item.price * item.displayQty - item.discount;
-                          const maxDisplayQty = item.unitType === "STRIP" 
-                            ? Math.floor(item.availableQty / item.packSize)
-                            : item.availableQty;
+                          const maxDisplayQty = getMaxDisplayQty(item);
 
                           return (
                             <TableRow key={item.id} data-testid={`sale-item-${item.id}`}>
@@ -1112,7 +1298,7 @@ export default function NewSale() {
                                 <div className="text-sm">{item.name}</div>
                                 {item.packSize > 1 && (
                                   <div className="text-[10px] text-muted-foreground">
-                                    {item.packSize}/strip
+                                    {item.packSize}/{isPackLikeUnit(item.unitType) ? "pack" : "unit"}
                                   </div>
                                 )}
                               </TableCell>
@@ -1133,22 +1319,21 @@ export default function NewSale() {
                                 )}
                               </TableCell>
                               <TableCell className="py-2">
-                                {isLiquidCategory(item.category) ? (
-                                  <span className="text-xs font-medium px-1.5 py-0.5 bg-muted rounded">Bottle</span>
-                                ) : (
-                                  <Select
-                                    value={item.unitType}
-                                    onValueChange={(v) => updateItemUnit(item.id, v as "STRIP" | "TABLET")}
-                                  >
-                                    <SelectTrigger className="h-7 w-[80px] text-xs" data-testid={`select-unit-${item.id}`}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="STRIP">Strip</SelectItem>
-                                      <SelectItem value="TABLET">Tablet</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                )}
+                                <Select
+                                  value={item.unitType}
+                                  onValueChange={(v) => updateItemUnit(item.id, v as SaleUnit)}
+                                >
+                                  <SelectTrigger className="h-7 w-[88px] text-xs" data-testid={`select-unit-${item.id}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {getCategoryUnitOptions(item.category).map((option) => (
+                                      <SelectItem key={`${item.id}-${option.value}`} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </TableCell>
                               <TableCell className="text-right py-2">
                                 {isOwnerOrAdmin ? (
@@ -1238,12 +1423,18 @@ export default function NewSale() {
                     <span className="text-xs">%</span>
                   </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">CGST + SGST</span>
-                  <span className="font-medium" data-testid="text-cgst">
-                    ₹{(calculations.cgst + calculations.sgst).toFixed(2)}
-                  </span>
-                </div>
+                {isGstEnabled && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">CGST</span>
+                      <span className="font-medium">₹{calculations.cgst.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">SGST</span>
+                      <span className="font-medium">₹{calculations.sgst.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
                 {calculations.roundOff !== 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Round Off</span>
@@ -1553,6 +1744,8 @@ export default function NewSale() {
                   showMrp: appSettings.showMrp,
                   showGstBreakup: appSettings.showGstBreakup,
                   showDoctor: appSettings.showDoctor,
+                  hideTaxDetails: !isGstEnabled,
+                  hideStoreGstin: true,
                 }}
               />
             </div>
@@ -1564,18 +1757,100 @@ export default function NewSale() {
             {printSaleData?.sale.customerPhone && (
               <Button 
                 variant="outline"
-                onClick={() => {
-                  const phoneNumber = printSaleData.sale.customerPhone?.replace(/\D/g, '');
-                  if (!phoneNumber) return;
-                  
-                  const message = encodeURIComponent(
-                    `Invoice: ${printSaleData.sale.invoiceNo}\n` +
-                    `Amount: ${parseFloat(printSaleData.sale.total).toFixed(2)}\n` +
-                    `Date: ${new Date(printSaleData.sale.createdAt).toLocaleDateString()}\n\n` +
-                    `Thank you for your purchase at ${appSettings.storeName}!`
-                  );
-                  const whatsappUrl = `https://wa.me/91${phoneNumber}?text=${message}`;
-                  window.open(whatsappUrl, '_blank');
+                onClick={async () => {
+                  if (!printSaleData) return;
+
+                  try {
+                    const pdfBlob = await generateSaleInvoicePdfBlob(
+                      printSaleData.sale,
+                      printSaleData.items,
+                      {
+                        name: appSettings.storeName,
+                        address: appSettings.storeAddress,
+                        phone: appSettings.storePhone,
+                        gstin: appSettings.gstin,
+                        dlNo: appSettings.dlNo,
+                      },
+                      {
+                        showMrp: appSettings.showMrp,
+                        showGstBreakup: appSettings.showGstBreakup,
+                        showDoctor: appSettings.showDoctor,
+                        hideTaxDetails: !isGstEnabled,
+                        hideStoreGstin: true,
+                      },
+                    );
+
+                    const invoiceNo = printSaleData.sale.invoiceNo || `INV-${printSaleData.sale.id}`;
+                    const fileName = `Invoice_${invoiceNo}.pdf`;
+                    const shareText = `Invoice ${invoiceNo} from ${appSettings.storeName} is ready. Please find the attached PDF.`;
+                    const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" });
+
+                    const nav = navigator as Navigator & {
+                      canShare?: (data?: ShareData) => boolean;
+                    };
+                    const canShareWithFile = typeof nav.share === "function"
+                      && typeof nav.canShare === "function"
+                      && nav.canShare({ files: [pdfFile] });
+
+                    if (canShareWithFile) {
+                      await nav.share({
+                        files: [pdfFile],
+                        title: `Invoice ${invoiceNo}`,
+                        text: shareText,
+                      });
+                      toast({
+                        title: "Invoice ready to share",
+                        description: "Share sheet opened with PDF and message.",
+                      });
+                      return;
+                    }
+
+                    const blobUrl = URL.createObjectURL(pdfBlob);
+                    const anchor = document.createElement("a");
+                    anchor.href = blobUrl;
+                    anchor.download = fileName;
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                    document.body.removeChild(anchor);
+                    URL.revokeObjectURL(blobUrl);
+
+                    const phoneNumber = printSaleData.sale.customerPhone?.replace(/\D/g, "");
+                    if (phoneNumber) {
+                      const invoiceNoText = printSaleData.sale.invoiceNo || `INV-${printSaleData.sale.id}`;
+                      const message = encodeURIComponent(
+                        `Invoice ${invoiceNoText} from ${appSettings.storeName} is ready. Please find the attached PDF.`
+                      );
+
+                      const localNumber = phoneNumber.startsWith("91") ? phoneNumber : `91${phoneNumber}`;
+                      const appUrl = `whatsapp://send?phone=${localNumber}&text=${message}`;
+                      const webUrl = `https://wa.me/${localNumber}?text=${message}`;
+
+                      const popup = window.open(appUrl, "_blank");
+                      if (!popup) {
+                        window.open(webUrl, "_blank");
+                      } else {
+                        setTimeout(() => {
+                          try {
+                            if (popup.closed) return;
+                            popup.location.href = webUrl;
+                          } catch {
+                            window.open(webUrl, "_blank");
+                          }
+                        }, 1200);
+                      }
+                    }
+
+                    toast({
+                      title: "Invoice PDF downloaded",
+                      description: "WhatsApp chat opened. Attach the downloaded PDF and tap Send.",
+                    });
+                  } catch (error) {
+                    toast({
+                      title: "Unable to share invoice PDF",
+                      description: "Please try again.",
+                      variant: "destructive",
+                    });
+                  }
                 }}
                 data-testid="button-whatsapp-share"
                 className="gap-2"

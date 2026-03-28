@@ -30,6 +30,7 @@ import {
 import { useState } from "react";
 import { usePlan } from "@/lib/planContext";
 import { useToast } from "@/hooks/use-toast";
+import { formatAppDate, localDateKey, parseServerDate } from "@/lib/dateTime";
 import type { Sale, Medicine, Customer } from "@shared/schema";
 
 export default function Reports() {
@@ -39,8 +40,8 @@ export default function Reports() {
   const today = new Date();
   const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
   
-  const [fromDate, setFromDate] = useState(thirtyDaysAgo.toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState(today.toISOString().split('T')[0]);
+  const [fromDate, setFromDate] = useState(localDateKey(thirtyDaysAgo));
+  const [toDate, setToDate] = useState(localDateKey(today));
 
   const { data: sales = [] } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -69,18 +70,18 @@ export default function Reports() {
     },
   });
 
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = localDateKey(today);
   const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const todaySales = sales.filter(s => {
-    const saleDate = new Date(s.createdAt).toISOString().split('T')[0];
+    const saleDate = localDateKey(s.createdAt);
     return saleDate === todayStr;
   });
 
-  const weekSales = sales.filter(s => new Date(s.createdAt) >= weekAgo);
+  const weekSales = sales.filter(s => parseServerDate(s.createdAt) >= weekAgo);
 
   const filteredSales = sales.filter(s => {
-    const saleDate = new Date(s.createdAt).toISOString().split('T')[0];
+    const saleDate = localDateKey(s.createdAt);
     return saleDate >= fromDate && saleDate <= toDate;
   });
 
@@ -114,7 +115,7 @@ export default function Reports() {
     const headers = ["Invoice No", "Date", "Customer", "Subtotal", "Tax", "Total", "Payment Method"];
     const rows = filteredSales.map(s => [
       s.invoiceNo || `INV-${String(s.id).padStart(4, '0')}`,
-      new Date(s.createdAt).toLocaleDateString('en-IN'),
+      formatAppDate(s.createdAt, "dd/MM/yyyy"),
       s.customerName,
       Number(s.subtotal).toFixed(2),
       Number(s.tax).toFixed(2),
@@ -255,7 +256,7 @@ export default function Reports() {
     const headers = ["Invoice No", "Date", "Customer", "Subtotal", "Tax", "Total", "Payment"];
     const rows = filteredSales.map(s => [
       s.invoiceNo || `INV-${String(s.id).padStart(4, '0')}`,
-      new Date(s.createdAt).toLocaleDateString('en-IN'),
+      formatAppDate(s.createdAt, "dd/MM/yyyy"),
       s.customerName,
       `₹${Number(s.subtotal).toFixed(2)}`,
       `₹${Number(s.tax).toFixed(2)}`,
@@ -465,7 +466,7 @@ export default function Reports() {
                             {sale.invoiceNo || `INV-${String(sale.id).padStart(4, '0')}`}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {new Date(sale.createdAt).toLocaleDateString('en-IN')}
+                            {formatAppDate(sale.createdAt, "dd/MM/yyyy")}
                           </TableCell>
                           <TableCell>{sale.customerName}</TableCell>
                           <TableCell className="text-right">₹{Number(sale.subtotal).toFixed(2)}</TableCell>

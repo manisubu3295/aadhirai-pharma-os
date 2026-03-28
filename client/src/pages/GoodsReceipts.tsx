@@ -28,28 +28,117 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Eye, Package, Truck, CheckCircle2, Calendar, Printer, Download } from "lucide-react";
+import { Search, Plus, Eye, Package, Truck, CheckCircle2, Calendar, Printer, Download, ArrowUpDown } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
 import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, GoodsReceipt, GoodsReceiptItem } from "@shared/schema";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useSettings } from "@/contexts/SettingsContext";
+
+type GrnUnit = "STRIP" | "TABLET" | "CAPSULE" | "PACK" | "BOTTLE" | "VIAL" | "TUBE" | "SACHET" | "PIECE";
 
 interface GRNItem {
   poItemId?: number;
+  poLineId?: number;
   medicineId: number;
   medicineName: string;
+  medicineCategory?: string;
   batchNumber: string;
   expiryDate: string;
   quantity: number;
   freeQuantity: number;
   schemeDescription: string;
   rate: string;
+  sellingPrice: string;
   mrp: string;
+  discountPercent: string;
   gstRate: string;
+  taxMode: "INCLUSIVE" | "EXCLUSIVE";
+  conversionFactorSnapshot: number;
+  ptr: string;
+  purchaseUnit: GrnUnit;
+  unitsPerStrip: number;
   pendingQty?: number;
   locationId?: number;
 }
+
+const normalizeMedicineCategory = (value?: string | null): string => {
+  const normalized = String(value || "").trim().toLowerCase();
+  switch (normalized) {
+    case "tablet":
+    case "tablets":
+      return "tablet";
+    case "capsule":
+    case "capsules":
+      return "capsule";
+    case "syrup":
+    case "syrups":
+      return "syrup";
+    case "drops":
+    case "drop":
+      return "drops";
+    case "injection":
+    case "injections":
+      return "injection";
+    case "ointment":
+    case "ointments":
+      return "ointment";
+    case "cream":
+    case "creams":
+      return "cream";
+    case "powder":
+    case "powders":
+      return "powder";
+    case "device":
+    case "devices":
+      return "device";
+    case "other":
+    default:
+      return "other";
+  }
+};
+
+const getCategoryUnitOptions = (category?: string | null): Array<{ value: GrnUnit; label: string }> => {
+  switch (normalizeMedicineCategory(category)) {
+    case "tablet":
+      return [{ value: "STRIP", label: "Strip" }, { value: "TABLET", label: "Tablet" }];
+    case "capsule":
+      return [{ value: "STRIP", label: "Strip" }, { value: "CAPSULE", label: "Capsule" }];
+    case "syrup":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "drops":
+      return [{ value: "PACK", label: "Pack" }, { value: "BOTTLE", label: "Bottle" }];
+    case "injection":
+      return [{ value: "PACK", label: "Pack" }, { value: "VIAL", label: "Vial" }];
+    case "ointment":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "cream":
+      return [{ value: "PACK", label: "Pack" }, { value: "TUBE", label: "Tube" }];
+    case "powder":
+      return [{ value: "PACK", label: "Pack" }, { value: "SACHET", label: "Sachet" }];
+    case "device":
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+    case "other":
+    default:
+      return [{ value: "PACK", label: "Pack" }, { value: "PIECE", label: "Piece" }];
+  }
+};
+
+const getDefaultGrnUnit = (category?: string | null, poUnitType?: string | null): GrnUnit => {
+  const options = getCategoryUnitOptions(category);
+  if (String(poUnitType || "").trim().toUpperCase() === "STRIP") {
+    const hasStrip = options.some((option) => option.value === "STRIP");
+    if (hasStrip) return "STRIP";
+  }
+  return options[1]?.value ?? options[0].value;
+};
+
+const isPackBasedGrnUnit = (unit?: string | null): boolean => {
+  const normalized = String(unit || "").trim().toUpperCase();
+  return normalized === "STRIP" || normalized === "PACK";
+};
 
 export default function GoodsReceipts() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -61,14 +150,19 @@ export default function GoodsReceipts() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [selectedPOId, setSelectedPOId] = useState<string>("");
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
+  const [discountRate, setDiscountRate] = useState("0");
+  const [grnGstMode, setGrnGstMode] = useState<"item" | "header">("item");
+  const [headerGstRate, setHeaderGstRate] = useState("5");
   const [items, setItems] = useState<GRNItem[]>([]);
   
   const [fromDate, setFromDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [toDate, setToDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [supplierFilter, setSupplierFilter] = useState<string>("all");
+  const [receiptDateSortOrder, setReceiptDateSortOrder] = useState<"asc" | "desc">("desc");
 
   const { toast } = useToast();
+  const { settings: appSettings } = useSettings();
   const queryClient = useQueryClient();
 
   const { data: suppliers = [] } = useQuery<Supplier[]>({
@@ -102,6 +196,21 @@ export default function GoodsReceipts() {
     queryKey: ["/api/locations"],
   });
 
+  const { data: medicines = [] } = useQuery<{ id: number; category?: string | null }[]>({
+    queryKey: ["/api/medicines"],
+    queryFn: async () => {
+      const response = await fetch("/api/medicines");
+      if (!response.ok) throw new Error("Failed to fetch medicines");
+      return response.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const getMedicineCategory = (medicineId: number): string => {
+    const medicine = medicines.find((entry) => entry.id === medicineId);
+    return String(medicine?.category || "Other");
+  };
+
   const openPOs = purchaseOrders.filter(po => 
     po.status === "Issued" || po.status === "PartiallyReceived"
   );
@@ -110,19 +219,49 @@ export default function GoodsReceipts() {
     !selectedSupplierId || po.supplierId === parseInt(selectedSupplierId)
   );
 
+  const getConfiguredGstMode = (): "item" | "header" =>
+    appSettings.defaultGrnGstMode === "header" ? "header" : "item";
+
+  const getEffectiveItemGstRate = (item: GRNItem): string => {
+    if (grnGstMode === "header") {
+      const parsedHeaderRate = Number.parseFloat(String(headerGstRate || "5").trim());
+      return Number.isFinite(parsedHeaderRate) && parsedHeaderRate >= 0
+        ? String(parsedHeaderRate)
+        : "5";
+    }
+
+    const parsedItemRate = Number.parseFloat(String(item.gstRate || "5").trim());
+    return Number.isFinite(parsedItemRate) && parsedItemRate >= 0
+      ? String(parsedItemRate)
+      : "5";
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: { 
       supplierId: number; 
       supplierName: string; 
       poId?: number;
       supplierInvoiceNo: string;
+      discountRate: string;
       items: GRNItem[] 
     }) => {
       const grnNumber = `GRN-${Date.now()}`;
-      const subtotal = data.items.reduce((sum, item) => sum + (parseFloat(item.rate) * item.quantity), 0);
+      const subtotal = data.items.reduce((sum, item) => sum + (parseFloat(item.rate || "0") * item.quantity), 0);
+      const lineDiscountAmount = data.items.reduce((sum, item) => {
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        return sum + (lineBase * parseFloat(item.discountPercent || "0") / 100);
+      }, 0);
+      const headerDiscountAmount = (subtotal - lineDiscountAmount) * (parseFloat(data.discountRate || "0") / 100);
+      const taxableAmount = subtotal - lineDiscountAmount - headerDiscountAmount;
       const taxAmount = data.items.reduce((sum, item) => {
-        const lineTotal = parseFloat(item.rate) * item.quantity;
-        return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+        const lineBase = parseFloat(item.rate || "0") * item.quantity;
+        const lineDiscount = lineBase * parseFloat(item.discountPercent || "0") / 100;
+        const lineAfterLineDiscount = lineBase - lineDiscount;
+        const prorataHeaderDiscount = taxableAmount > 0
+          ? (lineAfterLineDiscount / (subtotal - lineDiscountAmount || 1)) * headerDiscountAmount
+          : 0;
+        const lineTaxable = lineAfterLineDiscount - prorataHeaderDiscount;
+        return sum + (lineTaxable * parseFloat(getEffectiveItemGstRate(item)) / 100);
       }, 0);
       
       const res = await fetch("/api/goods-receipts", {
@@ -136,24 +275,42 @@ export default function GoodsReceipts() {
           supplierInvoiceNo: data.supplierInvoiceNo || null,
           status: "Completed",
           subtotal: subtotal.toFixed(2),
+          discountRate: data.discountRate || "0",
+          discountAmount: (lineDiscountAmount + headerDiscountAmount).toFixed(2),
           taxAmount: taxAmount.toFixed(2),
-          totalAmount: (subtotal + taxAmount).toFixed(2),
-          items: data.items.map(item => ({
+          totalAmount: (taxableAmount + taxAmount).toFixed(2),
+          items: data.items.map(item => {
+            const effectiveGstRate = getEffectiveItemGstRate(item);
+            return {
             poItemId: item.poItemId || null,
+            poLineId: item.poLineId || item.poItemId || null,
             medicineId: item.medicineId,
             medicineName: item.medicineName,
             batchNumber: item.batchNumber,
             expiryDate: item.expiryDate,
             quantity: item.quantity,
             freeQuantity: item.freeQuantity || 0,
+            receivedQty: item.quantity,
+            freeQty: item.freeQuantity || 0,
             schemeDescription: item.schemeDescription || null,
             rate: item.rate,
+            ptr: item.ptr || null,
+            sellingPrice: item.sellingPrice || null,
             mrp: item.mrp || null,
-            gstRate: item.gstRate || "18",
-            taxAmount: ((parseFloat(item.rate) * item.quantity) * parseFloat(item.gstRate || "18") / 100).toFixed(2),
-            totalAmount: (parseFloat(item.rate) * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2),
+            discountPercent: item.discountPercent || "0",
+            discountAmount: ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100).toFixed(2),
+            gstRate: effectiveGstRate,
+            taxMode: item.taxMode || "EXCLUSIVE",
+            taxAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * parseFloat(effectiveGstRate) / 100)).toFixed(2),
+            totalAmount: ((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(effectiveGstRate) / 100))).toFixed(2),
+            purchaseUnit: item.purchaseUnit,
+            unitsPerStrip: item.unitsPerStrip,
+            conversionFactorSnapshot: isPackBasedGrnUnit(item.purchaseUnit)
+              ? (item.unitsPerStrip || 1)
+              : 1,
             locationId: item.locationId || null,
-          })),
+            };
+          }),
         }),
       });
       if (!res.ok) throw new Error("Failed to create goods receipt");
@@ -176,6 +333,9 @@ export default function GoodsReceipts() {
     setSelectedSupplierId("");
     setSelectedPOId("");
     setSupplierInvoiceNo("");
+    setDiscountRate("0");
+    setGrnGstMode(getConfiguredGstMode());
+    setHeaderGstRate("5");
     setItems([]);
   };
 
@@ -187,22 +347,43 @@ export default function GoodsReceipts() {
     
     const newItems: GRNItem[] = poItems
       .filter(item => item.quantity > item.receivedQty)
-      .map(item => ({
-        poItemId: item.id,
-        medicineId: item.medicineId,
-        medicineName: item.medicineName,
-        batchNumber: "",
-        expiryDate: "",
-        quantity: item.quantity - item.receivedQty,
-        freeQuantity: 0,
-        schemeDescription: "",
-        rate: item.rate,
-        mrp: item.mrp || "",
-        gstRate: item.gstRate || "18",
-        pendingQty: item.quantity - item.receivedQty,
-      }));
+      .map(item => {
+        const medicineCategory = getMedicineCategory(item.medicineId);
+        const purchaseUnit = getDefaultGrnUnit(medicineCategory, item.unitType);
+        return {
+          poItemId: item.id,
+          poLineId: item.id,
+          medicineId: item.medicineId,
+          medicineName: item.medicineName,
+          medicineCategory,
+          batchNumber: "",
+          expiryDate: "",
+          quantity: item.quantity - item.receivedQty,
+          freeQuantity: 0,
+          schemeDescription: "",
+          rate: item.rate,
+          ptr: item.rate,
+          sellingPrice: item.mrp || item.rate,
+          mrp: item.mrp || "",
+          discountPercent: item.discountPercent || "0",
+          gstRate: item.gstRate || "5",
+          taxMode: "EXCLUSIVE" as const,
+          purchaseUnit,
+          unitsPerStrip: item.unitsPerStrip || 1,
+          conversionFactorSnapshot: isPackBasedGrnUnit(purchaseUnit) ? (item.unitsPerStrip || 1) : 1,
+          pendingQty: item.quantity - item.receivedQty,
+        };
+      });
     
     setItems(newItems);
+    const configuredDiscountRate = String(appSettings.defaultGrnDiscountRate || "5").trim();
+    const parsedDiscountRate = Number.parseFloat(configuredDiscountRate);
+    setDiscountRate(
+      Number.isFinite(parsedDiscountRate) && parsedDiscountRate >= 0
+        ? String(parsedDiscountRate)
+        : "5"
+    );
+    setGrnGstMode(getConfiguredGstMode());
     
     const po = purchaseOrders.find(p => p.id === parseInt(selectedPOId));
     if (po) {
@@ -215,6 +396,12 @@ export default function GoodsReceipts() {
   const updateItem = (index: number, field: keyof GRNItem, value: any) => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
+    if (field === "unitsPerStrip" || field === "purchaseUnit") {
+      const current = newItems[index];
+      newItems[index].conversionFactorSnapshot = isPackBasedGrnUnit(current.purchaseUnit)
+        ? Math.max(1, Number(current.unitsPerStrip) || 1)
+        : 1;
+    }
     setItems(newItems);
   };
 
@@ -240,6 +427,7 @@ export default function GoodsReceipts() {
       supplierName: supplier?.name || "",
       poId: selectedPOId ? parseInt(selectedPOId) : undefined,
       supplierInvoiceNo,
+      discountRate,
       items,
     });
   };
@@ -271,6 +459,33 @@ export default function GoodsReceipts() {
     return matchesSearch && matchesDateRange && matchesStatus && matchesSupplier;
   });
 
+  const sortedFilteredReceipts = [...filteredReceipts].sort((a, b) => {
+    const first = new Date(a.receiptDate).getTime();
+    const second = new Date(b.receiptDate).getTime();
+    return receiptDateSortOrder === "asc" ? first - second : second - first;
+  });
+
+  const supplierFilterOptions = [
+    { value: "all", label: "All Suppliers" },
+    ...suppliers.map((supplier) => ({
+      value: supplier.id.toString(),
+      label: supplier.name,
+      keywords: [supplier.name, supplier.code || ""],
+    })),
+  ];
+
+  const supplierOptions = suppliers.map((supplier) => ({
+    value: supplier.id.toString(),
+    label: supplier.name,
+    keywords: [supplier.name, supplier.code || ""],
+  }));
+
+  const poOptions = supplierPOs.map((po) => ({
+    value: po.id.toString(),
+    label: `${po.poNumber} - ${po.supplierName}`,
+    keywords: [po.poNumber, po.supplierName],
+  }));
+
   const handleExportGRNs = () => {
     const exportData = filteredReceipts.map(grn => ({
       "GRN Number": grn.grnNumber,
@@ -288,11 +503,23 @@ export default function GoodsReceipts() {
 
   const calculateTotal = () => {
     const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.rate || "0") * item.quantity), 0);
-    const tax = items.reduce((sum, item) => {
-      const lineTotal = parseFloat(item.rate || "0") * item.quantity;
-      return sum + (lineTotal * parseFloat(item.gstRate || "18") / 100);
+    const lineDiscount = items.reduce((sum, item) => {
+      const lineBase = parseFloat(item.rate || "0") * item.quantity;
+      return sum + (lineBase * parseFloat(item.discountPercent || "0") / 100);
     }, 0);
-    return { subtotal, tax, total: subtotal + tax };
+    const headerDiscount = (subtotal - lineDiscount) * (parseFloat(discountRate || "0") / 100);
+    const taxable = subtotal - lineDiscount - headerDiscount;
+    const tax = items.reduce((sum, item) => {
+      const lineBase = parseFloat(item.rate || "0") * item.quantity;
+      const lineDisc = lineBase * parseFloat(item.discountPercent || "0") / 100;
+      const lineTaxable = lineBase - lineDisc;
+      const prorataHeaderDiscount = (subtotal - lineDiscount) > 0
+        ? (lineTaxable / (subtotal - lineDiscount)) * headerDiscount
+        : 0;
+      const finalTaxable = lineTaxable - prorataHeaderDiscount;
+      return sum + (finalTaxable * parseFloat(getEffectiveItemGstRate(item)) / 100);
+    }, 0);
+    return { subtotal, lineDiscount, headerDiscount, tax, total: taxable + tax };
   };
 
   const totals = calculateTotal();
@@ -406,17 +633,15 @@ export default function GoodsReceipts() {
                 <SelectItem value="Pending">Pending</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-              <SelectTrigger className="w-40" data-testid="select-grn-supplier">
-                <SelectValue placeholder="Supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Suppliers</SelectItem>
-                {suppliers.map(s => (
-                  <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={supplierFilter}
+              onValueChange={setSupplierFilter}
+              options={supplierFilterOptions}
+              placeholder="Supplier"
+              searchPlaceholder="Search supplier..."
+              dataTestId="select-grn-supplier"
+              className="w-40"
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -436,14 +661,25 @@ export default function GoodsReceipts() {
                     <TableHead>GRN Number</TableHead>
                     <TableHead>Supplier</TableHead>
                     <TableHead>Invoice No.</TableHead>
-                    <TableHead>Receipt Date</TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-0 font-medium"
+                        onClick={() => setReceiptDateSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                        data-testid="button-sort-grn-receipt-date"
+                      >
+                        Receipt Date
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    </TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-16">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredReceipts.map((grn) => (
+                  {sortedFilteredReceipts.map((grn) => (
                     <TableRow key={grn.id} data-testid={`row-grn-${grn.id}`}>
                       <TableCell className="font-mono font-medium">{grn.grnNumber}</TableCell>
                       <TableCell>{grn.supplierName}</TableCell>
@@ -471,78 +707,122 @@ export default function GoodsReceipts() {
       </Card>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Goods Receipt Note</DialogTitle>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b bg-muted/20">
+            <DialogTitle className="text-xl">Create Goods Receipt Note</DialogTitle>
           </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Select PO (Optional)</Label>
-                <div className="flex gap-2">
-                  <Select value={selectedPOId} onValueChange={setSelectedPOId}>
-                    <SelectTrigger className="flex-1 min-w-0" data-testid="select-grn-po">
-                      <SelectValue placeholder="Select PO" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {supplierPOs.map((po) => (
-                        <SelectItem key={po.id} value={po.id.toString()}>
-                          {po.poNumber} - {po.supplierName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" onClick={loadFromPO} disabled={!selectedPOId} className="shrink-0" data-testid="button-load-po">
-                    Load
-                  </Button>
+
+          <div className="flex-1 overflow-y-auto p-4 lg:p-5 space-y-4">
+            <div className="rounded-lg border bg-card p-3 lg:p-4 space-y-3 lg:space-y-4">
+              <div className="grid grid-cols-2 gap-3 lg:gap-4">
+                <div className="space-y-1.5">
+                  <Label>Supplier *</Label>
+                  <SearchableSelect
+                    value={selectedSupplierId}
+                    onValueChange={setSelectedSupplierId}
+                    options={supplierOptions}
+                    placeholder="Select supplier"
+                    searchPlaceholder="Search supplier..."
+                    dataTestId="select-grn-create-supplier"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Supplier Invoice No.</Label>
+                  <Input
+                    value={supplierInvoiceNo}
+                    onChange={(e) => setSupplierInvoiceNo(e.target.value)}
+                    placeholder="Invoice number"
+                    data-testid="input-grn-invoice"
+                  />
                 </div>
               </div>
-              <div>
-                <Label>Supplier *</Label>
-                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                  <SelectTrigger data-testid="select-grn-supplier">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                        {supplier.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4">
+                <div className="space-y-1.5">
+                  <Label>GRN Discount Rate (%)</Label>
+                  <NumericInput
+                    min={0}
+                    allowDecimal={true}
+                    value={parseFloat(discountRate) || 0}
+                    onChange={(value) => setDiscountRate(String(value))}
+                    data-testid="input-grn-discount-rate"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>GRN GST Mode</Label>
+                  <Select value={grnGstMode} onValueChange={(value) => setGrnGstMode(value as "item" | "header")}> 
+                    <SelectTrigger data-testid="select-grn-gst-mode">
+                      <SelectValue placeholder="Select GST mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="item">Item-wise GST</SelectItem>
+                      <SelectItem value="header">Header override GST</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Header GST (%)</Label>
+                  <NumericInput
+                    min={0}
+                    allowDecimal={true}
+                    value={parseFloat(headerGstRate) || 5}
+                    onChange={(value) => setHeaderGstRate(String(value))}
+                    disabled={grnGstMode !== "header"}
+                    data-testid="input-grn-header-gst-rate"
+                  />
+                </div>
               </div>
-              <div>
-                <Label>Supplier Invoice No.</Label>
-                <Input 
-                  value={supplierInvoiceNo} 
-                  onChange={(e) => setSupplierInvoiceNo(e.target.value)} 
-                  placeholder="Invoice number"
-                  data-testid="input-grn-invoice"
-                />
+            </div>
+
+            <div className="rounded-lg border bg-card p-3 lg:p-4">
+              <div className="grid grid-cols-1 gap-3 lg:gap-4 items-end">
+                <div className="space-y-1.5">
+                  <Label>Select PO (Optional)</Label>
+                  <div className="flex gap-2">
+                    <SearchableSelect
+                      value={selectedPOId}
+                      onValueChange={setSelectedPOId}
+                      options={poOptions}
+                      placeholder="Select PO"
+                      searchPlaceholder="Search PO..."
+                      dataTestId="select-grn-po"
+                      className="flex-1 min-w-0"
+                    />
+                    <Button variant="outline" onClick={loadFromPO} disabled={!selectedPOId} className="shrink-0" data-testid="button-load-po">
+                      Load
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Load pending items from issued PO.</p>
+                </div>
               </div>
             </div>
 
             {items.length > 0 && (
-              <div className="border rounded-md overflow-x-auto">
-                <Table>
-                  <TableHeader>
+              <div className="rounded-lg border bg-card overflow-hidden">
+                <div className="px-3 lg:px-4 py-2.5 lg:py-3 border-b bg-muted/20 text-xs lg:text-sm font-medium">GRN Items</div>
+                <div className="overflow-x-auto">
+                <Table className="text-xs lg:text-sm">
+                  <TableHeader className="bg-muted/20">
                     <TableRow>
-                      <TableHead>Medicine</TableHead>
-                      <TableHead className="w-24">Batch No. *</TableHead>
-                      <TableHead className="w-28">Expiry *</TableHead>
-                      <TableHead className="w-16">Qty</TableHead>
-                      <TableHead className="w-16">Free</TableHead>
-                      <TableHead className="w-20">Rate</TableHead>
-                      <TableHead className="w-28">Scheme</TableHead>
-                      <TableHead className="w-28">Location</TableHead>
-                      <TableHead className="w-24 text-right">Total</TableHead>
+                      <TableHead className="h-9 whitespace-nowrap">Medicine</TableHead>
+                      <TableHead className="h-9 w-[120px] whitespace-nowrap">Batch No. *</TableHead>
+                      <TableHead className="h-9 w-[130px] whitespace-nowrap">Expiry *</TableHead>
+                      <TableHead className="h-9 w-[84px] whitespace-nowrap">Qty</TableHead>
+                      <TableHead className="h-9 w-[84px] whitespace-nowrap">Free</TableHead>
+                      <TableHead className="h-9 w-[98px] whitespace-nowrap">Unit</TableHead>
+                      <TableHead className="h-9 w-[120px] whitespace-nowrap">Units/Strip</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">Rate</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">Selling</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">MRP</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">Disc %</TableHead>
+                      <TableHead className="h-9 w-[100px] whitespace-nowrap">GST %</TableHead>
+                      <TableHead className="h-9 w-[120px] whitespace-nowrap">Scheme</TableHead>
+                      <TableHead className="h-9 w-[140px] whitespace-nowrap">Location</TableHead>
+                      <TableHead className="h-9 w-[120px] text-right whitespace-nowrap">Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {items.map((item, index) => (
-                      <TableRow key={index}>
+                      <TableRow key={index} className="align-top">
                         <TableCell>
                           <div>
                             <span className="font-medium text-sm">{item.medicineName}</span>
@@ -556,7 +836,7 @@ export default function GoodsReceipts() {
                             value={item.batchNumber}
                             onChange={(e) => updateItem(index, "batchNumber", e.target.value)}
                             placeholder="Batch"
-                            className="w-20"
+                            className="h-8 w-[110px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -564,7 +844,7 @@ export default function GoodsReceipts() {
                             type="month"
                             value={item.expiryDate}
                             onChange={(e) => updateItem(index, "expiryDate", e.target.value)}
-                            className="w-28"
+                            className="h-8 w-[120px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -573,7 +853,7 @@ export default function GoodsReceipts() {
                             max={item.pendingQty}
                             value={item.quantity}
                             onChange={(value) => updateItem(index, "quantity", value)}
-                            className="w-14"
+                            className="h-8 w-[76px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -581,7 +861,32 @@ export default function GoodsReceipts() {
                             min={0}
                             value={item.freeQuantity || 0}
                             onChange={(value) => updateItem(index, "freeQuantity", value)}
-                            className="w-14"
+                            className="h-8 w-[76px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.purchaseUnit}
+                            onValueChange={(v) => updateItem(index, "purchaseUnit", v as GrnUnit)}
+                          >
+                            <SelectTrigger className="h-8 w-[90px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {getCategoryUnitOptions(item.medicineCategory).map((option) => (
+                                <SelectItem key={`${item.medicineId}-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={1}
+                            value={item.unitsPerStrip}
+                            onChange={(value) => updateItem(index, "unitsPerStrip", value)}
+                            className="h-8 w-[110px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -590,7 +895,44 @@ export default function GoodsReceipts() {
                             allowDecimal={true}
                             value={parseFloat(item.rate) || 0}
                             onChange={(value) => updateItem(index, "rate", String(value))}
-                            className="w-18"
+                            className="h-8 w-[92px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.sellingPrice) || 0}
+                            onChange={(value) => updateItem(index, "sellingPrice", String(value))}
+                            className="h-8 w-[92px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.mrp) || 0}
+                            onChange={(value) => updateItem(index, "mrp", String(value))}
+                            className="h-8 w-[92px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(item.discountPercent) || 0}
+                            onChange={(value) => updateItem(index, "discountPercent", String(value))}
+                            className="h-8 w-[92px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <NumericInput
+                            min={0}
+                            allowDecimal={true}
+                            value={parseFloat(getEffectiveItemGstRate(item)) || 5}
+                            onChange={(value) => updateItem(index, "gstRate", String(value))}
+                            disabled={grnGstMode === "header"}
+                            className="h-8 w-[92px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -598,7 +940,7 @@ export default function GoodsReceipts() {
                             value={item.schemeDescription || ""}
                             onChange={(e) => updateItem(index, "schemeDescription", e.target.value)}
                             placeholder="e.g. 10+2"
-                            className="w-24"
+                            className="h-8 w-[110px]"
                           />
                         </TableCell>
                         <TableCell>
@@ -606,7 +948,7 @@ export default function GoodsReceipts() {
                             value={item.locationId?.toString() || ""}
                             onValueChange={(v) => updateItem(index, "locationId", v ? parseInt(v) : undefined)}
                           >
-                            <SelectTrigger className="w-24">
+                            <SelectTrigger className="h-8 w-[130px]">
                               <SelectValue placeholder="Select" />
                             </SelectTrigger>
                             <SelectContent>
@@ -619,27 +961,36 @@ export default function GoodsReceipts() {
                           </Select>
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          ₹{(parseFloat(item.rate || "0") * item.quantity * (1 + parseFloat(item.gstRate || "18") / 100)).toFixed(2)}
+                          ₹{((((parseFloat(item.rate || "0") * item.quantity) - ((parseFloat(item.rate || "0") * item.quantity) * parseFloat(item.discountPercent || "0") / 100)) * (1 + parseFloat(getEffectiveItemGstRate(item)) / 100))).toFixed(2)}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             )}
 
             {items.length > 0 && (
               <div className="flex justify-end">
-                <div className="w-64 space-y-2 text-sm">
+                <div className="w-64 lg:w-72 rounded-lg border bg-card p-3 lg:p-4 space-y-1.5 lg:space-y-2 text-xs lg:text-sm">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span className="font-mono">₹{totals.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
+                    <span>Line Discount:</span>
+                    <span className="font-mono">₹{totals.lineDiscount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Header Discount:</span>
+                    <span className="font-mono">₹{totals.headerDiscount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
                     <span>Tax:</span>
                     <span className="font-mono">₹{totals.tax.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-lg border-t pt-2">
+                  <div className="flex justify-between font-bold text-base lg:text-lg border-t pt-2">
                     <span>Total:</span>
                     <span className="font-mono">₹{totals.total.toFixed(2)}</span>
                   </div>
@@ -648,14 +999,14 @@ export default function GoodsReceipts() {
             )}
 
             {items.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground border rounded-md">
+              <div className="text-center py-10 text-muted-foreground border rounded-lg bg-muted/10">
                 <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>Select a PO and click Load to add items</p>
               </div>
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-4 lg:px-6 py-3 lg:py-4 border-t bg-muted/20">
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending} data-testid="button-save-grn">
               {createMutation.isPending ? "Creating..." : "Create GRN & Update Inventory"}
@@ -698,7 +1049,13 @@ export default function GoodsReceipts() {
                       <TableHead>Batch</TableHead>
                       <TableHead>Expiry</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Free</TableHead>
+                      <TableHead className="text-right">Unit</TableHead>
+                      <TableHead className="text-right">Units/Strip</TableHead>
                       <TableHead className="text-right">Rate</TableHead>
+                      <TableHead className="text-right">Disc %</TableHead>
+                      <TableHead className="text-right">GST %</TableHead>
+                      <TableHead>Scheme</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -709,7 +1066,13 @@ export default function GoodsReceipts() {
                         <TableCell className="font-mono text-xs">{item.batchNumber}</TableCell>
                         <TableCell>{item.expiryDate}</TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
+                        <TableCell className="text-right">{item.freeQuantity || 0}</TableCell>
+                        <TableCell className="text-right">{item.purchaseUnit || "-"}</TableCell>
+                        <TableCell className="text-right">{item.unitsPerStrip || 1}</TableCell>
                         <TableCell className="text-right font-mono">₹{item.rate}</TableCell>
+                        <TableCell className="text-right">{item.discountPercent || "0"}</TableCell>
+                        <TableCell className="text-right">{item.gstRate || "0"}</TableCell>
+                        <TableCell>{item.schemeDescription || "-"}</TableCell>
                         <TableCell className="text-right font-mono">₹{item.totalAmount}</TableCell>
                       </TableRow>
                     ))}
@@ -722,6 +1085,14 @@ export default function GoodsReceipts() {
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span className="font-mono">₹{selectedGRN.subtotal}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Discount Rate:</span>
+                    <span className="font-mono">{selectedGRN.discountRate || "0"}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Discount:</span>
+                    <span className="font-mono">₹{selectedGRN.discountAmount || "0.00"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Tax:</span>
@@ -789,7 +1160,13 @@ export default function GoodsReceipts() {
                           <th>Batch</th>
                           <th>Expiry</th>
                           <th class="text-right">Qty</th>
+                          <th class="text-right">Free</th>
+                          <th class="text-right">Unit</th>
+                          <th class="text-right">Units/Strip</th>
                           <th class="text-right">Rate</th>
+                          <th class="text-right">Disc %</th>
+                          <th class="text-right">GST %</th>
+                          <th>Scheme</th>
                           <th class="text-right">Total</th>
                         </tr>
                       </thead>
@@ -800,16 +1177,24 @@ export default function GoodsReceipts() {
                             <td>${item.batchNumber}</td>
                             <td>${item.expiryDate}</td>
                             <td class="text-right">${item.quantity}</td>
-                            <td class="text-right">₹${item.rate}</td>
-                            <td class="text-right">₹${item.totalAmount}</td>
+                            <td class="text-right">${item.freeQuantity || 0}</td>
+                            <td class="text-right">${item.purchaseUnit || "-"}</td>
+                            <td class="text-right">${item.unitsPerStrip || 1}</td>
+                            <td class="text-right">₹${Number(item.rate || 0).toFixed(2)}</td>
+                            <td class="text-right">${item.discountPercent || "0"}</td>
+                            <td class="text-right">${item.gstRate || "0"}</td>
+                            <td>${item.schemeDescription || "-"}</td>
+                            <td class="text-right">₹${Number(item.totalAmount || 0).toFixed(2)}</td>
                           </tr>
                         `).join("")}
                       </tbody>
                     </table>
                     <div class="totals">
-                      <div>Subtotal: ₹${selectedGRN?.subtotal}</div>
-                      <div>Tax: ₹${selectedGRN?.taxAmount}</div>
-                      <div class="total-line">Total: ₹${selectedGRN?.totalAmount}</div>
+                      <div>Subtotal: ₹${Number(selectedGRN?.subtotal || 0).toFixed(2)}</div>
+                      <div>Discount Rate: ${selectedGRN?.discountRate || "0"}%</div>
+                      <div>Discount: ₹${Number(selectedGRN?.discountAmount || 0).toFixed(2)}</div>
+                      <div>Tax: ₹${Number(selectedGRN?.taxAmount || 0).toFixed(2)}</div>
+                      <div class="total-line">Total: ₹${Number(selectedGRN?.totalAmount || 0).toFixed(2)}</div>
                     </div>
                   </body>
                 </html>

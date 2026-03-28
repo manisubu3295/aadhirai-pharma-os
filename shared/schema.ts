@@ -53,6 +53,8 @@ export type User = typeof users.$inferSelect;
 export const medicines = pgTable("medicines", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  genericName: text("generic_name"),
+  skuName: text("sku_name"),
   batchNumber: text("batch_number").notNull(),
   manufacturer: text("manufacturer").notNull(),
   expiryDate: text("expiry_date").notNull(),
@@ -72,6 +74,14 @@ export const medicines = pgTable("medicines", {
   baseUnit: text("base_unit").default("UNIT"),
   packSize: integer("pack_size").default(1),
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }),
+});
+
+export const genericNames = pgTable("generic_names", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const customers = pgTable("customers", {
@@ -182,6 +192,7 @@ export const saleItems = pgTable("sale_items", {
 });
 
 export const insertMedicineSchema = createInsertSchema(medicines).omit({ id: true });
+export const insertGenericNameSchema = createInsertSchema(genericNames).omit({ id: true, createdAt: true, updatedAt: true }).pick({ name: true, isActive: true });
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true });
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
 export const insertSaleSchema = createInsertSchema(sales).omit({ id: true, createdAt: true });
@@ -213,6 +224,9 @@ export const insertHeldBillSchema = createInsertSchema(heldBills).omit({ id: tru
 
 export type InsertMedicine = z.infer<typeof insertMedicineSchema>;
 export type Medicine = typeof medicines.$inferSelect;
+
+export type InsertGenericName = z.infer<typeof insertGenericNameSchema>;
+export type GenericName = typeof genericNames.$inferSelect;
 
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
 export type Customer = typeof customers.$inferSelect;
@@ -298,6 +312,8 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   quantity: integer("quantity").notNull(),
   receivedQty: integer("received_qty").notNull().default(0),
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  unitType: text("unit_type").default("STRIP"),
+  unitsPerStrip: integer("units_per_strip").default(1),
   mrp: decimal("mrp", { precision: 10, scale: 2 }),
   gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
   discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
@@ -316,6 +332,8 @@ export const goodsReceipts = pgTable("goods_receipts", {
   receiptDate: timestamp("receipt_date").defaultNow().notNull(),
   status: text("status").notNull().default("Completed"),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull().default("0"),
+  discountRate: decimal("discount_rate", { precision: 5, scale: 2 }).default("0"),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
   taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   notes: text("notes"),
@@ -335,10 +353,15 @@ export const goodsReceiptItems = pgTable("goods_receipt_items", {
   freeQuantity: integer("free_quantity").default(0),
   schemeDescription: text("scheme_description"),
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }),
   mrp: decimal("mrp", { precision: 10, scale: 2 }),
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
   gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).default("18"),
   taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+  purchaseUnit: text("purchase_unit").default("STRIP"),
+  unitsPerStrip: integer("units_per_strip").default(1),
   packSize: integer("pack_size").default(1),
   unitType: text("unit_type").default("STRIP"),
   displayQty: integer("display_qty"),

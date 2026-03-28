@@ -5,6 +5,8 @@ interface InvoiceSettings {
   showMrp?: boolean;
   showGstBreakup?: boolean;
   showDoctor?: boolean;
+  hideTaxDetails?: boolean;
+  hideStoreGstin?: boolean;
 }
 
 interface PrintableInvoiceProps {
@@ -32,6 +34,8 @@ const defaultInvoiceSettings: InvoiceSettings = {
   showMrp: true,
   showGstBreakup: true,
   showDoctor: true,
+  hideTaxDetails: false,
+  hideStoreGstin: false,
 };
 
 export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps>(
@@ -67,13 +71,13 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
           <p className="text-sm">{storeInfo.address}</p>
           <p className="text-sm">Phone: {storeInfo.phone}</p>
           <div className="flex justify-center gap-8 mt-2 text-sm">
-            <span>GSTIN: {storeInfo.gstin}</span>
+            {!settings.hideStoreGstin && <span>GSTIN: {storeInfo.gstin}</span>}
             <span>D.L. No: {storeInfo.dlNo}</span>
           </div>
         </div>
 
         <div className="text-center mb-4">
-          <h2 className="text-lg font-bold">TAX INVOICE</h2>
+          <h2 className="text-lg font-bold">{settings.hideTaxDetails ? "INVOICE" : "TAX INVOICE"}</h2>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
@@ -101,29 +105,34 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
               {settings.showMrp && <th className="border border-black p-2 text-right">MRP</th>}
               <th className="border border-black p-2 text-center">Qty</th>
               <th className="border border-black p-2 text-right">Rate</th>
-              <th className="border border-black p-2 text-center">GST%</th>
+              {!settings.hideTaxDetails && <th className="border border-black p-2 text-center">GST%</th>}
               <th className="border border-black p-2 text-right">Amount</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((item, index) => (
-              <tr key={item.id}>
-                <td className="border border-black p-2">{index + 1}</td>
-                <td className="border border-black p-2">{item.medicineName}</td>
-                <td className="border border-black p-2 text-center">{item.hsnCode || "-"}</td>
-                <td className="border border-black p-2 text-center">{item.batchNumber}</td>
-                <td className="border border-black p-2 text-center">{item.expiryDate}</td>
-                {settings.showMrp && (
-                  <td className="border border-black p-2 text-right">
-                    {item.mrp ? `₹${Number(item.mrp).toFixed(2)}` : "-"}
-                  </td>
-                )}
-                <td className="border border-black p-2 text-center">{item.quantity}</td>
-                <td className="border border-black p-2 text-right">₹{Number(item.price).toFixed(2)}</td>
-                <td className="border border-black p-2 text-center">{item.gstRate}%</td>
-                <td className="border border-black p-2 text-right">₹{Number(item.total).toFixed(2)}</td>
-              </tr>
-            ))}
+            {items.map((item, index) => {
+              const lineTax = Number(item.cgst || 0) + Number(item.sgst || 0);
+              const lineAmountExclTax = Number(item.total || 0) - lineTax;
+
+              return (
+                <tr key={item.id}>
+                  <td className="border border-black p-2">{index + 1}</td>
+                  <td className="border border-black p-2">{item.medicineName}</td>
+                  <td className="border border-black p-2 text-center">{item.hsnCode || "-"}</td>
+                  <td className="border border-black p-2 text-center">{item.batchNumber}</td>
+                  <td className="border border-black p-2 text-center">{item.expiryDate}</td>
+                  {settings.showMrp && (
+                    <td className="border border-black p-2 text-right">
+                      {item.mrp ? `₹${Number(item.mrp).toFixed(2)}` : "-"}
+                    </td>
+                  )}
+                  <td className="border border-black p-2 text-center">{item.quantity}</td>
+                  <td className="border border-black p-2 text-right">₹{Number(item.price).toFixed(2)}</td>
+                  {!settings.hideTaxDetails && <td className="border border-black p-2 text-center">{item.gstRate}%</td>}
+                  <td className="border border-black p-2 text-right">₹{lineAmountExclTax.toFixed(2)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
@@ -139,7 +148,7 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
                 <span>-₹{Number(sale.discount).toFixed(2)}</span>
               </div>
             )}
-            {settings.showGstBreakup ? (
+            {!settings.hideTaxDetails && settings.showGstBreakup ? (
               <>
                 <div className="flex justify-between py-1 border-b">
                   <span>CGST:</span>
@@ -150,12 +159,12 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
                   <span>₹{Number(sale.sgst).toFixed(2)}</span>
                 </div>
               </>
-            ) : (
+            ) : !settings.hideTaxDetails ? (
               <div className="flex justify-between py-1 border-b">
                 <span>GST:</span>
                 <span>₹{(Number(sale.cgst) + Number(sale.sgst)).toFixed(2)}</span>
               </div>
-            )}
+            ) : null}
             {Number(sale.roundOff) !== 0 && (
               <div className="flex justify-between py-1 border-b">
                 <span>Round Off:</span>

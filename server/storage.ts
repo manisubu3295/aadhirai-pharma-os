@@ -5,6 +5,8 @@ import {
   type InsertUser,
   type Medicine,
   type InsertMedicine,
+  type GenericName,
+  type InsertGenericName,
   type Customer,
   type InsertCustomer,
   type Doctor,
@@ -69,6 +71,7 @@ import {
   type InsertStockAdjustment,
   users,
   medicines,
+  genericNames,
   customers,
   doctors,
   sales,
@@ -111,14 +114,131 @@ console.log("Database URL:" + JSON.stringify(process.env.DATABASE_URL));
 console.log("DATABASE_URL =", process.env.DATABASE_URL);
 console.log("PGDATABASE   =", process.env.PGDATABASE);
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+const DEFAULT_DATABASE_NAME = "medora_vasantham";
+
+function withDatabaseName(connectionString: string, databaseName: string): string {
+  const parsedUrl = new URL(connectionString);
+  parsedUrl.pathname = `/${databaseName}`;
+  return parsedUrl.toString();
+}
+
+function getResolvedDatabaseConfig() {
+  const rawConnectionString = process.env.DATABASE_URL;
+  if (!rawConnectionString) {
+    throw new Error("DATABASE_URL is required");
+  }
+
+  const parsedUrl = new URL(rawConnectionString);
+  const dbFromUrl = parsedUrl.pathname.replace(/^\//, "").trim();
+  const resolvedDatabaseName = dbFromUrl || process.env.PGDATABASE || DEFAULT_DATABASE_NAME;
+  const resolvedConnectionString = withDatabaseName(rawConnectionString, resolvedDatabaseName);
+
+  return {
+    resolvedDatabaseName,
+    resolvedConnectionString,
+    adminConnectionString: withDatabaseName(resolvedConnectionString, "postgres"),
+  };
+}
+
+const databaseConfig = getResolvedDatabaseConfig();
+
+async function ensureDatabaseExists() {
+  const adminPool = new Pool({
+    connectionString: databaseConfig.adminConnectionString,
+    max: 1,
+  });
+
+  try {
+    const checkResult = await adminPool.query(
+      `SELECT 1 FROM pg_database WHERE datname = $1`,
+      [databaseConfig.resolvedDatabaseName],
+    );
+
+    if (checkResult.rowCount === 0) {
+      const safeDatabaseName = databaseConfig.resolvedDatabaseName.replace(/"/g, '""');
+      await adminPool.query(`CREATE DATABASE "${safeDatabaseName}"`);
+      console.log(`Database created: ${databaseConfig.resolvedDatabaseName}`);
+    }
+  } catch (error: any) {
+    if (error?.code !== "42P04") {
+      throw error;
+    }
+  } finally {
+    await adminPool.end();
+  }
+}
+
+async function seedDefaultAppSettings() {
+  const settingsCountResult = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM app_settings`,
+  );
+
+  const existingCount = Number(settingsCountResult.rows[0]?.count || "0");
+  if (existingCount > 0) {
+    console.log(`Skipping app settings seed: ${existingCount} existing rows found`);
+    return;
+  }
+
+  const defaultSettings: Record<string, string> = {
+    storeName: "Medora+",
+    storePhone: "+91 98765 43210",
+    storeAddress: "123 Main Street, Chennai, Tamil Nadu - 600001",
+    storeEmail: "contact@medoraplus.com",
+    dlNo: "TN-01-123456",
+    gstin: "33AABCU9603R1ZM",
+    stateCode: "33",
+    autoGst: "true",
+    invoicePrefix: "INV-",
+    startNumber: "1001",
+    showMrp: "true",
+    showGstBreakup: "true",
+    showDoctor: "true",
+    printOnSave: "false",
+    defaultGrnDiscountRate: "5",
+    defaultGrnGstMode: "item",
+  };
+
+  const valueColumnResult = await pool.query<{
+    data_type: string;
+    udt_name: string;
+  }>(
+    `
+      SELECT data_type, udt_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'app_settings'
+        AND column_name = 'value'
+      LIMIT 1
+    `,
+  );
+
+  const valueColumn = valueColumnResult.rows[0];
+  const isJsonValueColumn = valueColumn
+    ? valueColumn.data_type === "json" || valueColumn.udt_name === "jsonb"
+    : false;
+
+  for (const [key, value] of Object.entries(defaultSettings)) {
+    const preparedValue = isJsonValueColumn ? JSON.stringify(value) : value;
+
+    await pool.query(
+      `INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+      [key, preparedValue],
+    );
+  }
+
+  console.log(`Seeded default app settings: ${Object.keys(defaultSettings).length} rows`);
+}
+
+export const pool = new Pool({
+  connectionString: databaseConfig.resolvedConnectionString,
 });
 
-const db = drizzle(pool);
+export const db = drizzle(pool);
 
 export async function initializeDatabase() {
   try {
+    await ensureDatabaseExists();
+
   const r = await pool.query("select current_database() as db");
 console.log("Connected DB:", r.rows[0].db);
     await pool.query(`
@@ -137,6 +257,8 @@ console.log("Connected DB:", r.rows[0].db);
       CREATE TABLE IF NOT EXISTS medicines (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
+        generic_name TEXT,
+        sku_name TEXT,
         batch_number TEXT NOT NULL,
         manufacturer TEXT NOT NULL,
         expiry_date TEXT NOT NULL,
@@ -154,6 +276,21 @@ console.log("Connected DB:", r.rows[0].db);
         max_stock INTEGER DEFAULT 500,
         location_id INTEGER
       );
+
+      ALTER TABLE medicines
+        ADD COLUMN IF NOT EXISTS generic_name TEXT,
+        ADD COLUMN IF NOT EXISTS sku_name TEXT;
+
+      CREATE TABLE IF NOT EXISTS generic_names (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_generic_names_name_lower
+      ON generic_names (LOWER(name));
       
       CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
@@ -310,6 +447,13 @@ console.log("Connected DB:", r.rows[0].db);
         prefix TEXT NOT NULL DEFAULT 'INV',
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id SERIAL PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
       
       INSERT INTO sequences (name, current_value, prefix) 
       VALUES ('invoice', 0, 'INV') 
@@ -318,6 +462,113 @@ console.log("Connected DB:", r.rows[0].db);
       -- New tables for supplier ledger, purchase returns, day closing
       ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS free_quantity INTEGER DEFAULT 0;
       ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS scheme_description TEXT;
+      ALTER TABLE medicines ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
+      ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price_per_unit DECIMAL(10,2);
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_type TEXT DEFAULT 'STRIP';
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS units_per_strip INTEGER DEFAULT 1;
+      ALTER TABLE goods_receipts ADD COLUMN IF NOT EXISTS discount_rate DECIMAL(5,2) DEFAULT 0;
+      ALTER TABLE goods_receipts ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS selling_price DECIMAL(10,2);
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS discount_percent DECIMAL(5,2) DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS purchase_unit TEXT DEFAULT 'STRIP';
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS units_per_strip INTEGER DEFAULT 1;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS ordered_qty_base INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS received_qty_base INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS pending_qty_base INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS line_status TEXT NOT NULL DEFAULT 'PENDING';
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS conversion_factor_snapshot INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_snapshot TEXT NOT NULL DEFAULT 'STRIP';
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS gst_percent_snapshot DECIMAL(5,2) DEFAULT 0;
+      ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS tax_mode TEXT NOT NULL DEFAULT 'EXCLUSIVE';
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS po_id INTEGER;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS po_line_id INTEGER;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS received_qty_base INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS free_qty_base INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS inward_qty_base INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS conversion_factor_snapshot INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS gst_percent_snapshot DECIMAL(5,2) DEFAULT 0;
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS tax_mode TEXT NOT NULL DEFAULT 'EXCLUSIVE';
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS ptr DECIMAL(10,2);
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS purchase_rate_snapshot DECIMAL(10,2);
+      ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS default_sale_rate_snapshot DECIMAL(10,2);
+      ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS sold_unit_qty INTEGER;
+      ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS sold_qty_base INTEGER;
+      ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS conversion_factor_snapshot INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS tax_mode TEXT NOT NULL DEFAULT 'EXCLUSIVE';
+
+      CREATE TABLE IF NOT EXISTS inventory_batches (
+        id SERIAL PRIMARY KEY,
+        medicine_id INTEGER NOT NULL,
+        warehouse_id INTEGER,
+        batch_number TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        grn_id INTEGER,
+        grn_item_id INTEGER,
+        purchase_rate_snapshot DECIMAL(10,2),
+        ptr_snapshot DECIMAL(10,2),
+        mrp_snapshot DECIMAL(10,2),
+        default_sale_rate_snapshot DECIMAL(10,2),
+        gst_percent_snapshot DECIMAL(5,2) DEFAULT 0,
+        tax_mode TEXT NOT NULL DEFAULT 'EXCLUSIVE',
+        unit_snapshot TEXT NOT NULL DEFAULT 'STRIP',
+        conversion_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+        total_inward_qty_base INTEGER NOT NULL DEFAULT 0,
+        total_outward_qty_base INTEGER NOT NULL DEFAULT 0,
+        available_qty_base INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_inventory_batch UNIQUE (medicine_id, warehouse_id, batch_number, expiry_date)
+      );
+
+      CREATE TABLE IF NOT EXISTS inventory_ledger (
+        id SERIAL PRIMARY KEY,
+        medicine_id INTEGER NOT NULL,
+        warehouse_id INTEGER,
+        batch_id INTEGER,
+        txn_type TEXT NOT NULL,
+        txn_source TEXT NOT NULL,
+        source_id INTEGER,
+        source_line_id INTEGER,
+        qty_base INTEGER NOT NULL,
+        balance_after_base INTEGER,
+        unit_snapshot TEXT NOT NULL DEFAULT 'TABLET',
+        conversion_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+        purchase_rate_snapshot DECIMAL(10,2),
+        ptr_snapshot DECIMAL(10,2),
+        mrp_snapshot DECIMAL(10,2),
+        gst_percent_snapshot DECIMAL(5,2) DEFAULT 0,
+        tax_mode_snapshot TEXT NOT NULL DEFAULT 'EXCLUSIVE',
+        remarks TEXT,
+        metadata JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS sale_batch_allocations (
+        id SERIAL PRIMARY KEY,
+        sale_id INTEGER NOT NULL,
+        sale_item_id INTEGER NOT NULL,
+        medicine_id INTEGER NOT NULL,
+        warehouse_id INTEGER,
+        batch_id INTEGER NOT NULL,
+        batch_number TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        requested_qty INTEGER NOT NULL,
+        requested_unit TEXT NOT NULL,
+        sold_qty_base INTEGER NOT NULL,
+        conversion_factor_snapshot INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_inventory_batches_fefo
+      ON inventory_batches (medicine_id, warehouse_id, expiry_date, available_qty_base)
+      WHERE available_qty_base > 0;
+
+      CREATE INDEX IF NOT EXISTS idx_inventory_ledger_source
+      ON inventory_ledger (txn_source, source_id, source_line_id);
+
+      CREATE INDEX IF NOT EXISTS idx_sale_batch_allocations_sale
+      ON sale_batch_allocations (sale_id, medicine_id);
       
       CREATE TABLE IF NOT EXISTS supplier_transactions (
         id SERIAL PRIMARY KEY,
@@ -410,6 +661,9 @@ console.log("Connected DB:", r.rows[0].db);
       VALUES ('purchase_return', 0, 'PR')
       ON CONFLICT (name) DO NOTHING;
     `);
+
+    await seedDefaultAppSettings();
+
     console.log("Database tables initialized successfully");
   } catch (error) {
     console.error("Database initialization error:", error);
@@ -425,11 +679,16 @@ export interface IStorage {
   updateUser(id: string, user: Record<string, any>): Promise<User | undefined>;
   
   getMedicines(): Promise<Medicine[]>;
+  getSaleMedicines(): Promise<Medicine[]>;
   getMedicine(id: number): Promise<Medicine | undefined>;
   createMedicine(medicine: InsertMedicine): Promise<Medicine>;
   updateMedicine(id: number, medicine: Partial<InsertMedicine>): Promise<Medicine | undefined>;
   deleteMedicine(id: number): Promise<boolean>;
   updateMedicineStock(id: number, quantityChange: number): Promise<Medicine | undefined>;
+  getGenericNames(includeInactive?: boolean): Promise<GenericName[]>;
+  createGenericName(input: { name: string }): Promise<GenericName>;
+  updateGenericName(id: number, input: { name: string }): Promise<GenericName | undefined>;
+  softDeleteGenericName(id: number): Promise<GenericName | undefined>;
   
   getCustomers(): Promise<Customer[]>;
   getCustomer(id: number): Promise<Customer | undefined>;
@@ -591,6 +850,189 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  private normalizeGenericName(name: string | null | undefined): string {
+    return String(name || "").trim();
+  }
+
+  private async ensureGenericNameExists(name: string | null | undefined): Promise<void> {
+    const normalized = this.normalizeGenericName(name);
+    if (!normalized) return;
+
+    const existing = await pool.query(
+      `SELECT id, is_active FROM generic_names WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      [normalized],
+    );
+
+    if (existing.rowCount && existing.rows[0]) {
+      if (!existing.rows[0].is_active) {
+        await pool.query(
+          `UPDATE generic_names SET is_active = true, name = $1, updated_at = NOW() WHERE id = $2`,
+          [normalized, existing.rows[0].id],
+        );
+      }
+      return;
+    }
+
+    await pool.query(
+      `INSERT INTO generic_names (name, is_active, created_at, updated_at) VALUES ($1, true, NOW(), NOW())`,
+      [normalized],
+    );
+  }
+
+  private async isInventoryBatchTrackingEnabled(): Promise<boolean> {
+    const result = await pool.query<{ exists: string | null }>(
+      `SELECT to_regclass('public.inventory_batches')::text AS exists`,
+    );
+    return Boolean(result.rows[0]?.exists);
+  }
+
+  private async syncMedicineBatchQuantity(
+    medicineId: number,
+    targetQtyBase: number,
+    snapshots: {
+      batchNumber: string;
+      expiryDate: string;
+      costPrice: string | null;
+      mrp: string | null;
+      price: string;
+      gstRate: string;
+      unitSnapshot: string;
+      conversionFactor: number;
+    },
+  ): Promise<void> {
+    const enabled = await this.isInventoryBatchTrackingEnabled();
+    if (!enabled) {
+      return;
+    }
+
+    const totalResult = await pool.query<{ total: string }>(
+      `
+        SELECT COALESCE(SUM(available_qty_base), 0)::text AS total
+        FROM inventory_batches
+        WHERE medicine_id = $1
+      `,
+      [medicineId],
+    );
+
+    const currentTotal = Number(totalResult.rows[0]?.total || "0");
+    const delta = targetQtyBase - currentTotal;
+    if (delta === 0) {
+      return;
+    }
+
+    if (delta > 0) {
+      await pool.query(
+        `
+          INSERT INTO inventory_batches (
+            medicine_id,
+            warehouse_id,
+            batch_number,
+            expiry_date,
+            purchase_rate_snapshot,
+            ptr_snapshot,
+            mrp_snapshot,
+            default_sale_rate_snapshot,
+            gst_percent_snapshot,
+            tax_mode,
+            unit_snapshot,
+            conversion_factor_snapshot,
+            total_inward_qty_base,
+            total_outward_qty_base,
+            available_qty_base,
+            updated_at
+          )
+          VALUES (
+            $1,
+            NULL,
+            $2,
+            $3,
+            $4,
+            NULL,
+            $5,
+            $6,
+            $7,
+            'EXCLUSIVE',
+            $8,
+            $9,
+            $10,
+            0,
+            $10,
+            NOW()
+          )
+          ON CONFLICT (medicine_id, warehouse_id, batch_number, expiry_date)
+          DO UPDATE SET
+            total_inward_qty_base = inventory_batches.total_inward_qty_base + EXCLUDED.total_inward_qty_base,
+            available_qty_base = inventory_batches.available_qty_base + EXCLUDED.available_qty_base,
+            purchase_rate_snapshot = COALESCE(EXCLUDED.purchase_rate_snapshot, inventory_batches.purchase_rate_snapshot),
+            mrp_snapshot = COALESCE(EXCLUDED.mrp_snapshot, inventory_batches.mrp_snapshot),
+            default_sale_rate_snapshot = COALESCE(EXCLUDED.default_sale_rate_snapshot, inventory_batches.default_sale_rate_snapshot),
+            gst_percent_snapshot = COALESCE(EXCLUDED.gst_percent_snapshot, inventory_batches.gst_percent_snapshot),
+            unit_snapshot = COALESCE(EXCLUDED.unit_snapshot, inventory_batches.unit_snapshot),
+            conversion_factor_snapshot = COALESCE(EXCLUDED.conversion_factor_snapshot, inventory_batches.conversion_factor_snapshot),
+            updated_at = NOW()
+        `,
+        [
+          medicineId,
+          snapshots.batchNumber,
+          snapshots.expiryDate,
+          snapshots.costPrice,
+          snapshots.mrp,
+          snapshots.price,
+          snapshots.gstRate,
+          snapshots.unitSnapshot,
+          snapshots.conversionFactor,
+          delta,
+        ],
+      );
+      return;
+    }
+
+    let remainingToReduce = Math.abs(delta);
+    const batchesResult = await pool.query<{ id: number; available_qty_base: number }>(
+      `
+        SELECT id, available_qty_base
+        FROM inventory_batches
+        WHERE medicine_id = $1
+          AND available_qty_base > 0
+        ORDER BY expiry_date DESC, id DESC
+      `,
+      [medicineId],
+    );
+
+    const reducible = batchesResult.rows.reduce((sum, row) => sum + Number(row.available_qty_base || 0), 0);
+    if (reducible < remainingToReduce) {
+      throw new Error(
+        `Quantity cannot be reduced below available batch stock (${reducible}). Requested ${targetQtyBase}.`,
+      );
+    }
+
+    for (const row of batchesResult.rows) {
+      if (remainingToReduce <= 0) {
+        break;
+      }
+
+      const available = Number(row.available_qty_base || 0);
+      if (available <= 0) {
+        continue;
+      }
+
+      const deduct = Math.min(available, remainingToReduce);
+      await pool.query(
+        `
+          UPDATE inventory_batches
+          SET
+            available_qty_base = GREATEST(available_qty_base - $2, 0),
+            total_outward_qty_base = total_outward_qty_base + $2,
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [row.id, deduct],
+      );
+
+      remainingToReduce -= deduct;
+    }
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
     return result[0];
@@ -616,7 +1058,223 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMedicines(): Promise<Medicine[]> {
-    return await db.select().from(medicines).orderBy(medicines.name);
+    const result = await pool.query(
+      `
+        WITH has_batches AS (
+          SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'inventory_batches'
+          ) AS enabled
+        ),
+        batch_stock AS (
+          SELECT
+            medicine_id,
+            batch_number,
+            expiry_date,
+            COALESCE(SUM(available_qty_base), 0)::int AS available_qty_base
+          FROM inventory_batches
+          GROUP BY medicine_id, batch_number, expiry_date
+        ),
+        batch_stock_total AS (
+          SELECT
+            medicine_id,
+            COALESCE(SUM(available_qty_base), 0)::int AS available_qty_base
+          FROM inventory_batches
+          GROUP BY medicine_id
+        )
+        SELECT
+          m.*,
+          CASE
+            WHEN has_batches.enabled THEN COALESCE(batch_stock.available_qty_base, 0)
+            ELSE m.quantity
+          END::int AS quantity,
+          CASE
+            WHEN has_batches.enabled THEN COALESCE(batch_stock_total.available_qty_base, 0)
+            ELSE m.quantity
+          END::int AS consolidated_quantity
+        FROM medicines m
+        CROSS JOIN has_batches
+        LEFT JOIN batch_stock
+          ON batch_stock.medicine_id = m.id
+         AND COALESCE(batch_stock.batch_number, '') = COALESCE(m.batch_number, '')
+         AND COALESCE(batch_stock.expiry_date, '') = COALESCE(m.expiry_date, '')
+        LEFT JOIN batch_stock_total
+          ON batch_stock_total.medicine_id = m.id
+        ORDER BY m.name
+      `,
+    );
+
+    return result.rows.map((row: any) => ({
+      id: Number(row.id),
+      name: row.name,
+      genericName: row.generic_name,
+      skuName: row.sku_name,
+      batchNumber: row.batch_number,
+      manufacturer: row.manufacturer,
+      expiryDate: row.expiry_date,
+      quantity: Number(row.quantity || 0),
+      consolidatedQty: Number(row.consolidated_quantity || row.quantity || 0),
+      price: row.price,
+      costPrice: row.cost_price,
+      mrp: row.mrp,
+      gstRate: row.gst_rate,
+      hsnCode: row.hsn_code,
+      category: row.category,
+      status: row.status,
+      reorderLevel: Number(row.reorder_level ?? 100),
+      barcode: row.barcode,
+      minStock: row.min_stock == null ? null : Number(row.min_stock),
+      maxStock: row.max_stock == null ? null : Number(row.max_stock),
+      locationId: row.location_id == null ? null : Number(row.location_id),
+      baseUnit: row.base_unit,
+      packSize: row.pack_size == null ? null : Number(row.pack_size),
+      pricePerUnit: row.price_per_unit,
+    })) as Medicine[];
+  }
+
+  async getSaleMedicines(): Promise<Medicine[]> {
+    const result = await pool.query(
+      `
+        WITH has_batches AS (
+          SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'inventory_batches'
+          ) AS enabled
+        ),
+        batch_rows AS (
+          SELECT
+            m.id,
+            m.name,
+            m.generic_name,
+            m.sku_name,
+            ib.batch_number,
+            m.manufacturer,
+            ib.expiry_date,
+            COALESCE(ib.available_qty_base, 0)::int AS quantity,
+            COALESCE(
+              SUM(ib.available_qty_base) OVER (PARTITION BY ib.medicine_id),
+              0
+            )::int AS consolidated_quantity
+            ,m.price
+            ,m.cost_price
+            ,m.mrp
+            ,m.gst_rate
+            ,m.hsn_code
+            ,m.category
+            ,m.status
+            ,m.reorder_level
+            ,m.barcode
+            ,m.min_stock
+            ,m.max_stock
+            ,m.location_id
+            ,m.base_unit
+            ,m.pack_size
+            ,m.price_per_unit
+          FROM inventory_batches ib
+          JOIN medicines m ON m.id = ib.medicine_id
+          WHERE COALESCE(ib.available_qty_base, 0) > 0
+        )
+        SELECT
+          b.id,
+          b.name,
+          b.generic_name,
+          b.sku_name,
+          b.batch_number,
+          b.manufacturer,
+          b.expiry_date,
+          b.quantity,
+          b.consolidated_quantity,
+          b.price,
+          b.cost_price,
+          b.mrp,
+          b.gst_rate,
+          b.hsn_code,
+          b.category,
+          b.status,
+          b.reorder_level,
+          b.barcode,
+          b.min_stock,
+          b.max_stock,
+          b.location_id,
+          b.base_unit,
+          b.pack_size,
+          b.price_per_unit
+        FROM batch_rows b
+
+        UNION ALL
+
+        SELECT
+          m.id,
+          m.name,
+          m.generic_name,
+          m.sku_name,
+          m.batch_number,
+          m.manufacturer,
+          m.expiry_date,
+          COALESCE(m.quantity, 0)::int AS quantity,
+          COALESCE(m.quantity, 0)::int AS consolidated_quantity,
+          m.price,
+          m.cost_price,
+          m.mrp,
+          m.gst_rate,
+          m.hsn_code,
+          m.category,
+          m.status,
+          m.reorder_level,
+          m.barcode,
+          m.min_stock,
+          m.max_stock,
+          m.location_id,
+          m.base_unit,
+          m.pack_size,
+          m.price_per_unit
+        FROM medicines m
+        CROSS JOIN has_batches
+        WHERE (
+          NOT has_batches.enabled
+          OR NOT EXISTS (
+            SELECT 1
+            FROM inventory_batches ib
+            WHERE ib.medicine_id = m.id
+              AND COALESCE(ib.available_qty_base, 0) > 0
+          )
+        )
+          AND COALESCE(m.quantity, 0) > 0
+
+        ORDER BY name, batch_number, expiry_date
+      `,
+    );
+
+    return result.rows.map((row: any) => ({
+      id: Number(row.id),
+      name: row.name,
+      genericName: row.generic_name,
+      skuName: row.sku_name,
+      batchNumber: row.batch_number,
+      manufacturer: row.manufacturer,
+      expiryDate: row.expiry_date,
+      quantity: Number(row.quantity || 0),
+      consolidatedQty: Number(row.consolidated_quantity || row.quantity || 0),
+      price: row.price,
+      costPrice: row.cost_price,
+      mrp: row.mrp,
+      gstRate: row.gst_rate,
+      hsnCode: row.hsn_code,
+      category: row.category,
+      status: row.status,
+      reorderLevel: Number(row.reorder_level ?? 100),
+      barcode: row.barcode,
+      minStock: row.min_stock == null ? null : Number(row.min_stock),
+      maxStock: row.max_stock == null ? null : Number(row.max_stock),
+      locationId: row.location_id == null ? null : Number(row.location_id),
+      baseUnit: row.base_unit,
+      packSize: row.pack_size == null ? null : Number(row.pack_size),
+      pricePerUnit: row.price_per_unit,
+    })) as Medicine[];
   }
 
   async getMedicine(id: number): Promise<Medicine | undefined> {
@@ -625,13 +1283,173 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMedicine(medicine: InsertMedicine): Promise<Medicine> {
+    await this.ensureGenericNameExists((medicine as any).genericName ?? null);
     const result = await db.insert(medicines).values(medicine).returning();
     return result[0];
   }
 
   async updateMedicine(id: number, medicine: Partial<InsertMedicine>): Promise<Medicine | undefined> {
-    const result = await db.update(medicines).set(medicine).where(eq(medicines.id, id)).returning();
-    return result[0];
+    const existing = await this.getMedicine(id);
+    if (!existing) {
+      return undefined;
+    }
+
+    const hasQuantityPatch = Object.prototype.hasOwnProperty.call(medicine, "quantity");
+    const nextQuantity = hasQuantityPatch ? Number((medicine as Record<string, unknown>).quantity) : Number(existing.quantity);
+    if (!Number.isFinite(nextQuantity) || nextQuantity < 0) {
+      throw new Error("Quantity must be a non-negative number.");
+    }
+
+    const normalizedUpdate: Partial<InsertMedicine> = {
+      ...medicine,
+      quantity: Math.trunc(nextQuantity),
+    };
+
+    if (Object.prototype.hasOwnProperty.call(medicine, "genericName")) {
+      await this.ensureGenericNameExists((medicine as any).genericName ?? null);
+    }
+
+    const result = await db.update(medicines).set(normalizedUpdate).where(eq(medicines.id, id)).returning();
+    const updated = result[0];
+
+    if (!updated) {
+      return undefined;
+    }
+
+    if (hasQuantityPatch) {
+      await this.syncMedicineBatchQuantity(id, Math.trunc(nextQuantity), {
+        batchNumber: String(updated.batchNumber || existing.batchNumber || `LEGACY-${id}`),
+        expiryDate: String(updated.expiryDate || existing.expiryDate || "2099-12-31"),
+        costPrice: updated.costPrice ? String(updated.costPrice) : null,
+        mrp: updated.mrp ? String(updated.mrp) : null,
+        price: String(updated.price || existing.price || "0"),
+        gstRate: String(updated.gstRate || existing.gstRate || "0"),
+        unitSnapshot: "TABLET",
+        conversionFactor: Math.max(1, Number(updated.packSize || existing.packSize || 1) || 1),
+      });
+    }
+
+    return updated;
+  }
+
+  async getGenericNames(includeInactive = false): Promise<GenericName[]> {
+    const result = await pool.query(
+      `
+        SELECT id, name, is_active, created_at, updated_at
+        FROM generic_names
+        WHERE ($1::boolean = true OR is_active = true)
+        ORDER BY LOWER(name)
+      `,
+      [includeInactive],
+    );
+
+    return result.rows.map((row: any) => ({
+      id: Number(row.id),
+      name: row.name,
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })) as GenericName[];
+  }
+
+  async createGenericName(input: { name: string }): Promise<GenericName> {
+    const normalized = this.normalizeGenericName(input.name);
+    if (!normalized) {
+      throw new Error("Generic name is required");
+    }
+
+    const existing = await pool.query(
+      `SELECT id FROM generic_names WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      [normalized],
+    );
+
+    if (existing.rowCount && existing.rows[0]) {
+      const revived = await pool.query(
+        `UPDATE generic_names SET name = $1, is_active = true, updated_at = NOW() WHERE id = $2 RETURNING id, name, is_active, created_at, updated_at`,
+        [normalized, existing.rows[0].id],
+      );
+      const row = revived.rows[0];
+      return {
+        id: Number(row.id),
+        name: row.name,
+        isActive: Boolean(row.is_active),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      } as GenericName;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO generic_names (name, is_active, created_at, updated_at) VALUES ($1, true, NOW(), NOW()) RETURNING id, name, is_active, created_at, updated_at`,
+      [normalized],
+    );
+    const row = result.rows[0];
+    return {
+      id: Number(row.id),
+      name: row.name,
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    } as GenericName;
+  }
+
+  async updateGenericName(id: number, input: { name: string }): Promise<GenericName | undefined> {
+    const normalized = this.normalizeGenericName(input.name);
+    if (!normalized) {
+      throw new Error("Generic name is required");
+    }
+
+    const current = await pool.query(
+      `SELECT name FROM generic_names WHERE id = $1 LIMIT 1`,
+      [id],
+    );
+    const previousName = current.rows[0]?.name;
+    if (!previousName) {
+      return undefined;
+    }
+
+    const conflict = await pool.query(
+      `SELECT id FROM generic_names WHERE LOWER(name) = LOWER($1) AND id <> $2 LIMIT 1`,
+      [normalized, id],
+    );
+    if (conflict.rowCount && conflict.rows[0]) {
+      throw new Error("Generic name already exists");
+    }
+
+    const result = await pool.query(
+      `UPDATE generic_names SET name = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name, is_active, created_at, updated_at`,
+      [normalized, id],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+
+    await pool.query(
+      `UPDATE medicines SET generic_name = $1 WHERE LOWER(COALESCE(generic_name, '')) = LOWER($2)`,
+      [normalized, previousName],
+    );
+
+    return {
+      id: Number(row.id),
+      name: row.name,
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    } as GenericName;
+  }
+
+  async softDeleteGenericName(id: number): Promise<GenericName | undefined> {
+    const result = await pool.query(
+      `UPDATE generic_names SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id, name, is_active, created_at, updated_at`,
+      [id],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      id: Number(row.id),
+      name: row.name,
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    } as GenericName;
   }
 
   async deleteMedicine(id: number): Promise<boolean> {
@@ -836,17 +1654,77 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getNextInvoiceNumber(): Promise<string> {
-    const result = await pool.query(`
-      INSERT INTO sequences (name, current_value, prefix, updated_at)
-      VALUES ('invoice', 1, 'INV', NOW())
-      ON CONFLICT (name) DO UPDATE 
-      SET current_value = sequences.current_value + 1,
-          updated_at = NOW()
-      RETURNING prefix, current_value
-    `);
-    
-    const row = result.rows[0];
-    return `${row.prefix}-${row.current_value}`;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(`
+        INSERT INTO sequences (name, current_value, prefix, updated_at)
+        VALUES ('invoice', 0, 'INV', NOW())
+        ON CONFLICT (name) DO NOTHING
+      `);
+
+      const seqResult = await client.query<{
+        current_value: number;
+        prefix: string;
+      }>(`
+        SELECT current_value, prefix
+        FROM sequences
+        WHERE name = 'invoice'
+        FOR UPDATE
+      `);
+
+      const sequenceRow = seqResult.rows[0];
+      const prefix = sequenceRow?.prefix || "INV";
+      const currentValue = Number(sequenceRow?.current_value || 0);
+
+      const maxInvoiceResult = await client.query<{ max_no: number }>(
+        `
+          SELECT COALESCE(
+            MAX(
+              CASE
+                WHEN invoice_no ~ ('^' || $1 || '-[0-9]+$')
+                THEN LEAST(split_part(invoice_no, '-', 2)::numeric, 2147483647)::int
+                ELSE NULL
+              END
+            ),
+            0
+          ) AS max_no
+          FROM sales
+        `,
+        [prefix],
+      );
+
+      const maxExisting = Number(maxInvoiceResult.rows[0]?.max_no || 0);
+
+      if (currentValue >= 2147483647 || maxExisting >= 2147483647) {
+        await client.query("COMMIT");
+        const uniqueSuffix = `${Date.now()}${Math.floor(Math.random() * 1000)
+          .toString()
+          .padStart(3, "0")}`;
+        return `${prefix}-${uniqueSuffix}`;
+      }
+
+      const nextValue = Math.max(currentValue + 1, maxExisting + 1);
+
+      await client.query(
+        `
+          UPDATE sequences
+          SET current_value = $1,
+              updated_at = NOW()
+          WHERE name = 'invoice'
+        `,
+        [nextValue],
+      );
+
+      await client.query("COMMIT");
+      return `${prefix}-${nextValue}`;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getDashboardStats(): Promise<{
@@ -1033,6 +1911,30 @@ export class DatabaseStorage implements IStorage {
     if (items.length > 0) {
       const itemsWithPoId = items.map(item => ({ ...item, poId: createdPo.id }));
       await db.insert(purchaseOrderItems).values(itemsWithPoId);
+      await pool.query(
+        `
+          UPDATE purchase_order_items
+          SET
+            conversion_factor_snapshot = GREATEST(COALESCE(units_per_strip, 1), 1),
+            unit_snapshot = COALESCE(unit_type, 'STRIP'),
+            ordered_qty_base = CASE
+              WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
+                THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
+              ELSE COALESCE(quantity, 0)
+            END,
+            received_qty_base = 0,
+            pending_qty_base = CASE
+              WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
+                THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
+              ELSE COALESCE(quantity, 0)
+            END,
+            line_status = 'PENDING',
+            gst_percent_snapshot = COALESCE(gst_rate, 0),
+            tax_mode = COALESCE(tax_mode, 'EXCLUSIVE')
+          WHERE po_id = $1
+        `,
+        [createdPo.id],
+      );
     }
     
     return createdPo;
@@ -1054,11 +1956,64 @@ export class DatabaseStorage implements IStorage {
   async createPurchaseOrderItems(items: InsertPurchaseOrderItem[]): Promise<void> {
     if (items.length > 0) {
       await db.insert(purchaseOrderItems).values(items);
+      const poIds = Array.from(new Set(items.map((item) => item.poId).filter((value): value is number => Boolean(value))));
+      for (const poId of poIds) {
+        await pool.query(
+          `
+            UPDATE purchase_order_items
+            SET
+              conversion_factor_snapshot = GREATEST(COALESCE(units_per_strip, 1), 1),
+              unit_snapshot = COALESCE(unit_type, 'STRIP'),
+              ordered_qty_base = CASE
+                WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
+                  THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
+                ELSE COALESCE(quantity, 0)
+              END,
+              pending_qty_base = CASE
+                WHEN UPPER(COALESCE(unit_type, 'STRIP')) IN ('STRIP', 'PACK')
+                  THEN COALESCE(quantity, 0) * GREATEST(COALESCE(units_per_strip, 1), 1)
+                ELSE COALESCE(quantity, 0)
+              END,
+              line_status = 'PENDING',
+              gst_percent_snapshot = COALESCE(gst_rate, 0),
+              tax_mode = COALESCE(tax_mode, 'EXCLUSIVE')
+            WHERE po_id = $1
+          `,
+          [poId],
+        );
+      }
     }
   }
 
   async updatePurchaseOrderItemReceivedQty(id: number, receivedQty: number): Promise<PurchaseOrderItem | undefined> {
     const result = await db.update(purchaseOrderItems).set({ receivedQty }).where(eq(purchaseOrderItems.id, id)).returning();
+    await pool.query(
+      `
+        UPDATE purchase_order_items
+        SET
+          received_qty_base = CASE
+            WHEN UPPER(COALESCE(unit_snapshot, unit_type, 'STRIP')) IN ('STRIP', 'PACK')
+              THEN COALESCE(received_qty, 0) * GREATEST(COALESCE(conversion_factor_snapshot, units_per_strip, 1), 1)
+            ELSE COALESCE(received_qty, 0)
+          END,
+          pending_qty_base = GREATEST(
+            ordered_qty_base -
+            CASE
+              WHEN UPPER(COALESCE(unit_snapshot, unit_type, 'STRIP')) IN ('STRIP', 'PACK')
+                THEN COALESCE(received_qty, 0) * GREATEST(COALESCE(conversion_factor_snapshot, units_per_strip, 1), 1)
+              ELSE COALESCE(received_qty, 0)
+            END,
+            0
+          ),
+          line_status = CASE
+            WHEN COALESCE(received_qty, 0) <= 0 THEN 'PENDING'
+            WHEN COALESCE(received_qty, 0) >= COALESCE(quantity, 0) THEN 'COMPLETED'
+            ELSE 'PARTIAL'
+          END
+        WHERE id = $1
+      `,
+      [id],
+    );
     return result[0];
   }
 
@@ -1074,18 +2029,118 @@ export class DatabaseStorage implements IStorage {
   async createGoodsReceipt(grn: InsertGoodsReceipt, items: InsertGoodsReceiptItem[]): Promise<GoodsReceipt> {
     const grnResult = await db.insert(goodsReceipts).values(grn).returning();
     const createdGrn = grnResult[0];
+    const headerDiscountRate = parseFloat(String(createdGrn.discountRate || "0")) || 0;
     
     if (items.length > 0) {
-      const itemsWithGrnId = items.map(item => ({ ...item, grnId: createdGrn.id }));
+      const resolvedItems: InsertGoodsReceiptItem[] = [];
+
+      for (const item of items) {
+        const sourceMedicine = await this.getMedicine(item.medicineId);
+        if (!sourceMedicine) {
+          throw new Error(`Medicine not found for GRN item: ${item.medicineId}`);
+        }
+
+        const normalizedBatch = String(item.batchNumber || sourceMedicine.batchNumber || "").trim();
+        if (!normalizedBatch) {
+          throw new Error("Batch number is required for GRN item");
+        }
+
+        let targetMedicine = sourceMedicine;
+
+        if (sourceMedicine.batchNumber !== normalizedBatch) {
+          const existingBatch = await db
+            .select()
+            .from(medicines)
+            .where(
+              and(
+                eq(medicines.name, sourceMedicine.name),
+                eq(medicines.manufacturer, sourceMedicine.manufacturer),
+                eq(medicines.batchNumber, normalizedBatch),
+              ),
+            )
+            .limit(1);
+
+          if (existingBatch[0]) {
+            targetMedicine = existingBatch[0];
+          } else {
+            const sellingPrice = parseFloat(String(item.sellingPrice || item.mrp || item.rate || sourceMedicine.price || "0")) || 0;
+            const unitsPerStrip = Math.max(1, parseInt(String(item.unitsPerStrip || item.packSize || sourceMedicine.packSize || 1)) || 1);
+            const purchaseUnit = String(item.purchaseUnit || item.unitType || "STRIP").toUpperCase();
+            const computedPricePerUnit = purchaseUnit === "STRIP" || purchaseUnit === "PACK"
+              ? sellingPrice / unitsPerStrip
+              : sellingPrice;
+
+            targetMedicine = await this.createMedicine({
+              name: sourceMedicine.name,
+              batchNumber: normalizedBatch,
+              manufacturer: sourceMedicine.manufacturer,
+              expiryDate: item.expiryDate || sourceMedicine.expiryDate,
+              quantity: 0,
+              price: sellingPrice.toFixed(2),
+              costPrice: String(item.rate || sourceMedicine.costPrice || sourceMedicine.price || "0"),
+              mrp: item.mrp ? String(item.mrp) : (sourceMedicine.mrp ? String(sourceMedicine.mrp) : null),
+              gstRate: String(item.gstRate || sourceMedicine.gstRate || "18"),
+              hsnCode: sourceMedicine.hsnCode,
+              category: sourceMedicine.category,
+              status: "Out of Stock",
+              reorderLevel: sourceMedicine.reorderLevel,
+              barcode: sourceMedicine.barcode,
+              minStock: sourceMedicine.minStock,
+              maxStock: sourceMedicine.maxStock,
+              locationId: item.locationId || sourceMedicine.locationId,
+              baseUnit: sourceMedicine.baseUnit,
+              packSize: unitsPerStrip,
+              pricePerUnit: computedPricePerUnit.toFixed(2),
+            });
+          }
+        }
+
+        resolvedItems.push({
+          ...item,
+          medicineId: targetMedicine.id,
+          batchNumber: normalizedBatch,
+          expiryDate: item.expiryDate || targetMedicine.expiryDate,
+        });
+      }
+
+      const itemsWithGrnId = resolvedItems.map(item => ({ ...item, grnId: createdGrn.id }));
       await db.insert(goodsReceiptItems).values(itemsWithGrnId);
       
-      for (const item of items) {
-        // Update stock with quantity + free quantity
-        const totalQty = item.quantity + (item.freeQuantity || 0);
-        await this.updateMedicineStock(item.medicineId, totalQty);
+      for (const item of resolvedItems) {
+        const unitsPerStrip = Math.max(1, parseInt(String(item.unitsPerStrip || item.packSize || 1)) || 1);
+        const purchaseUnit = String(item.purchaseUnit || item.unitType || "STRIP").toUpperCase();
+        const purchasedQty = Math.max(0, Number(item.quantity) || 0);
+        const freeQty = Math.max(0, Number(item.freeQuantity) || 0);
+        const totalQty = purchasedQty + freeQty;
+        const stockUnitsToAdd = purchaseUnit === "STRIP" || purchaseUnit === "PACK"
+          ? totalQty * unitsPerStrip
+          : totalQty;
+
+        await this.updateMedicineStock(item.medicineId, stockUnitsToAdd);
+
+        const lineDiscountRate = parseFloat(String(item.discountPercent || "0")) || 0;
+        const baseRate = parseFloat(String(item.rate || "0")) || 0;
+        const effectivePurchaseRate = baseRate * (1 - lineDiscountRate / 100) * (1 - headerDiscountRate / 100);
+
+        const sellingPrice = parseFloat(String(item.sellingPrice || item.mrp || item.rate || "0")) || 0;
+        const pricePerUnit = purchaseUnit === "STRIP" || purchaseUnit === "PACK"
+          ? sellingPrice / unitsPerStrip
+          : sellingPrice;
+
+        const medicineUpdate: Partial<InsertMedicine> = {
+          costPrice: effectivePurchaseRate.toFixed(2),
+          price: sellingPrice.toFixed(2),
+          mrp: item.mrp ? String(item.mrp) : null,
+          packSize: unitsPerStrip,
+          pricePerUnit: pricePerUnit.toFixed(2),
+        };
+
         if (item.locationId) {
-          await db.update(medicines).set({ locationId: item.locationId }).where(eq(medicines.id, item.medicineId));
+          medicineUpdate.locationId = item.locationId;
         }
+
+        await this.updateMedicine(item.medicineId, medicineUpdate);
+
         if (item.poItemId) {
           const poItem = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.id, item.poItemId)).limit(1);
           if (poItem[0]) {
@@ -1347,8 +2402,8 @@ export class DatabaseStorage implements IStorage {
     // Override with direct permissions (ensure type safety for local environments)
     for (const dm of directMenus) {
       const menuIdNum = Number(dm.menuId);
-      const canViewBool = dm.canView === true || dm.canView === 'true' || dm.canView === 't';
-      const canEditBool = dm.canEdit === true || dm.canEdit === 'true' || dm.canEdit === 't';
+      const canViewBool = Boolean(dm.canView);
+      const canEditBool = Boolean(dm.canEdit);
       const existing = permissionsMap.get(menuIdNum) || { canView: false, canEdit: false };
       permissionsMap.set(menuIdNum, {
         canView: existing.canView || canViewBool,

@@ -78,6 +78,8 @@ interface SettingsData {
   showGstBreakup: string;
   showDoctor: string;
   printOnSave: string;
+  defaultGrnDiscountRate: string;
+  defaultGrnGstMode: "item" | "header";
 }
 
 const defaultSettings: SettingsData = {
@@ -95,6 +97,8 @@ const defaultSettings: SettingsData = {
   showGstBreakup: "true",
   showDoctor: "true",
   printOnSave: "false",
+  defaultGrnDiscountRate: "5",
+  defaultGrnGstMode: "item",
 };
 
 const emptyUserForm: UserFormData = {
@@ -153,6 +157,8 @@ export default function Settings() {
         showGstBreakup: savedSettings.showGstBreakup || defaultSettings.showGstBreakup,
         showDoctor: savedSettings.showDoctor || defaultSettings.showDoctor,
         printOnSave: savedSettings.printOnSave || defaultSettings.printOnSave,
+        defaultGrnDiscountRate: savedSettings.defaultGrnDiscountRate || defaultSettings.defaultGrnDiscountRate,
+        defaultGrnGstMode: savedSettings.defaultGrnGstMode === "header" ? "header" : "item",
       });
     }
   }, [savedSettings]);
@@ -260,6 +266,8 @@ export default function Settings() {
       showGstBreakup: settings.showGstBreakup,
       showDoctor: settings.showDoctor,
       printOnSave: settings.printOnSave,
+      defaultGrnDiscountRate: settings.defaultGrnDiscountRate,
+      defaultGrnGstMode: settings.defaultGrnGstMode,
     });
   };
 
@@ -532,7 +540,7 @@ export default function Settings() {
                       onCheckedChange={(checked) => setSettings({ ...settings, autoGst: checked ? "true" : "false" })}
                       data-testid="switch-auto-gst" 
                     />
-                    <Label htmlFor="autoGst">Auto-calculate GST (split CGST/SGST for local sales)</Label>
+                    <Label htmlFor="autoGst">Enable GST in New Sale screen (split CGST/SGST for local sales)</Label>
                   </div>
                   <Button 
                     onClick={handleSaveGstSettings}
@@ -593,6 +601,35 @@ export default function Settings() {
                         className="mt-1.5"
                         data-testid="input-start-number"
                       />
+                    </div>
+                    <div>
+                      <Label htmlFor="defaultGrnDiscountRate">Default GRN Discount Rate (%)</Label>
+                      <Input
+                        id="defaultGrnDiscountRate"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={settings.defaultGrnDiscountRate}
+                        onChange={(e) => setSettings({ ...settings, defaultGrnDiscountRate: e.target.value })}
+                        className="mt-1.5"
+                        data-testid="input-default-grn-discount-rate"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="defaultGrnGstMode">Default GRN GST Mode</Label>
+                      <Select
+                        value={settings.defaultGrnGstMode}
+                        onValueChange={(value) => setSettings({ ...settings, defaultGrnGstMode: value as "item" | "header" })}
+                      >
+                        <SelectTrigger id="defaultGrnGstMode" className="mt-1.5" data-testid="select-default-grn-gst-mode">
+                          <SelectValue placeholder="Select GST mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="item">Item-wise GST</SelectItem>
+                          <SelectItem value="header">Header override GST</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <div className="space-y-4">

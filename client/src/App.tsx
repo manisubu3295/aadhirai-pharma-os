@@ -13,6 +13,7 @@ import Dashboard from "@/pages/Dashboard";
 import Inventory from "@/pages/Inventory";
 import POS from "@/pages/POS";
 import NewSale from "@/pages/NewSale";
+import GenericStock from "@/pages/GenericStock";
 import Customers from "@/pages/Customers";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
@@ -64,6 +65,11 @@ function Router() {
       <Route path="/new-sale">
         <ProtectedRoute>
           <NewSale />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/generic-stock">
+        <ProtectedRoute requiredRoute="/inventory">
+          <GenericStock />
         </ProtectedRoute>
       </Route>
       <Route path="/customers">
@@ -167,6 +173,11 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/admin/user-access">
+        <ProtectedRoute allowedRoles={["owner"]}>
+          <UserMenuAccess />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/users">
         <ProtectedRoute allowedRoles={["owner"]}>
           <UserMenuAccess />
         </ProtectedRoute>

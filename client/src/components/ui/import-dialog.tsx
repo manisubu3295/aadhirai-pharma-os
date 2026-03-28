@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle2 } from "lucide-react";
 import { parseCSV, downloadFile, generateCSV } from "@/lib/exportUtils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import * as XLSX from "xlsx";
 
 interface ImportDialogProps {
   open: boolean;
@@ -59,8 +60,47 @@ export function ImportDialog({
 
     setIsImporting(true);
     try {
-      const text = await file.text();
-      const { headers, rows } = parseCSV(text);
+      const fileName = file.name.toLowerCase();
+      let headers: string[] = [];
+      let rows: string[][] = [];
+
+      if (fileName.endsWith(".csv")) {
+        const text = await file.text();
+        const parsed = parseCSV(text);
+        headers = parsed.headers;
+        rows = parsed.rows;
+      } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+
+        if (!firstSheetName) {
+          throw new Error("No sheets found in the Excel file");
+        }
+
+        const worksheet = workbook.Sheets[firstSheetName];
+        const sheetRows = XLSX.utils.sheet_to_json<(string | number | null)[]>(worksheet, {
+          header: 1,
+          raw: false,
+          defval: "",
+        });
+
+        if (sheetRows.length === 0) {
+          throw new Error("The selected Excel file is empty");
+        }
+
+        headers = (sheetRows[0] || []).map((cell) => String(cell ?? "").trim());
+        rows = sheetRows
+          .slice(1)
+          .filter((row) => row.some((cell) => String(cell ?? "").trim() !== ""))
+          .map((row) => row.map((cell) => String(cell ?? "").trim()));
+      } else {
+        throw new Error("Unsupported file format. Please upload CSV or Excel (.xlsx/.xls)");
+      }
+
+      if (headers.length === 0) {
+        throw new Error("Missing header row in uploaded file");
+      }
       
       const data = rows.map(row => {
         const obj: Record<string, string> = {};
@@ -98,7 +138,7 @@ export function ImportDialog({
             {title}
           </DialogTitle>
           <DialogDescription>
-            Upload a CSV file to import {entityName}. Download the template first to see the required format.
+            Upload a CSV or Excel file to import {entityName}. Download the template first to see the required format.
           </DialogDescription>
         </DialogHeader>
 
@@ -114,7 +154,7 @@ export function ImportDialog({
           </Button>
 
           <div className="space-y-2">
-            <Label htmlFor="file-upload">Select CSV File</Label>
+            <Label htmlFor="file-upload">Select CSV or Excel File</Label>
             <div 
               className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
               onClick={() => fileInputRef.current?.click()}
@@ -123,7 +163,7 @@ export function ImportDialog({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx,.xls"
                 onChange={handleFileChange}
                 className="hidden"
                 data-testid="input-file-upload"
@@ -132,7 +172,7 @@ export function ImportDialog({
               {file ? (
                 <p className="text-sm font-medium">{file.name}</p>
               ) : (
-                <p className="text-sm text-muted-foreground">Click to select a CSV file</p>
+                <p className="text-sm text-muted-foreground">Click to select a CSV or Excel file</p>
               )}
             </div>
           </div>
