@@ -4,8 +4,9 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import type { AddressInfo } from "net";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
-import { initializeDatabase, storage } from "./storage";
+import { initializeDatabase, pool, storage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -33,6 +34,17 @@ declare module "express-session" {
 }
 
 const MemoryStoreSession = MemoryStore(session);
+const PgSessionStore = connectPgSimple(session);
+
+const sessionStore = process.env.DATABASE_URL
+  ? new PgSessionStore({
+      pool,
+      tableName: "user_sessions",
+      createTableIfMissing: true,
+    })
+  : new MemoryStoreSession({
+      checkPeriod: 86400000,
+    });
 
 if (allowedOrigin) {
   app.use((req, res, next) => {
@@ -59,9 +71,7 @@ app.use(
     secret: process.env.SESSION_SECRET || "pharmacy-management-secret-key-change-in-production",
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStoreSession({
-      checkPeriod: 86400000,
-    }),
+    store: sessionStore,
     cookie: {
       secure: isProduction,
       httpOnly: true,
