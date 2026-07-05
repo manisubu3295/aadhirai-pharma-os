@@ -72,9 +72,7 @@ interface MedicineFormData {
   name: string;
   genericName: string;
   skuName: string;
-  batchNumber: string;
   manufacturer: string;
-  expiryDate: string;
   quantity: number;
   packSize: number;
   price: string;
@@ -94,9 +92,7 @@ const emptyForm: MedicineFormData = {
   name: "",
   genericName: "",
   skuName: "",
-  batchNumber: "",
   manufacturer: "",
-  expiryDate: "",
   quantity: 0,
   packSize: 10,
   price: "",
@@ -167,36 +163,6 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
           ))}
         </datalist>
         {fieldErrors.genericName && <p className="text-xs text-destructive mt-1">{fieldErrors.genericName}</p>}
-      </div>
-      <div>
-        <Label htmlFor="batchNumber">Batch Number *</Label>
-        <Input
-          id="batchNumber"
-          value={formData.batchNumber}
-          onChange={(e) => {
-            clearFieldError("batchNumber");
-            setFormData(prev => ({ ...prev, batchNumber: e.target.value }));
-          }}
-          placeholder="e.g., BT2024001"
-          className={getFieldClass("batchNumber")}
-          data-testid="input-batch-number"
-        />
-        {fieldErrors.batchNumber && <p className="text-xs text-destructive mt-1">{fieldErrors.batchNumber}</p>}
-      </div>
-      <div>
-        <Label htmlFor="expiryDate">Expiry Date *</Label>
-        <Input
-          id="expiryDate"
-          type="date"
-          value={formData.expiryDate}
-          onChange={(e) => {
-            clearFieldError("expiryDate");
-            setFormData(prev => ({ ...prev, expiryDate: e.target.value }));
-          }}
-          className={getFieldClass("expiryDate")}
-          data-testid="input-expiry-date"
-        />
-        {fieldErrors.expiryDate && <p className="text-xs text-destructive mt-1">{fieldErrors.expiryDate}</p>}
       </div>
       <div>
         <Label htmlFor="manufacturer">Manufacturer *</Label>
@@ -680,7 +646,7 @@ export default function Inventory() {
       const matchesSearch = 
         item.name.toLowerCase().includes(searchLower) ||
         ((item as any).genericName && String((item as any).genericName).toLowerCase().includes(searchLower)) ||
-        item.batchNumber.toLowerCase().includes(searchLower) ||
+        (item.batchNumber || "").toLowerCase().includes(searchLower) ||
         item.manufacturer.toLowerCase().includes(searchLower) ||
         (item.barcode && item.barcode.toLowerCase().includes(searchLower));
       
@@ -706,12 +672,12 @@ export default function Inventory() {
           bVal = b.category.toLowerCase();
           break;
         case 'batchNumber':
-          aVal = a.batchNumber.toLowerCase();
-          bVal = b.batchNumber.toLowerCase();
+          aVal = (a.batchNumber || "").toLowerCase();
+          bVal = (b.batchNumber || "").toLowerCase();
           break;
         case 'expiryDate':
-          aVal = a.expiryDate;
-          bVal = b.expiryDate;
+          aVal = a.expiryDate || "";
+          bVal = b.expiryDate || "";
           break;
         case 'quantity':
           aVal = a.quantity;
@@ -763,9 +729,7 @@ export default function Inventory() {
       name: medicine.name,
       genericName: (medicine as any).genericName || "",
       skuName: (medicine as any).skuName || "",
-      batchNumber: medicine.batchNumber,
       manufacturer: medicine.manufacturer,
-      expiryDate: medicine.expiryDate,
       quantity: medicine.quantity,
       packSize: medicine.packSize || 10,
       price: String(medicine.price),
@@ -807,9 +771,9 @@ export default function Inventory() {
         <body>
           <div class="label">
             <div class="name">${medicine.name}</div>
-            <div class="barcode">${medicine.barcode || medicine.batchNumber}</div>
-            <div class="barcode-text">${medicine.barcode || medicine.batchNumber}</div>
-            <div class="info">Batch: ${medicine.batchNumber} | Exp: ${medicine.expiryDate}</div>
+            <div class="barcode">${medicine.barcode || medicine.batchNumber || ""}</div>
+            <div class="barcode-text">${medicine.barcode || medicine.batchNumber || ""}</div>
+            <div class="info">Batch: ${medicine.batchNumber || "-"} | Exp: ${medicine.expiryDate || "-"}</div>
             <div class="price">₹${parseFloat(String(medicine.price)).toFixed(2)}</div>
           </div>
           <button class="no-print" onclick="window.print()" style="margin-top: 20px; padding: 10px 20px; cursor: pointer;">Print Label</button>
@@ -828,9 +792,7 @@ export default function Inventory() {
   const handleSubmit = (isEdit: boolean) => {
     const requiredErrors: Partial<Record<keyof MedicineFormData, string>> = {};
     if (!formData.name) requiredErrors.name = "Medicine Name is required";
-    if (!formData.batchNumber) requiredErrors.batchNumber = "Batch Number is required";
     if (!formData.manufacturer) requiredErrors.manufacturer = "Manufacturer is required";
-    if (!formData.expiryDate) requiredErrors.expiryDate = "Expiry Date is required";
     if (!formData.price) requiredErrors.price = "Selling Price is required";
 
     if (Object.keys(requiredErrors).length > 0) {
@@ -849,15 +811,13 @@ export default function Inventory() {
   };
 
   const exportInventoryCSV = () => {
-    const headers = ["ID", "Name", "Generic Name", "Batch Number", "Manufacturer", "Category", "Expiry Date", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock", "Status"];
+    const headers = ["ID", "Name", "Generic Name", "Manufacturer", "Category", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock", "Status"];
     const rows = filteredMedicines.map(m => [
       m.id,
       m.name,
       (m as any).genericName || "",
-      m.batchNumber,
       m.manufacturer,
       m.category,
-      m.expiryDate,
       m.quantity,
       m.reorderLevel,
       m.costPrice || "",
@@ -877,8 +837,8 @@ export default function Inventory() {
   };
 
   const downloadImportTemplate = () => {
-    const headers = ["Name", "Generic Name", "Batch Number", "Manufacturer", "Category", "Expiry Date (YYYY-MM-DD)", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock"];
-    const sampleRow = ["Crocin 500mg", "Paracetamol", "BT2024001", "XYZ Pharma", "Tablets", "2025-12-31", "100", "50", "8.50", "10.00", "12.00", "12", "30049099", "", "10", "500"];
+    const headers = ["Name", "Generic Name", "Manufacturer", "Category", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock"];
+    const sampleRow = ["Crocin 500mg", "Paracetamol", "XYZ Pharma", "Tablets", "100", "50", "8.50", "10.00", "12.00", "12", "30049099", "", "10", "500"];
     const csv = generateCSV(headers, [sampleRow]);
     downloadFile(csv, "inventory_import_template.csv", "text/csv");
     toast({ title: "Template downloaded" });

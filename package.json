@@ -12,7 +12,12 @@
     "test": "node --import tsx --test server/tests/inventory-posting.service.test.ts",
     "db:push": "drizzle-kit push",
     "reconcile:batches:dry": "node script/reconcile-grn-batches.cjs",
-    "reconcile:batches:apply": "node script/reconcile-grn-batches.cjs --apply"
+    "reconcile:batches:apply": "node script/reconcile-grn-batches.cjs --apply",
+    "seed": "cross-env NODE_ENV=production tsx server/seed.ts",
+    "service:install": "node deploy/setup-service.js install",
+    "service:uninstall": "node deploy/setup-service.js uninstall",
+    "service:start": "node deploy/setup-service.js start",
+    "service:stop": "node deploy/setup-service.js stop"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -111,6 +116,7 @@
     "vite": "^7.1.9"
   },
   "optionalDependencies": {
-    "bufferutil": "^4.0.8"
+    "bufferutil": "^4.0.8",
+    "node-windows": "^1.0.0-beta.8"
   }
 }

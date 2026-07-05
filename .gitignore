@@ -4,3 +4,9 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environment — never commit real credentials
+.env
+
+# Generated at install time — not for git
+CREDENTIALS.txt

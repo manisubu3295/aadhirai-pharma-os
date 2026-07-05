@@ -259,9 +259,9 @@ console.log("Connected DB:", r.rows[0].db);
         name TEXT NOT NULL,
         generic_name TEXT,
         sku_name TEXT,
-        batch_number TEXT NOT NULL,
+        batch_number TEXT,
         manufacturer TEXT NOT NULL,
-        expiry_date TEXT NOT NULL,
+        expiry_date TEXT,
         quantity INTEGER NOT NULL DEFAULT 0,
         price DECIMAL(10,2) NOT NULL,
         cost_price DECIMAL(10,2),
@@ -464,6 +464,8 @@ console.log("Connected DB:", r.rows[0].db);
       ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS scheme_description TEXT;
       ALTER TABLE medicines ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
       ALTER TABLE medicines ADD COLUMN IF NOT EXISTS price_per_unit DECIMAL(10,2);
+      ALTER TABLE medicines ALTER COLUMN batch_number DROP NOT NULL;
+      ALTER TABLE medicines ALTER COLUMN expiry_date DROP NOT NULL;
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_type TEXT DEFAULT 'STRIP';
       ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS units_per_strip INTEGER DEFAULT 1;
       ALTER TABLE goods_receipts ADD COLUMN IF NOT EXISTS discount_rate DECIMAL(5,2) DEFAULT 0;

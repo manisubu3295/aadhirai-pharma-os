@@ -55,9 +55,9 @@ export const medicines = pgTable("medicines", {
   name: text("name").notNull(),
   genericName: text("generic_name"),
   skuName: text("sku_name"),
-  batchNumber: text("batch_number").notNull(),
+  batchNumber: text("batch_number"),
   manufacturer: text("manufacturer").notNull(),
-  expiryDate: text("expiry_date").notNull(),
+  expiryDate: text("expiry_date"),
   quantity: integer("quantity").notNull().default(0),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   costPrice: decimal("cost_price", { precision: 10, scale: 2 }),
@@ -191,7 +191,10 @@ export const saleItems = pgTable("sale_items", {
   packSize: integer("pack_size").default(1),
 });
 
-export const insertMedicineSchema = createInsertSchema(medicines).omit({ id: true });
+export const insertMedicineSchema = createInsertSchema(medicines).omit({ id: true }).extend({
+  batchNumber: z.string().nullable().optional(),
+  expiryDate: z.string().nullable().optional(),
+});
 export const insertGenericNameSchema = createInsertSchema(genericNames).omit({ id: true, createdAt: true, updatedAt: true }).pick({ name: true, isActive: true });
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true });
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
