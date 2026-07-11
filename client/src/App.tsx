@@ -43,9 +43,6 @@ import StockMaintenance from "@/pages/StockMaintenance";
 import ShiftHandover from "@/pages/ShiftHandover";
 import MyActivity from "@/pages/MyActivity";
 import MySales from "@/pages/MySales";
-import { AssistantProvider } from "@/hooks/use-assistant";
-import { AssistantRoot } from "@/components/assistant/AssistantRoot";
-
 function Router() {
   return (
     <Switch>
@@ -182,7 +179,7 @@ function Router() {
       </Route>
       <Route path="/admin/users">
         <ProtectedRoute allowedRoles={["owner"]}>
-          <UserMenuAccess />
+          <Settings />
         </ProtectedRoute>
       </Route>
       <Route path="/expenses">
@@ -233,13 +230,10 @@ function App() {
         <SettingsProvider>
           <AuthProvider>
             <NavigationProvider>
-              <AssistantProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Router />
-                  <AssistantRoot />
-                </TooltipProvider>
-              </AssistantProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Router />
+              </TooltipProvider>
             </NavigationProvider>
           </AuthProvider>
         </SettingsProvider>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bell, HelpCircle, Package, AlertTriangle, CreditCard, X, PanelLeft, Menu } from "lucide-react";
+import { Bell, Package, AlertTriangle, CreditCard, X, PanelLeft, Menu } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -9,8 +9,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { useAssistant } from "@/hooks/use-assistant";
-
 interface Medicine {
   id: number;
   name: string;
@@ -38,7 +36,6 @@ interface Notification {
 
 export function Header({ title, onToggleSidebar }: { title: string; onToggleSidebar: () => void }) {
   const { user } = useAuth();
-  const { setOpen: setAssistantOpen } = useAssistant();
   const [, navigate] = useLocation();
   const [open, setOpen] = useState(false);
   const [dismissedNotifications, setDismissedNotifications] = useState<string[]>([]);
@@ -237,14 +234,6 @@ export function Header({ title, onToggleSidebar }: { title: string; onToggleSide
             </div>
           </PopoverContent>
         </Popover>
-
-        <button
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-          data-testid="button-help"
-          onClick={() => setAssistantOpen(true)}
-        >
-          <HelpCircle className="w-4 h-4" />
-        </button>
       </div>
     </header>
   );
