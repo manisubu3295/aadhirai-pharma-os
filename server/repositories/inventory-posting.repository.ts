@@ -729,7 +729,67 @@ export class InventoryPostingRepository {
   async getSaleWithItems(tx: TxClient, saleId: number): Promise<{ sale: any; items: any[] }> {
     const saleResult = await tx.query(`SELECT * FROM sales WHERE id = $1`, [saleId]);
     const itemResult = await tx.query(`SELECT * FROM sale_items WHERE sale_id = $1 ORDER BY id`, [saleId]);
-    return { sale: saleResult.rows[0], items: itemResult.rows };
+    const row = saleResult.rows[0];
+
+    // `SELECT *` via raw pg returns snake_case column names as-is (unlike
+    // Drizzle's storage.getSales(), which camelCases automatically). The
+    // frontend (PrintableInvoice, NewSale's print dialog, etc.) only ever
+    // sees Sale objects shaped by Drizzle, so a raw row here means fields
+    // like sale.paymentMethod come back undefined - which crashed the
+    // print dialog's render with no error boundary, blanking the whole
+    // page right after generating an invoice.
+    const sale = row && {
+      id: row.id,
+      invoiceNo: row.invoice_no,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      customerPhone: row.customer_phone,
+      customerGstin: row.customer_gstin,
+      doctorId: row.doctor_id,
+      doctorName: row.doctor_name,
+      prescriptionUrl: row.prescription_url,
+      subtotal: row.subtotal,
+      discount: row.discount,
+      discountPercent: row.discount_percent,
+      cgst: row.cgst,
+      sgst: row.sgst,
+      igst: row.igst,
+      tax: row.tax,
+      total: row.total,
+      roundOff: row.round_off,
+      paymentMethod: row.payment_method,
+      paymentReference: row.payment_reference,
+      receivedAmount: row.received_amount,
+      changeAmount: row.change_amount,
+      status: row.status,
+      printInvoice: row.print_invoice,
+      sendViaEmail: row.send_via_email,
+      userId: row.user_id,
+      createdAt: row.created_at,
+    };
+
+    const items = itemResult.rows.map((item: any) => ({
+      id: item.id,
+      saleId: item.sale_id,
+      medicineId: item.medicine_id,
+      medicineName: item.medicine_name,
+      batchNumber: item.batch_number,
+      expiryDate: item.expiry_date,
+      hsnCode: item.hsn_code,
+      quantity: item.quantity,
+      price: item.price,
+      mrp: item.mrp,
+      gstRate: item.gst_rate,
+      cgst: item.cgst,
+      sgst: item.sgst,
+      discount: item.discount,
+      total: item.total,
+      unitType: item.unit_type,
+      displayQty: item.display_qty,
+      packSize: item.pack_size,
+    }));
+
+    return { sale, items };
   }
 
   // ─── Opening Stock / Stock Maintenance ────────────────────────────────────
