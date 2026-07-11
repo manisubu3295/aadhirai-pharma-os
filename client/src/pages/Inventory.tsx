@@ -456,14 +456,9 @@ export default function Inventory() {
   const { data: medicines = [], isLoading } = useQuery<Medicine[]>({
     queryKey: ["/api/medicines/inventory-list"],
     queryFn: async () => {
-      const batchResponse = await fetch("/api/medicines/sale-list");
-      if (batchResponse.ok) {
-        return batchResponse.json();
-      }
-
-      const fallbackResponse = await fetch("/api/medicines");
-      if (!fallbackResponse.ok) throw new Error("Failed to fetch medicines");
-      return fallbackResponse.json();
+      const response = await fetch("/api/medicines/inventory-list");
+      if (!response.ok) throw new Error("Failed to fetch medicines");
+      return response.json();
     },
   });
 

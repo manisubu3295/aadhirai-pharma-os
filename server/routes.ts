@@ -601,6 +601,18 @@ export async function registerRoutes(
     }
   });
 
+  // Same per-batch rows as sale-list, but also includes zero-stock /
+  // no-batch medicines — used by the Inventory management screen, where a
+  // just-added medicine (no stock received yet) must still be visible.
+  app.get("/api/medicines/inventory-list", async (req, res) => {
+    try {
+      const medicines = await storage.getInventoryMedicines();
+      res.json(medicines);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inventory medicines" });
+    }
+  });
+
   app.get("/api/medicines/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

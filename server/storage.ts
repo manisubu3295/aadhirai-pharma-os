@@ -933,6 +933,7 @@ export interface IStorage {
   
   getMedicines(): Promise<Medicine[]>;
   getSaleMedicines(): Promise<Medicine[]>;
+  getInventoryMedicines(): Promise<Medicine[]>;
   getMedicine(id: number): Promise<Medicine | undefined>;
   createMedicine(medicine: InsertMedicine): Promise<Medicine>;
   updateMedicine(id: number, medicine: Partial<InsertMedicine>): Promise<Medicine | undefined>;
@@ -1497,6 +1498,151 @@ export class DatabaseStorage implements IStorage {
           )
         )
           AND COALESCE(m.quantity, 0) > 0
+
+        ORDER BY name, batch_number, expiry_date
+      `,
+    );
+
+    return result.rows.map((row: any) => ({
+      id: Number(row.id),
+      name: row.name,
+      genericName: row.generic_name,
+      skuName: row.sku_name,
+      batchNumber: row.batch_number,
+      manufacturer: row.manufacturer,
+      expiryDate: row.expiry_date,
+      quantity: Number(row.quantity || 0),
+      consolidatedQty: Number(row.consolidated_quantity || row.quantity || 0),
+      price: row.price,
+      costPrice: row.cost_price,
+      mrp: row.mrp,
+      gstRate: row.gst_rate,
+      hsnCode: row.hsn_code,
+      category: row.category,
+      status: row.status,
+      reorderLevel: Number(row.reorder_level ?? 100),
+      barcode: row.barcode,
+      minStock: row.min_stock == null ? null : Number(row.min_stock),
+      maxStock: row.max_stock == null ? null : Number(row.max_stock),
+      locationId: row.location_id == null ? null : Number(row.location_id),
+      baseUnit: row.base_unit,
+      packSize: row.pack_size == null ? null : Number(row.pack_size),
+      pricePerUnit: row.price_per_unit,
+    })) as Medicine[];
+  }
+
+  // Same per-batch shape as getSaleMedicines(), but for the Inventory
+  // management screen rather than the POS sale screen: it must also show
+  // medicines that have zero stock / no batches yet (e.g. right after being
+  // added, before any Goods Receipt), which getSaleMedicines() deliberately
+  // excludes since you can't sell what you don't have.
+  async getInventoryMedicines(): Promise<Medicine[]> {
+    const result = await pool.query(
+      `
+        WITH has_batches AS (
+          SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'inventory_batches'
+          ) AS enabled
+        ),
+        batch_rows AS (
+          SELECT
+            m.id,
+            m.name,
+            m.generic_name,
+            m.sku_name,
+            ib.batch_number,
+            m.manufacturer,
+            ib.expiry_date,
+            COALESCE(ib.available_qty_base, 0)::int AS quantity,
+            COALESCE(
+              SUM(ib.available_qty_base) OVER (PARTITION BY ib.medicine_id),
+              0
+            )::int AS consolidated_quantity
+            ,m.price
+            ,m.cost_price
+            ,m.mrp
+            ,m.gst_rate
+            ,m.hsn_code
+            ,m.category
+            ,m.status
+            ,m.reorder_level
+            ,m.barcode
+            ,m.min_stock
+            ,m.max_stock
+            ,m.location_id
+            ,m.base_unit
+            ,m.pack_size
+            ,m.price_per_unit
+          FROM inventory_batches ib
+          JOIN medicines m ON m.id = ib.medicine_id
+        )
+        SELECT
+          b.id,
+          b.name,
+          b.generic_name,
+          b.sku_name,
+          b.batch_number,
+          b.manufacturer,
+          b.expiry_date,
+          b.quantity,
+          b.consolidated_quantity,
+          b.price,
+          b.cost_price,
+          b.mrp,
+          b.gst_rate,
+          b.hsn_code,
+          b.category,
+          b.status,
+          b.reorder_level,
+          b.barcode,
+          b.min_stock,
+          b.max_stock,
+          b.location_id,
+          b.base_unit,
+          b.pack_size,
+          b.price_per_unit
+        FROM batch_rows b
+
+        UNION ALL
+
+        SELECT
+          m.id,
+          m.name,
+          m.generic_name,
+          m.sku_name,
+          m.batch_number,
+          m.manufacturer,
+          m.expiry_date,
+          COALESCE(m.quantity, 0)::int AS quantity,
+          COALESCE(m.quantity, 0)::int AS consolidated_quantity,
+          m.price,
+          m.cost_price,
+          m.mrp,
+          m.gst_rate,
+          m.hsn_code,
+          m.category,
+          m.status,
+          m.reorder_level,
+          m.barcode,
+          m.min_stock,
+          m.max_stock,
+          m.location_id,
+          m.base_unit,
+          m.pack_size,
+          m.price_per_unit
+        FROM medicines m
+        CROSS JOIN has_batches
+        WHERE (
+          NOT has_batches.enabled
+          OR NOT EXISTS (
+            SELECT 1
+            FROM inventory_batches ib
+            WHERE ib.medicine_id = m.id
+          )
+        )
 
         ORDER BY name, batch_number, expiry_date
       `,
