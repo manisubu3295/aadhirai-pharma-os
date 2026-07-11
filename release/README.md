@@ -47,11 +47,11 @@ Click **Install** and wait about 2 minutes.
 
 ### Step 4 — Check it started correctly
 
-Open this file to confirm installation succeeded:
-
-```
-C:\Program Files (x86)\AadhiraiPharma\install-status.txt
-```
+Open **Start Menu → Aadhirai Pharma → "View Install Status"** to confirm
+installation succeeded. (Use this shortcut instead of typing a path — the
+wizard lets you install to any folder you like, not just Program Files, so
+there's no single fixed location to point you to. "Open Install Folder" is
+also in the Start Menu group if you need to browse the folder itself.)
 
 It says **"Successfully installed / started"** if everything is working. If
 it instead shows an error, see [Troubleshooting](#-troubleshooting) below —
