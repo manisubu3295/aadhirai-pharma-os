@@ -63,6 +63,10 @@ import {
   type InsertUserMenu,
   type UserMenuGroup,
   type InsertUserMenuGroup,
+  type Role,
+  type InsertRole,
+  type RoleMenuGroup,
+  type InsertRoleMenuGroup,
   type MenuWithPermissions,
   type SupplierTransaction,
   type InsertSupplierTransaction,
@@ -108,6 +112,8 @@ import {
   menuGroupMenus,
   userMenus,
   userMenuGroups,
+  roles,
+  roleMenuGroups,
   supplierTransactions,
   supplierPayments,
   purchaseReturns,
@@ -633,6 +639,24 @@ console.log("Connected DB:", r.rows[0].db);
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS roles (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        is_super_admin BOOLEAN NOT NULL DEFAULT false,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS role_menu_groups (
+        id SERIAL PRIMARY KEY,
+        role_id INTEGER NOT NULL,
+        menu_group_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS petty_cash_expenses (
         id SERIAL PRIMARY KEY,
         expense_date TEXT NOT NULL,
@@ -728,6 +752,7 @@ console.log("Connected DB:", r.rows[0].db);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS pharmacy_name TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS gst_number TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS drug_license TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER;
 
       CREATE TABLE IF NOT EXISTS inventory_batches (
         id SERIAL PRIMARY KEY,
@@ -911,11 +936,19 @@ async function seedDefaultUsers() {
 
     const bcrypt = await import("bcryptjs");
     const password = await bcrypt.default.hash("password123", 10);
+    // 'admin' user's role is deliberately 'pharmacy_owner', NOT 'admin' or
+    // 'owner' - those two strings already mean "full access" in ~15
+    // hardcoded checks across this codebase (routes.ts, this file,
+    // NavigationContext.tsx, auth.tsx). Using either here would silently
+    // grant this account full access, defeating the point of a limited
+    // default login for the pharmacy owner. Its actual access comes from
+    // the "Pharmacy Owner" role seeded in seedDefaultRoles().
     await pool.query(`
       INSERT INTO users (username, password, name, role, email, phone) VALUES
-        ('owner',       $1, 'Owner',      'owner',       '', ''),
-        ('pharmacist',  $1, 'Pharmacist', 'pharmacist',  '', ''),
-        ('cashier',     $1, 'Cashier',    'cashier',     '', '')
+        ('owner',       $1, 'Owner',          'owner',          '', ''),
+        ('pharmacist',  $1, 'Pharmacist',     'pharmacist',     '', ''),
+        ('cashier',     $1, 'Cashier',        'cashier',        '', ''),
+        ('admin',       $1, 'Pharmacy Owner', 'pharmacy_owner', '', '')
       ON CONFLICT (username) DO NOTHING
     `, [password]);
     console.log("Default users seeded");
@@ -1045,9 +1078,20 @@ export interface IStorage {
   
   getUserMenuGroups(userId: string): Promise<UserMenuGroup[]>;
   setUserMenuGroups(userId: string, groupIds: number[]): Promise<void>;
-  
-  getUserNavigation(userId: string, role: string): Promise<MenuWithPermissions[]>;
+
+  // Role Master
+  getRoles(): Promise<Role[]>;
+  getRole(id: number): Promise<Role | undefined>;
+  createRole(role: InsertRole): Promise<Role>;
+  updateRole(id: number, role: Partial<InsertRole>): Promise<Role | undefined>;
+  deleteRole(id: number): Promise<boolean>;
+
+  getRoleMenuGroups(roleId: number): Promise<RoleMenuGroup[]>;
+  setRoleMenuGroups(roleId: number, groupIds: number[]): Promise<void>;
+
+  getUserNavigation(userId: string, role: string, roleId: number | null): Promise<MenuWithPermissions[]>;
   seedDefaultMenus(): Promise<void>;
+  seedDefaultRoles(): Promise<void>;
   
   // Supplier Ledger & Payments
   getSupplierLedger(supplierId: number): Promise<SupplierTransaction[]>;
@@ -2755,7 +2799,43 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getUserNavigation(userId: string, role: string): Promise<MenuWithPermissions[]> {
+  async getRoles(): Promise<Role[]> {
+    return await db.select().from(roles).orderBy(roles.name);
+  }
+
+  async getRole(id: number): Promise<Role | undefined> {
+    const result = await db.select().from(roles).where(eq(roles.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createRole(role: InsertRole): Promise<Role> {
+    const result = await db.insert(roles).values(role).returning();
+    return result[0];
+  }
+
+  async updateRole(id: number, role: Partial<InsertRole>): Promise<Role | undefined> {
+    const result = await db.update(roles).set({ ...role, updatedAt: new Date() }).where(eq(roles.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteRole(id: number): Promise<boolean> {
+    const result = await db.update(roles).set({ isActive: false, updatedAt: new Date() }).where(eq(roles.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getRoleMenuGroups(roleId: number): Promise<RoleMenuGroup[]> {
+    return await db.select().from(roleMenuGroups).where(eq(roleMenuGroups.roleId, roleId));
+  }
+
+  async setRoleMenuGroups(roleId: number, groupIds: number[]): Promise<void> {
+    await db.delete(roleMenuGroups).where(eq(roleMenuGroups.roleId, roleId));
+    if (groupIds.length > 0) {
+      const values = groupIds.map(menuGroupId => ({ roleId, menuGroupId }));
+      await db.insert(roleMenuGroups).values(values);
+    }
+  }
+
+  async getUserNavigation(userId: string, role: string, roleId: number | null): Promise<MenuWithPermissions[]> {
     const allMenus = await db.select().from(menus).where(eq(menus.isActive, true)).orderBy(menus.displayOrder);
     
     if (allMenus.length === 0) {
@@ -2766,38 +2846,63 @@ export class DatabaseStorage implements IStorage {
     if (role === 'owner' || role === 'admin') {
       return allMenus.map(menu => ({ ...menu, canView: true, canEdit: true }));
     }
-    
+
+    // Additive: a role marked isSuperAdmin also gets full access, same bypass.
+    if (roleId != null) {
+      const roleRow = await db.select().from(roles).where(eq(roles.id, roleId)).limit(1);
+      if (roleRow[0]?.isSuperAdmin) {
+        return allMenus.map(menu => ({ ...menu, canView: true, canEdit: true }));
+      }
+    }
+
     // Get user's direct menu permissions
     const directMenus = await db.select().from(userMenus).where(eq(userMenus.userId, userId));
-    
+
     // Get user's menu groups
     const userGroups = await db.select().from(userMenuGroups).where(eq(userMenuGroups.userId, userId));
-    
+
     // Get all menus from user's groups
     const groupMenuIds: number[] = [];
     for (const ug of userGroups) {
       const groupMenus = await db.select().from(menuGroupMenus).where(eq(menuGroupMenus.menuGroupId, ug.menuGroupId));
       groupMenuIds.push(...groupMenus.map(gm => gm.menuId));
     }
-    
-    // If user has no explicit assignments, use defaults based on role
-    if (directMenus.length === 0 && userGroups.length === 0) {
+
+    // Get menus from the user's role's assigned groups (baseline access)
+    const roleGroupMenuIds: number[] = [];
+    if (roleId != null) {
+      const roleGroups = await db.select().from(roleMenuGroups).where(eq(roleMenuGroups.roleId, roleId));
+      for (const rg of roleGroups) {
+        const groupMenus = await db.select().from(menuGroupMenus).where(eq(menuGroupMenus.menuGroupId, rg.menuGroupId));
+        roleGroupMenuIds.push(...groupMenus.map(gm => gm.menuId));
+      }
+    }
+
+    // If user has no explicit assignments (direct, group, or role-group), use defaults based on role
+    if (directMenus.length === 0 && userGroups.length === 0 && roleGroupMenuIds.length === 0) {
       // Default: staff gets view access to common menus
       return allMenus
         .filter(m => !m.key.startsWith('admin.') && !m.key.includes('settings') && !m.key.includes('audit'))
         .map(menu => ({ ...menu, canView: true, canEdit: false }));
     }
-    
+
     // Build permissions map
     const permissionsMap: Map<number, { canView: boolean; canEdit: boolean }> = new Map();
-    
+
+    // Role-group menus form the baseline (view only)
+    for (const menuId of roleGroupMenuIds) {
+      if (!permissionsMap.has(menuId)) {
+        permissionsMap.set(menuId, { canView: true, canEdit: false });
+      }
+    }
+
     // Add group menu permissions (view only by default for groups)
     for (const menuId of groupMenuIds) {
       if (!permissionsMap.has(menuId)) {
         permissionsMap.set(menuId, { canView: true, canEdit: false });
       }
     }
-    
+
     // Override with direct permissions (ensure type safety for local environments)
     for (const dm of directMenus) {
       const menuIdNum = Number(dm.menuId);
@@ -2859,6 +2964,7 @@ export class DatabaseStorage implements IStorage {
       { key: 'admin.menus', label: 'Menu Management', routePath: '/admin/menus', icon: 'Menu', displayOrder: 53 },
       { key: 'admin.groups', label: 'Menu Groups', routePath: '/admin/menu-groups', icon: 'FolderOpen', displayOrder: 54 },
       { key: 'admin.user-access', label: 'User Access', routePath: '/admin/user-access', icon: 'Shield', displayOrder: 55 },
+      { key: 'admin.roles', label: 'Role Master', routePath: '/admin/roles', icon: 'UserCog', displayOrder: 56 },
       { key: 'operations.my-sales', label: 'My Sales', routePath: '/my-sales', icon: 'ShoppingCart', displayOrder: 94 },
       { key: 'operations.my-activity', label: 'My Activity', routePath: '/my-activity', icon: 'Activity', displayOrder: 95 },
     ];
@@ -2885,7 +2991,7 @@ export class DatabaseStorage implements IStorage {
       { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn', 'inventory.returns'] },
       { group: customersGroup[0].id, keys: ['customers.accounts', 'customers.doctors', 'customers.collections'] },
       { group: reports[0].id, keys: ['reports.sales', 'reports.analytics'] },
-      { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.day-closing', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups', 'admin.user-access'] },
+      { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.day-closing', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups', 'admin.user-access', 'admin.roles'] },
       { group: billing[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit'] },
     ];
 
@@ -2897,6 +3003,53 @@ export class DatabaseStorage implements IStorage {
         }
       }
     }
+  }
+
+  async seedDefaultRoles(): Promise<void> {
+    const existingRoles = await db.select().from(roles);
+    if (existingRoles.length > 0) {
+      return; // Already seeded
+    }
+
+    const superAdmin = await db.insert(roles).values({
+      name: 'Super Admin', description: 'Full access to everything; used by support', isSuperAdmin: true,
+    }).returning();
+    const pharmacyOwner = await db.insert(roles).values({
+      name: 'Pharmacy Owner', description: 'Default limited access for the pharmacy business owner',
+    }).returning();
+    const pharmacistRole = await db.insert(roles).values({ name: 'Pharmacist', description: 'Pharmacist role' }).returning();
+    const cashierRole = await db.insert(roles).values({ name: 'Cashier', description: 'Cashier role' }).returning();
+
+    // Link the 4 default users to their matching role.
+    // owner -> Super Admin: "update the owner to super admin, all access".
+    await db.update(users).set({ roleId: superAdmin[0].id }).where(eq(users.username, 'owner'));
+    await db.update(users).set({ roleId: pharmacyOwner[0].id }).where(eq(users.username, 'admin'));
+    await db.update(users).set({ roleId: pharmacistRole[0].id }).where(eq(users.username, 'pharmacist'));
+    await db.update(users).set({ roleId: cashierRole[0].id }).where(eq(users.username, 'cashier'));
+
+    // Dedicated menu group for the Pharmacy Owner role's default access -
+    // kept separate from the existing "Inventory & Purchase" group (which
+    // shares 6 of these 8 keys) so the access boundary stays precise
+    // rather than over-granting from a broader existing group.
+    const ownerAccessGroup = await db.insert(menuGroups).values({
+      name: 'Pharmacy Owner Access', description: 'Default menus for the pharmacy owner login',
+    }).returning();
+    const ownerAccessKeys = [
+      'sales.new', 'inventory.medicines', 'inventory.suppliers', 'inventory.rates',
+      'inventory.po', 'inventory.grn', 'inventory.returns', 'customers.accounts',
+    ];
+    const allMenuRows = await db.select().from(menus);
+    const menuByKey = new Map(allMenuRows.map(m => [m.key, m.id]));
+    for (const key of ownerAccessKeys) {
+      const menuId = menuByKey.get(key);
+      if (menuId) {
+        await db.insert(menuGroupMenus).values({ menuGroupId: ownerAccessGroup[0].id, menuId });
+      }
+    }
+
+    await db.insert(roleMenuGroups).values({ roleId: pharmacyOwner[0].id, menuGroupId: ownerAccessGroup[0].id });
+
+    console.log("Default roles seeded");
   }
 
   // Supplier Ledger & Payments Implementation

@@ -13,3 +13,6 @@ CREDENTIALS.txt
 # Release build artifacts
 release/
 innosetup-*.exe
+
+# Application logs (daily-rotating, 30-day retention — see server/logger.ts)
+logs/

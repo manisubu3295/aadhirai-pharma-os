@@ -1,3 +1,10 @@
+import { initLogging } from "./logger";
+
+// Must run before anything else logs, so every console.* call for the rest
+// of this process's life is also captured to a daily-rotating file (30-day
+// retention) in addition to the terminal - see server/logger.ts.
+initLogging();
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -182,6 +189,9 @@ app.use((req, res, next) => {
 
     // Seed default menus if not already seeded
     await storage.seedDefaultMenus();
+
+    // Seed default roles (must run after users + menus/groups exist)
+    await storage.seedDefaultRoles();
 
     await registerRoutes(httpServer, app);
 

@@ -106,7 +106,9 @@ procedure InitializeWizard();
 begin
   DbNamePage := CreateInputQueryPage(wpSelectDir,
     'Database Name',
-    'Enter the database name to create or use.',
+    'Enter the database name to create or use. If a database with this name already ' +
+    'exists on your PostgreSQL server, it will be reused as-is and your existing data ' +
+    'will be preserved - tables and default data are only created for a brand-new database.',
     '');
   DbNamePage.Add('Database name:', False);
   DbNamePage.Values[0] := 'medora_shivalaya';

@@ -9,13 +9,22 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Shield, FolderOpen, Save } from "lucide-react";
+import { Users, Shield, FolderOpen, Save, UserCog } from "lucide-react";
 
 interface User {
   id: string;
   username: string;
   name: string;
   role: string;
+  roleId: number | null;
+  isActive: boolean;
+}
+
+interface Role {
+  id: number;
+  name: string;
+  description: string | null;
+  isSuperAdmin: boolean;
   isActive: boolean;
 }
 
@@ -63,6 +72,10 @@ export default function UserMenuAccess() {
 
   const { data: allGroups = [] } = useQuery<MenuGroup[]>({
     queryKey: ["/api/admin/menu-groups"],
+  });
+
+  const { data: allRoles = [] } = useQuery<Role[]>({
+    queryKey: ["/api/admin/roles"],
   });
 
   const { data: userAccess, isLoading: isLoadingAccess } = useQuery<UserAccess>({
@@ -120,6 +133,43 @@ export default function UserMenuAccess() {
     onError: () => {
       toast({ title: "Failed to save user access", variant: "destructive" });
     },
+  });
+
+  const roleMutation = useMutation({
+    mutationFn: async (roleId: number | null) => {
+      const res = await fetch(`/api/admin/users/${selectedUserId}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ roleId }),
+      });
+      if (!res.ok) throw new Error("Failed to update role");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users", selectedUserId, "menus"] });
+      queryClient.invalidateQueries({ queryKey: ["navigation"] });
+      toast({ title: "User role updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update user role", variant: "destructive" });
+    },
+  });
+
+  const selectedUserRole = allRoles.find(r => r.id === (users.find(u => u.id === selectedUserId)?.roleId));
+
+  const { data: selectedRoleGroups = [] } = useQuery<{ menuGroupId: number }[]>({
+    queryKey: ["/api/admin/roles", selectedUserRole?.id, "menu-groups"],
+    queryFn: async () => {
+      if (!selectedUserRole) return [];
+      const res = await fetch(`/api/admin/roles/${selectedUserRole.id}/menu-groups`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch role menu groups");
+      return res.json();
+    },
+    enabled: !!selectedUserRole,
   });
 
   const selectedUser = users.find(u => u.id === selectedUserId);
@@ -217,6 +267,10 @@ export default function UserMenuAccess() {
                     <FolderOpen className="w-4 h-4" />
                     Menu Groups
                   </TabsTrigger>
+                  <TabsTrigger value="role" className="flex items-center gap-2">
+                    <UserCog className="w-4 h-4" />
+                    By Role
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="menus" className="mt-4">
@@ -310,6 +364,60 @@ export default function UserMenuAccess() {
                       </div>
                     </ScrollArea>
                   </div>
+                </TabsContent>
+
+                <TabsContent value="role" className="mt-4">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Assign a role to grant this user every menu group linked to that role. Role access
+                    is a baseline — individual menus and menu groups above can still add more on top.
+                  </p>
+                  <div className="w-72 mb-6">
+                    <Select
+                      value={selectedUserRole?.id ? String(selectedUserRole.id) : "none"}
+                      onValueChange={(value) => roleMutation.mutate(value === "none" ? null : Number(value))}
+                    >
+                      <SelectTrigger data-testid="select-user-role">
+                        <SelectValue placeholder="No role assigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No role</SelectItem>
+                        {allRoles.filter(r => r.isActive).map(role => (
+                          <SelectItem key={role.id} value={String(role.id)}>
+                            {role.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {selectedUserRole ? (
+                    <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+                      <div className="px-5 py-3.5 bg-muted/40 border-b font-semibold text-sm">
+                        Menu groups granted by "{selectedUserRole.name}"
+                      </div>
+                      <div className="divide-y divide-border/50">
+                        {allGroups
+                          .filter(g => selectedRoleGroups.some(rg => rg.menuGroupId === g.id))
+                          .map(group => (
+                            <div key={group.id} className="px-5 py-3 text-sm">
+                              {group.name}
+                              {group.description && (
+                                <span className="text-xs text-muted-foreground ml-2">({group.description})</span>
+                              )}
+                            </div>
+                          ))}
+                        {selectedRoleGroups.length === 0 && (
+                          <div className="px-5 py-4 text-sm text-muted-foreground">
+                            This role has no menu groups assigned yet. Configure it in Role Master.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      No role assigned. This user's access comes only from Individual Menus and Menu Groups above.
+                    </div>
+                  )}
                 </TabsContent>
               </Tabs>
             )}

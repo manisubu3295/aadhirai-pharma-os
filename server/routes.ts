@@ -2149,6 +2149,81 @@ export async function registerRoutes(
     }
   });
 
+  // Role Master APIs
+  app.get("/api/admin/roles", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const roles = await storage.getRoles();
+      res.json(roles);
+    } catch (error) {
+      console.error("Error fetching roles:", error);
+      res.status(500).json({ error: "Failed to fetch roles" });
+    }
+  });
+
+  app.post("/api/admin/roles", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const role = await storage.createRole(req.body);
+      res.status(201).json(role);
+    } catch (error) {
+      console.error("Error creating role:", error);
+      res.status(500).json({ error: "Failed to create role" });
+    }
+  });
+
+  app.put("/api/admin/roles/:id", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const role = await storage.updateRole(id, req.body);
+      if (!role) {
+        return res.status(404).json({ error: "Role not found" });
+      }
+      res.json(role);
+    } catch (error) {
+      console.error("Error updating role:", error);
+      res.status(500).json({ error: "Failed to update role" });
+    }
+  });
+
+  app.delete("/api/admin/roles/:id", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteRole(id);
+      if (!success) {
+        return res.status(404).json({ error: "Role not found" });
+      }
+      res.json({ message: "Role deleted" });
+    } catch (error) {
+      console.error("Error deleting role:", error);
+      res.status(500).json({ error: "Failed to delete role" });
+    }
+  });
+
+  app.get("/api/admin/roles/:id/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const groupLinks = await storage.getRoleMenuGroups(id);
+      res.json(groupLinks);
+    } catch (error) {
+      console.error("Error fetching role menu groups:", error);
+      res.status(500).json({ error: "Failed to fetch role menu groups" });
+    }
+  });
+
+  app.put("/api/admin/roles/:id/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { groupIds } = req.body;
+      if (!Array.isArray(groupIds)) {
+        return res.status(400).json({ error: "groupIds must be an array" });
+      }
+      await storage.setRoleMenuGroups(id, groupIds);
+      res.json({ message: "Role menu groups updated" });
+    } catch (error) {
+      console.error("Error setting role menu groups:", error);
+      res.status(500).json({ error: "Failed to set role menu groups" });
+    }
+  });
+
   // User Menu Access Admin APIs
   app.get("/api/admin/users/:id/menus", requireRole("owner", "admin"), async (req, res) => {
     try {
@@ -2184,6 +2259,25 @@ export async function registerRoutes(
     }
   });
 
+  app.put("/api/admin/users/:id/role", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const { roleId } = req.body;
+      if (roleId !== null && typeof roleId !== "number") {
+        return res.status(400).json({ error: "roleId must be a number or null" });
+      }
+      const user = await storage.updateUser(userId, { roleId });
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { password: _, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      res.status(500).json({ error: "Failed to update user role" });
+    }
+  });
+
   // Current user navigation endpoint
   app.get("/api/me/menus", requireAuth, async (req, res) => {
     try {
@@ -2191,7 +2285,7 @@ export async function registerRoutes(
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
-      const navigation = await storage.getUserNavigation(user.id, user.role);
+      const navigation = await storage.getUserNavigation(user.id, user.role, user.roleId ?? null);
       res.json(navigation);
     } catch (error) {
       console.error("Error fetching user navigation:", error);

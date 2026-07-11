@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   name: text("name").notNull().default(""),
   role: text("role").notNull().default("staff"),
+  roleId: integer("role_id"), // nullable FK to roles.id; additive - `role` text stays authoritative for existing checks
   email: text("email"),
   phone: text("phone"),
   photoUrl: text("photo_url"),
@@ -613,11 +614,34 @@ export const userMenuGroups = pgTable("user_menu_groups", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Role Master: named roles that can be granted menu-group access in bulk,
+// independent of the free-text users.role column (which stays authoritative
+// for existing owner/admin full-access checks throughout the codebase).
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  isSuperAdmin: boolean("is_super_admin").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const roleMenuGroups = pgTable("role_menu_groups", {
+  id: serial("id").primaryKey(),
+  roleId: integer("role_id").notNull(),
+  menuGroupId: integer("menu_group_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertMenuSchema = createInsertSchema(menus).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertMenuGroupSchema = createInsertSchema(menuGroups).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertMenuGroupMenuSchema = createInsertSchema(menuGroupMenus).omit({ id: true });
 export const insertUserMenuSchema = createInsertSchema(userMenus).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertUserMenuGroupSchema = createInsertSchema(userMenuGroups).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertRoleSchema = createInsertSchema(roles).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertRoleMenuGroupSchema = createInsertSchema(roleMenuGroups).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertMenu = z.infer<typeof insertMenuSchema>;
 export type Menu = typeof menus.$inferSelect;
@@ -633,6 +657,12 @@ export type UserMenu = typeof userMenus.$inferSelect;
 
 export type InsertUserMenuGroup = z.infer<typeof insertUserMenuGroupSchema>;
 export type UserMenuGroup = typeof userMenuGroups.$inferSelect;
+
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+export type Role = typeof roles.$inferSelect;
+
+export type InsertRoleMenuGroup = z.infer<typeof insertRoleMenuGroupSchema>;
+export type RoleMenuGroup = typeof roleMenuGroups.$inferSelect;
 
 // Combined type for navigation with permissions
 export type MenuWithPermissions = Menu & {

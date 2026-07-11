@@ -35,6 +35,7 @@ import MedicineRefund from "@/pages/MedicineRefund";
 import MenuManagement from "@/pages/admin/MenuManagement";
 import MenuGroups from "@/pages/admin/MenuGroups";
 import UserMenuAccess from "@/pages/admin/UserMenuAccess";
+import RoleMaster from "@/pages/admin/RoleMaster";
 import NoAccess from "@/pages/NoAccess";
 import Expenses from "@/pages/Expenses";
 import Approvals from "@/pages/Approvals";
@@ -180,6 +181,11 @@ function Router() {
       <Route path="/admin/users">
         <ProtectedRoute allowedRoles={["owner"]}>
           <Settings />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/roles">
+        <ProtectedRoute allowedRoles={["owner", "admin"]}>
+          <RoleMaster />
         </ProtectedRoute>
       </Route>
       <Route path="/expenses">
