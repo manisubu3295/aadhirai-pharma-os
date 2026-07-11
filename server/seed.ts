@@ -2,7 +2,7 @@ import "dotenv/config";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { users, medicines, customers, doctors } from "@shared/schema";
 
 const pool = new Pool({

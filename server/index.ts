@@ -7,6 +7,27 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
 import { initializeDatabase, pool, storage } from "./storage";
+import path from "path";
+import { writeFileSync } from "fs";
+
+// Written next to the exe (or cwd in dev) so a client/support person can see
+// at a glance whether the server started cleanly, without digging into logs.
+const statusFilePath = path.join(
+  (process as any).pkg ? path.dirname(process.execPath) : process.cwd(),
+  "install-status.txt",
+);
+
+function writeInstallStatus(ok: boolean, detail: string) {
+  const timestamp = new Date().toLocaleString();
+  const lines = ok
+    ? [`[${timestamp}] Successfully installed / started.`, detail]
+    : [`[${timestamp}] Installation / startup FAILED.`, detail];
+  try {
+    writeFileSync(statusFilePath, lines.join("\n\n") + "\n", "utf-8");
+  } catch (writeErr) {
+    console.error("[install-status] failed to write status file:", writeErr);
+  }
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -154,34 +175,40 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Initialize database tables on startup
-  await initializeDatabase();
-  
-  // Seed default menus if not already seeded
-  await storage.seedDefaultMenus();
-  
-  await registerRoutes(httpServer, app);
+  try {
+    // Initialize database tables on startup
+    await initializeDatabase();
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    if (res.headersSent) {
-      return next(err);
+    // Seed default menus if not already seeded
+    await storage.seedDefaultMenus();
+
+    await registerRoutes(httpServer, app);
+
+    app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+      if (res.headersSent) {
+        return next(err);
+      }
+
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+
+      console.error("[server.error]", err);
+      return res.status(status).json({ message });
+    });
+
+    // importantly only setup vite in development and after
+    // setting up all the other routes so the catch-all route
+    // doesn't interfere with the other routes
+    if (process.env.NODE_ENV === "production") {
+      serveStatic(app);
+    } else {
+      const { setupVite } = await import("./vite");
+      await setupVite(httpServer, app);
     }
-
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    console.error("[server.error]", err);
-    return res.status(status).json({ message });
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+  } catch (err: any) {
+    console.error("[startup] server initialization failed:", err);
+    writeInstallStatus(false, `Startup error:\n${err?.stack || err?.message || String(err)}`);
+    process.exit(1);
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
@@ -200,6 +227,7 @@ app.use((req, res, next) => {
       }
 
       console.error(error);
+      writeInstallStatus(false, `Server failed to bind to port ${port}:\n${error.stack || error.message}`);
       process.exit(1);
     });
 
@@ -214,6 +242,7 @@ app.use((req, res, next) => {
         log(`serving on port ${activePort}`);
         log(`local: http://localhost:${activePort}`);
         log(`network: http://0.0.0.0:${activePort}`);
+        writeInstallStatus(true, `Server is running on http://localhost:${activePort}`);
       },
     );
   };

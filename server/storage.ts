@@ -459,6 +459,211 @@ console.log("Connected DB:", r.rows[0].db);
       VALUES ('invoice', 0, 'INV') 
       ON CONFLICT (name) DO NOTHING;
       
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        contact_person TEXT,
+        phone TEXT,
+        email TEXT,
+        address TEXT,
+        gstin TEXT,
+        pan_number TEXT,
+        payment_terms_days INTEGER DEFAULT 30,
+        bank_name TEXT,
+        bank_account TEXT,
+        ifsc_code TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS supplier_rates (
+        id SERIAL PRIMARY KEY,
+        supplier_id INTEGER NOT NULL,
+        medicine_id INTEGER NOT NULL,
+        rate DECIMAL(10,2) NOT NULL,
+        mrp DECIMAL(10,2),
+        discount_percent DECIMAL(5,2) DEFAULT 0,
+        gst_rate DECIMAL(5,2) DEFAULT 18,
+        min_order_qty INTEGER DEFAULT 1,
+        lead_time_days INTEGER DEFAULT 3,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id SERIAL PRIMARY KEY,
+        po_number TEXT NOT NULL UNIQUE,
+        supplier_id INTEGER NOT NULL,
+        supplier_name TEXT NOT NULL,
+        order_date TIMESTAMP DEFAULT NOW() NOT NULL,
+        expected_delivery_date TIMESTAMP,
+        status TEXT NOT NULL DEFAULT 'Draft',
+        subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+        tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        discount_amount DECIMAL(10,2) DEFAULT 0,
+        total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_by VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS purchase_order_items (
+        id SERIAL PRIMARY KEY,
+        po_id INTEGER NOT NULL,
+        medicine_id INTEGER NOT NULL,
+        medicine_name TEXT NOT NULL,
+        supplier_rate_id INTEGER,
+        quantity INTEGER NOT NULL,
+        received_qty INTEGER NOT NULL DEFAULT 0,
+        rate DECIMAL(10,2) NOT NULL,
+        unit_type TEXT DEFAULT 'STRIP',
+        units_per_strip INTEGER DEFAULT 1,
+        mrp DECIMAL(10,2),
+        gst_rate DECIMAL(5,2) DEFAULT 18,
+        discount_percent DECIMAL(5,2) DEFAULT 0,
+        tax_amount DECIMAL(10,2) DEFAULT 0,
+        total_amount DECIMAL(10,2) NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS goods_receipts (
+        id SERIAL PRIMARY KEY,
+        grn_number TEXT NOT NULL UNIQUE,
+        po_id INTEGER,
+        supplier_id INTEGER NOT NULL,
+        supplier_name TEXT NOT NULL,
+        supplier_invoice_no TEXT,
+        supplier_invoice_date TIMESTAMP,
+        receipt_date TIMESTAMP DEFAULT NOW() NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Completed',
+        subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+        discount_rate DECIMAL(5,2) DEFAULT 0,
+        discount_amount DECIMAL(10,2) DEFAULT 0,
+        tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        notes TEXT,
+        received_by VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS goods_receipt_items (
+        id SERIAL PRIMARY KEY,
+        grn_id INTEGER NOT NULL,
+        po_item_id INTEGER,
+        medicine_id INTEGER NOT NULL,
+        medicine_name TEXT NOT NULL,
+        batch_number TEXT NOT NULL,
+        expiry_date TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        free_quantity INTEGER DEFAULT 0,
+        scheme_description TEXT,
+        rate DECIMAL(10,2) NOT NULL,
+        selling_price DECIMAL(10,2),
+        mrp DECIMAL(10,2),
+        discount_percent DECIMAL(5,2) DEFAULT 0,
+        discount_amount DECIMAL(10,2) DEFAULT 0,
+        gst_rate DECIMAL(5,2) DEFAULT 18,
+        tax_amount DECIMAL(10,2) DEFAULT 0,
+        total_amount DECIMAL(10,2) NOT NULL,
+        purchase_unit TEXT DEFAULT 'STRIP',
+        units_per_strip INTEGER DEFAULT 1,
+        pack_size INTEGER DEFAULT 1,
+        unit_type TEXT DEFAULT 'STRIP',
+        display_qty INTEGER,
+        location_id INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS menus (
+        id SERIAL PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        route_path TEXT NOT NULL,
+        icon TEXT,
+        parent_id INTEGER,
+        display_order INTEGER NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS menu_groups (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS menu_group_menus (
+        id SERIAL PRIMARY KEY,
+        menu_group_id INTEGER NOT NULL,
+        menu_id INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS user_menus (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        menu_id INTEGER NOT NULL,
+        can_view BOOLEAN NOT NULL DEFAULT true,
+        can_edit BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS user_menu_groups (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255) NOT NULL,
+        menu_group_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS petty_cash_expenses (
+        id SERIAL PRIMARY KEY,
+        expense_date TEXT NOT NULL,
+        category TEXT NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        payment_mode TEXT NOT NULL DEFAULT 'CASH',
+        notes TEXT,
+        created_by_user_id VARCHAR(255) NOT NULL,
+        created_by_user_name TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS approval_requests (
+        id SERIAL PRIMARY KEY,
+        type TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id INTEGER,
+        requested_by_user_id VARCHAR(255) NOT NULL,
+        requested_by_user_name TEXT,
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        approved_by_user_id VARCHAR(255),
+        approved_by_user_name TEXT,
+        reason TEXT,
+        payload_before TEXT,
+        payload_after TEXT,
+        approval_notes TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS stock_adjustments (
+        id SERIAL PRIMARY KEY,
+        medicine_id INTEGER NOT NULL,
+        medicine_name TEXT NOT NULL,
+        batch_number TEXT NOT NULL,
+        adjustment_qty INTEGER NOT NULL,
+        adjustment_type TEXT NOT NULL,
+        reason_code TEXT NOT NULL,
+        notes TEXT,
+        created_by_user_id VARCHAR(255) NOT NULL,
+        created_by_user_name TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
       -- New tables for supplier ledger, purchase returns, day closing
       ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS free_quantity INTEGER DEFAULT 0;
       ALTER TABLE goods_receipt_items ADD COLUMN IF NOT EXISTS scheme_description TEXT;
@@ -498,6 +703,18 @@ console.log("Connected DB:", r.rows[0].db);
       ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS sold_qty_base INTEGER;
       ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS conversion_factor_snapshot INTEGER NOT NULL DEFAULT 1;
       ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS tax_mode TEXT NOT NULL DEFAULT 'EXCLUSIVE';
+      ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS unit_type TEXT DEFAULT 'TABLET';
+      ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS display_qty INTEGER DEFAULT 1;
+      ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
+      ALTER TABLE medicines ADD COLUMN IF NOT EXISTS base_unit TEXT DEFAULT 'UNIT';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS pincode TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS pharmacy_name TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS gst_number TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS drug_license TEXT;
 
       CREATE TABLE IF NOT EXISTS inventory_batches (
         id SERIAL PRIMARY KEY,
@@ -679,7 +896,7 @@ async function seedDefaultUsers() {
     const { rowCount } = await pool.query("SELECT 1 FROM users LIMIT 1");
     if (rowCount && rowCount > 0) return; // already seeded
 
-    const bcrypt = await import("bcrypt");
+    const bcrypt = await import("bcryptjs");
     const password = await bcrypt.default.hash("password123", 10);
     await pool.query(`
       INSERT INTO users (username, password, name, role, email, phone) VALUES

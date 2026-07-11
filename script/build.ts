@@ -9,6 +9,7 @@ import path from "path";
 const allowlist = [
   "@google/generative-ai",
   "axios",
+  "bcryptjs",
   "cors",
   "date-fns",
   "drizzle-orm",

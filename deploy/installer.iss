@@ -179,6 +179,11 @@ begin
       'NODE_ENV=production' + #13#10 +
       'PORT=' + GetAppPort('') + #13#10 +
       'SESSION_SECRET=' + IntToStr(GetTickCount()) + IntToStr(Random(999999)) + #13#10 +
+      // This app is served over plain HTTP on the pharmacy's local network
+      // (no TLS). A "Secure" cookie is silently dropped by browsers on any
+      // non-HTTPS origin other than literally "localhost", which would
+      // break login for every other till/counter machine on the LAN.
+      'SESSION_COOKIE_SECURE=false' + #13#10 +
       'AI_ASSISTANT_PROVIDER=none' + #13#10 +
       'GEMINI_API_KEY=' + #13#10 +
       'AI_ASSISTANT_MODEL=' + #13#10;

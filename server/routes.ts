@@ -21,7 +21,7 @@ import {
   insertStockAdjustmentSchema
 } from "@shared/schema";
 import { z } from "zod";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { inventoryPostingController } from "./controllers/inventory-posting.controller";
 import { assistantController } from "./controllers/assistant.controller";
 import { InventoryPostingRepository } from "./repositories/inventory-posting.repository";

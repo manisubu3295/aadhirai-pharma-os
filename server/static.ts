@@ -4,7 +4,10 @@ import path from "path";
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");
-  if (!fs.existsSync(distPath)) {
+  // Checking the directory itself can spuriously return false inside a pkg
+  // snapshot filesystem even when the files within it are embedded, so we
+  // probe for a known file instead.
+  if (!fs.existsSync(path.join(distPath, "index.html"))) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`,
     );
