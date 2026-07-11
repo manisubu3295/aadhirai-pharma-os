@@ -158,6 +158,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   EnvContent, SetupBat, PgPath: String;
   ResultCode: Integer;
+  ExecOk: Boolean;
 begin
   if CurStep = ssPostInstall then begin
 
@@ -281,19 +282,42 @@ begin
 
     SaveStringToFile(ExpandConstant('{app}\setup-after-install.bat'), SetupBat, False);
 
-    // Run directly via Pascal's Exec() rather than a declarative [Run]
-    // entry - both plain CreateProcess-style Exec (no shellexec flag) and
-    // ShellExecute-style Exec (shellexec flag) failed instantly through
-    // the [Run] section for this specific .bat file, in ways that
-    // reproduced even for a trivial freshly-written 2-line diagnostic
-    // .bat, and could not be reproduced when launching the exact same
-    // command manually outside the installer. Exec() from [Code] is a
-    // different, well-trodden code path and lets us set WorkingDir
-    // explicitly, which the [Run] section does not.
-    if not Exec(ExpandConstant('{sys}\cmd.exe'), '/c "' + ExpandConstant('{app}\setup-after-install.bat') + '"',
-      ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
-      SaveStringToFile(ExpandConstant('{app}\setup-log.txt'),
-        'Failed to launch setup-after-install.bat: ' + SysErrorMessage(ResultCode), False);
+    // installer-debug.txt is a breadcrumb trail independent of anything
+    // setup-after-install.bat itself writes, so that even if Exec() never
+    // returns, throws, or the whole machine is being blocked by security
+    // software before the script can run, we still have SOME evidence of
+    // how far CurStepChanged got and what Exec() actually reported -
+    // rather than the total silence of both install-status.txt and
+    // setup-log.txt never appearing, which gives no signal at all about
+    // where things went wrong.
+    SaveStringToFile(ExpandConstant('{app}\installer-debug.txt'),
+      'About to launch setup-after-install.bat via Exec().' + #13#10, False);
+
+    try
+      // Run directly via Pascal's Exec() rather than a declarative [Run]
+      // entry - both plain CreateProcess-style Exec (no shellexec flag)
+      // and ShellExecute-style Exec (shellexec flag) failed instantly
+      // through the [Run] section for this specific .bat file, in ways
+      // that reproduced even for a trivial freshly-written 2-line
+      // diagnostic .bat, and could not be reproduced when launching the
+      // exact same command manually outside the installer. Exec() from
+      // [Code] is a different, well-trodden code path and lets us set
+      // WorkingDir explicitly, which the [Run] section does not.
+      ExecOk := Exec(ExpandConstant('{sys}\cmd.exe'), '/c "' + ExpandConstant('{app}\setup-after-install.bat') + '"',
+        ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+      if ExecOk then
+        SaveStringToFile(ExpandConstant('{app}\installer-debug.txt'),
+          'Exec() returned True. Process exit code: ' + IntToStr(ResultCode) + #13#10, True)
+      else begin
+        SaveStringToFile(ExpandConstant('{app}\installer-debug.txt'),
+          'Exec() returned False. SysErrorMessage: ' + SysErrorMessage(ResultCode) + #13#10, True);
+        SaveStringToFile(ExpandConstant('{app}\setup-log.txt'),
+          'Failed to launch setup-after-install.bat: ' + SysErrorMessage(ResultCode), False);
+      end;
+    except
+      SaveStringToFile(ExpandConstant('{app}\installer-debug.txt'),
+        'EXCEPTION while running post-install script: ' + GetExceptionMessage + #13#10, True);
     end;
   end;
 end;
