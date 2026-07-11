@@ -221,10 +221,29 @@ begin
       'echo   ^<description^>Aadhirai Pharma Management System^</description^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<executable^>' + ExpandConstant('{app}') + '\aadhirai-pharma-server.exe^</executable^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<startmode^>Automatic^</startmode^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      // Windows does not guarantee Automatic-start service ordering, so on
+      // a real reboot PostgreSQL may not be ready to accept connections
+      // yet when this service starts. delayedAutoStart waits until other
+      // boot-time services have generally settled; onfailure/resetfailure
+      // then self-heal by retrying if the DB still wasn't ready, instead
+      // of the service just sitting STOPPED until someone notices.
+      'echo   ^<delayedAutoStart/^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<onfailure action="restart" delay="10 sec"/^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<onfailure action="restart" delay="30 sec"/^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<resetfailure^>1 hour^</resetfailure^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<log mode="roll"/^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo ^</service^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'sc query {#ServiceName} >nul 2>&1 && (sc stop {#ServiceName} & sc delete {#ServiceName})' + #13#10 +
       '"' + ExpandConstant('{app}') + '\AadhiraiPharmaService.exe" install' + #13#10 +
+      // Windows only applies the <onfailure> restart actions above to
+      // "crash"-classified failures by default. Our app can also exit
+      // non-zero via a controlled process.exit(1) (e.g. DB not reachable
+      // yet at boot) - a "noncrash" failure, which needs this flag
+      // explicitly enabled or the restart actions are silently inert.
+      // Confirmed by testing: without this, sc qfailure showed the
+      // restart actions configured correctly, but killing the process
+      // never triggered a restart until this flag was set.
+      'sc failureflag {#ServiceName} 1' + #13#10 +
       '"' + ExpandConstant('{app}') + '\AadhiraiPharmaService.exe" start' + #13#10 +
       '' + #13#10 +
       'echo [3/3] Waiting for the service to finish starting...' + #13#10 +
