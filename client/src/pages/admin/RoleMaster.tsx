@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +34,8 @@ interface RoleMenuGroup {
   roleId: number;
   menuGroupId: number;
 }
+
+const EMPTY_ROLE_MENU_GROUPS: RoleMenuGroup[] = [];
 
 export default function RoleMaster() {
   const { toast } = useToast();
@@ -142,7 +144,7 @@ export default function RoleMaster() {
     },
   });
 
-  const { data: roleGroups = [] } = useQuery<RoleMenuGroup[]>({
+  const { data: roleGroups = EMPTY_ROLE_MENU_GROUPS } = useQuery<RoleMenuGroup[]>({
     queryKey: ["/api/admin/roles", selectedRole?.id, "menu-groups"],
     queryFn: async () => {
       if (!selectedRole) return [];
@@ -176,6 +178,7 @@ export default function RoleMaster() {
   };
 
   const handleManageGroups = async (role: Role) => {
+    setSelectedGroupIds([]);
     setSelectedRole(role);
     setIsGroupsDialogOpen(true);
   };
@@ -208,11 +211,9 @@ export default function RoleMaster() {
     );
   };
 
-  useState(() => {
-    if (roleGroups.length > 0) {
-      setSelectedGroupIds(roleGroups.map(rg => rg.menuGroupId));
-    }
-  });
+  useEffect(() => {
+    setSelectedGroupIds(roleGroups.map(rg => rg.menuGroupId));
+  }, [roleGroups]);
 
   return (
     <AppLayout title="Role Master">
