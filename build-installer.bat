@@ -44,7 +44,7 @@ echo [OK] Build complete.
 echo.
 echo [2/4] Packaging server into standalone EXE (this may take a few minutes)...
 echo       Downloading Node.js binaries for the first run — please wait...
-call npx @yao-pkg/pkg dist/index.cjs -c package.json --target node20-win-x64 --output release/aadhirai-pharma-server.exe
+call npx @yao-pkg/pkg dist/index.cjs -c pkg-config.json --target node20-win-x64 --output release/aadhirai-pharma-server.exe
 if %errorlevel% NEQ 0 (
     echo [ERROR] pkg packaging failed.
     pause & exit /b 1

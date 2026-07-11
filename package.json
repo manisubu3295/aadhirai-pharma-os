@@ -3,23 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
-  "pkg": {
-    "assets": [
-      "dist/public/**/*"
-    ],
-    "targets": [
-      "node20-win-x64"
-    ],
-    "outputPath": "release",
-    "scripts": [
-      "dist/index.cjs"
-    ]
-  },
   "scripts": {
     "dev:client": "vite dev --port 5000",
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
-    "build:exe": "@yao-pkg/pkg dist/index.cjs -c package.json --target node20-win-x64 --output release/aadhirai-pharma-server.exe",
+    "build:exe": "@yao-pkg/pkg dist/index.cjs -c pkg-config.json --target node20-win-x64 --output release/aadhirai-pharma-server.exe",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "test": "node --import tsx --test server/tests/inventory-posting.service.test.ts",

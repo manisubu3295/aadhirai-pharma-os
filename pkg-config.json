@@ -1,0 +1,9 @@
+{
+  "name": "aadhirai-pharma-server",
+  "version": "1.0.0",
+  "pkg": {
+    "assets": [
+      "dist/public/**/*"
+    ]
+  }
+}
