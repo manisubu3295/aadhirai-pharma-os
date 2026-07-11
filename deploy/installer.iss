@@ -65,6 +65,10 @@ Source: "..\deploy\create-database.sql"; DestDir: "{app}\deploy"; Flags: ignorev
 Name: "{group}\Open {#AppName}";        Filename: "{app}\open-app.url"
 Name: "{group}\Start Service";          Filename: "{sys}\sc.exe"; Parameters: "start {#ServiceName}"; IconFilename: "{app}\{#AppExeName}"
 Name: "{group}\Stop Service";           Filename: "{sys}\sc.exe"; Parameters: "stop {#ServiceName}";  IconFilename: "{app}\{#AppExeName}"
+; Points at install-status.txt inside whichever folder was chosen on the
+; "Select Destination Location" page — {app} always resolves correctly.
+Name: "{group}\View Install Status";    Filename: "{app}\install-status.txt"
+Name: "{group}\Open Install Folder";    Filename: "{app}"
 Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 
 ; Desktop shortcut

@@ -10,8 +10,9 @@ import { initializeDatabase, pool, storage } from "./storage";
 import path from "path";
 import { writeFileSync } from "fs";
 
-// Written next to the exe (or cwd in dev) so a client/support person can see
-// at a glance whether the server started cleanly, without digging into logs.
+// Written next to the exe, i.e. inside whatever folder the client chose
+// during setup (the installer also creates a "View Install Status" shortcut
+// pointing at this exact file, since {app} varies per install).
 const statusFilePath = path.join(
   (process as any).pkg ? path.dirname(process.execPath) : process.cwd(),
   "install-status.txt",

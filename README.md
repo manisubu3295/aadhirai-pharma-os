@@ -71,11 +71,11 @@ finish (~1–2 minutes).
 
 ### Step 4 — Confirm it started correctly
 
-After install, check the file:
-
-```
-C:\Program Files (x86)\AadhiraiPharma\install-status.txt
-```
+The wizard lets you pick any install folder (it's not always Program
+Files), so use the **Start Menu → Aadhirai Pharma → "View Install Status"**
+shortcut rather than guessing a path — it always opens the right file
+regardless of where you installed. ("Open Install Folder" is also there if
+you need to browse the folder itself.)
 
 It will say either **"Successfully installed / started"** with the URL the
 app is running on, or describe the exact error if something went wrong (for
@@ -287,7 +287,12 @@ Either way, this removes the Windows Service and firewall rule.
 ### Reading `install-status.txt`
 
 Every time the server starts, it writes a plain-text status file next to the
-installed EXE (typically `C:\Program Files (x86)\AadhiraiPharma\install-status.txt`):
+installed EXE — i.e. inside whatever folder was chosen on the wizard's
+"Select Destination Location" page, which is **not always Program Files**.
+Use the **Start Menu → Aadhirai Pharma → "View Install Status"** shortcut to
+open it directly without needing to know the path (there's also an "Open
+Install Folder" shortcut next to it). For a source install or when running
+the exe manually, it's written next to wherever the exe was launched from.
 
 - **Success** looks like: `Successfully installed / started.` with the URL the app is serving on.
 - **Failure** includes the full error — most commonly a database connection
