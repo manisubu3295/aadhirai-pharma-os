@@ -53,11 +53,8 @@ Source: "..\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; ── Static web assets served by the express server ────────────────────────
 Source: "..\dist\public\*"; DestDir: "{app}\dist\public"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; ── node-windows (needed to register the Windows service) ─────────────────
-Source: "..\node_modules\node-windows\*"; DestDir: "{app}\node_modules\node-windows"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; ── Service installer script ───────────────────────────────────────────────
-Source: "..\deploy\setup-service.js"; DestDir: "{app}\deploy"; Flags: ignoreversion
+; ── WinSW — wraps server.exe as a proper Windows service ────────────────
+Source: ".\..\node_modules\node-windows\bin\winsw\winsw.exe"; DestDir: "{app}"; DestName: "AadhiraiPharmaService.exe"; Flags: ignoreversion
 
 ; ── Database bootstrap SQL ────────────────────────────────────────────────
 Source: "..\deploy\create-database.sql"; DestDir: "{app}\deploy"; Flags: ignoreversion
@@ -93,7 +90,8 @@ Filename: "{app}\open-app.url"; \
   Description: "Open {#AppName} in browser"
 
 [UninstallRun]
-Filename: "{sys}\cmd.exe"; Parameters: "/c sc stop {#ServiceName} & sc delete {#ServiceName}"; Flags: runhidden waituntilterminated
+Filename: "{app}\AadhiraiPharmaService.exe"; Parameters: "stop"; Flags: runhidden waituntilterminated; RunOnceId: "StopSvc"
+Filename: "{app}\AadhiraiPharmaService.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveSvc"
 
 [Code]
 function GetTickCount: LongWord; external 'GetTickCount@kernel32.dll stdcall';
@@ -203,16 +201,25 @@ begin
       '  psql -U postgres -h localhost -c "CREATE DATABASE ' + GetDbName('') + ';"' + #13#10 +
       ')' + #13#10 +
       '' + #13#10 +
-      'echo [2/4] Applying schema...' + #13#10 +
-      '"' + ExpandConstant('{app}') + '\aadhirai-pharma-server.exe" --migrate' + #13#10 +
+      'echo [2/3] Creating database...' + #13#10 +
+      'psql -U postgres -h localhost -c "SELECT 1 FROM pg_database WHERE datname=''' +
+          GetDbName('') + '''" | find "1 row" >nul 2>&1' + #13#10 +
+      'if errorlevel 1 (' + #13#10 +
+      '  psql -U postgres -h localhost -c "CREATE DATABASE ' + GetDbName('') + ';"' + #13#10 +
+      ')' + #13#10 +
       '' + #13#10 +
-      'echo [3/4] Seeding data...' + #13#10 +
-      '"' + ExpandConstant('{app}') + '\aadhirai-pharma-server.exe" --seed' + #13#10 +
-      '' + #13#10 +
-      'echo [4/4] Installing Windows service...' + #13#10 +
-      'sc create AadhiraiPharma binPath= "' + ExpandConstant('{app}') + '\aadhirai-pharma-server.exe" start= auto DisplayName= "Aadhirai Pharma"' + #13#10 +
-      'sc description AadhiraiPharma "Aadhirai Pharma Management System"' + #13#10 +
-      'sc start AadhiraiPharma' + #13#10 +
+      'echo [3/3] Installing Windows service (WinSW)...' + #13#10 +
+      'echo ^<service^> > "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<id^>AadhiraiPharma^</id^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<name^>Aadhirai Pharma^</name^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<description^>Aadhirai Pharma Management System^</description^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<executable^>' + ExpandConstant('{app}') + '\aadhirai-pharma-server.exe^</executable^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<startmode^>Automatic^</startmode^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<log mode="roll"/^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo ^</service^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'sc query AadhiraiPharma >nul 2>&1 && (sc stop AadhiraiPharma & sc delete AadhiraiPharma)' + #13#10 +
+      '"' + ExpandConstant('{app}') + '\AadhiraiPharmaService.exe" install' + #13#10 +
+      '"' + ExpandConstant('{app}') + '\AadhiraiPharmaService.exe" start' + #13#10 +
       '' + #13#10 +
       'echo Done.' + #13#10;
 

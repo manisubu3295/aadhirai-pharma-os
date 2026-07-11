@@ -665,11 +665,32 @@ console.log("Connected DB:", r.rows[0].db);
     `);
 
     await seedDefaultAppSettings();
+    await seedDefaultUsers();
 
     console.log("Database tables initialized successfully");
   } catch (error) {
     console.error("Database initialization error:", error);
     throw error;
+  }
+}
+
+async function seedDefaultUsers() {
+  try {
+    const { rowCount } = await pool.query("SELECT 1 FROM users LIMIT 1");
+    if (rowCount && rowCount > 0) return; // already seeded
+
+    const bcrypt = await import("bcrypt");
+    const password = await bcrypt.default.hash("password123", 10);
+    await pool.query(`
+      INSERT INTO users (username, password, name, role, email, phone) VALUES
+        ('owner',       $1, 'Owner',      'owner',       '', ''),
+        ('pharmacist',  $1, 'Pharmacist', 'pharmacist',  '', ''),
+        ('cashier',     $1, 'Cashier',    'cashier',     '', '')
+      ON CONFLICT (username) DO NOTHING
+    `, [password]);
+    console.log("Default users seeded");
+  } catch (err) {
+    console.error("seedDefaultUsers error:", err);
   }
 }
 
