@@ -45,7 +45,21 @@ Click **Install** and wait about 2 minutes.
 
 ---
 
-### Step 4 — Done! Open the app
+### Step 4 — Check it started correctly
+
+Open this file to confirm installation succeeded:
+
+```
+C:\Program Files (x86)\AadhiraiPharma\install-status.txt
+```
+
+It says **"Successfully installed / started"** if everything is working. If
+it instead shows an error, see [Troubleshooting](#-troubleshooting) below —
+that file always contains the exact reason.
+
+---
+
+### Step 5 — Open the app
 
 After installation completes:
 - A **Desktop shortcut** named "Aadhirai Pharma" will appear
@@ -97,10 +111,14 @@ Go to **Windows Settings → Apps → Aadhirai Pharma → Uninstall**
 
 | Problem | What to do |
 |---------|-----------|
-| App won't open | Press `Win + R`, type `services.msc`, find **AadhiraiPharma**, click **Start** |
-| "Database connection error" | In `services.msc`, start **postgresql-x64-18** |
+| App won't open | First check `install-status.txt` (see Step 4 above) for the exact error. Then press `Win + R`, type `services.msc`, find **AadhiraiPharma**, click **Start** |
+| "Database connection error" | In `services.msc`, start **postgresql-x64-18** (or whichever version you installed) |
 | Other computers can't connect | Make sure all computers are on the same Wi-Fi/LAN |
 | Forgot your password | Ask the Owner account user to reset it in Settings → User Management |
+
+> When contacting support about an install problem, please copy the full
+> contents of `install-status.txt` — it's the fastest way for support to
+> diagnose the issue without needing remote access to your computer.
 
 ---
 
