@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { runBackup, listBackups } from "./backup";
 import { 
   type User as AppUser,
   insertMedicineSchema, 
@@ -2022,6 +2023,35 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error saving settings:", error);
       res.status(500).json({ error: "Failed to save settings" });
+    }
+  });
+
+  // Database Backup routes. Frequency itself is stored via the generic
+  // /api/settings endpoints above (keys: backup_frequency, backup_last_run,
+  // backup_last_status) - these two are for the actions that endpoint can't
+  // do: listing files on disk and triggering an immediate backup.
+  app.get("/api/admin/backup/status", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const backups = listBackups();
+      res.json({ backups });
+    } catch (error) {
+      console.error("Error listing backups:", error);
+      res.status(500).json({ error: "Failed to list backups" });
+    }
+  });
+
+  app.post("/api/admin/backup/run", requireRole("owner", "admin"), async (req, res) => {
+    try {
+      const result = await runBackup();
+      await storage.upsertSetting("backup_last_run", new Date().toISOString());
+      await storage.upsertSetting("backup_last_status", result.success ? "success" : `error: ${result.error}`);
+      if (!result.success) {
+        return res.status(500).json({ error: result.error });
+      }
+      res.json({ message: "Backup completed", file: result.file });
+    } catch (error) {
+      console.error("Error running backup:", error);
+      res.status(500).json({ error: "Failed to run backup" });
     }
   });
 

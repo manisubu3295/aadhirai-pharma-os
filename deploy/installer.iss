@@ -188,6 +188,10 @@ begin
       // non-HTTPS origin other than literally "localhost", which would
       // break login for every other till/counter machine on the LAN.
       'SESSION_COOKIE_SECURE=false' + #13#10 +
+      // Lets the app find pg_dump.exe at runtime for scheduled/manual
+      // database backups without re-detecting the PostgreSQL install
+      // location itself (see server/backup.ts).
+      'PG_BIN_PATH=' + PgPath + #13#10 +
       'AI_ASSISTANT_PROVIDER=none' + #13#10 +
       'GEMINI_API_KEY=' + #13#10 +
       'AI_ASSISTANT_MODEL=' + #13#10;

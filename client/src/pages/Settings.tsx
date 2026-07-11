@@ -28,17 +28,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { 
-  Users, 
-  Settings as SettingsIcon, 
-  Store, 
+import {
+  Users,
+  Settings as SettingsIcon,
+  Store,
   FileText,
   Plus,
   Shield,
   CheckCircle,
   XCircle,
   Loader2,
-  Key
+  Key,
+  DatabaseBackup
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
@@ -182,6 +183,56 @@ export default function Settings() {
     },
   });
 
+  const { data: backupStatus, isLoading: backupStatusLoading } = useQuery<{
+    backups: { name: string; size: number; createdAt: string }[];
+  }>({
+    queryKey: ["/api/admin/backup/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/backup/status", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch backup status");
+      return res.json();
+    },
+  });
+
+  const backupFrequencyMutation = useMutation({
+    mutationFn: async (frequency: string) => {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backup_frequency: frequency }),
+      });
+      if (!res.ok) throw new Error("Failed to save backup frequency");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({ title: "Backup frequency updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update backup frequency", variant: "destructive" });
+    },
+  });
+
+  const runBackupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/backup/run", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to run backup");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/backup/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({ title: "Backup completed successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Backup failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const createUserMutation = useMutation({
     mutationFn: async (data: UserFormData) => {
       const res = await fetch("/api/users", {
@@ -295,6 +346,9 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="invoice" data-testid="tab-invoice">
             <FileText className="h-4 w-4 mr-2" /> Invoice Settings
+          </TabsTrigger>
+          <TabsTrigger value="backup" data-testid="tab-backup">
+            <DatabaseBackup className="h-4 w-4 mr-2" /> Backup
           </TabsTrigger>
         </TabsList>
 
@@ -689,6 +743,96 @@ export default function Settings() {
                   </Button>
                 </>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="backup">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DatabaseBackup className="h-5 w-5" />
+                Database Backup
+              </CardTitle>
+              <CardDescription>
+                Automatically back up your database on a schedule, or take a backup right now.
+                Backups are saved as full database dumps in the "backup" folder next to the
+                application, keeping the most recent 30.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-end gap-4">
+                <div className="w-64">
+                  <Label htmlFor="backupFrequency">Backup Frequency</Label>
+                  <Select
+                    value={savedSettings?.backup_frequency || "off"}
+                    onValueChange={(value) => backupFrequencyMutation.mutate(value)}
+                  >
+                    <SelectTrigger id="backupFrequency" className="mt-1.5" data-testid="select-backup-frequency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">Off</SelectItem>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={() => runBackupMutation.mutate()}
+                  disabled={runBackupMutation.isPending}
+                  data-testid="button-backup-now"
+                >
+                  {runBackupMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <DatabaseBackup className="h-4 w-4 mr-2" />
+                  )}
+                  Backup Now
+                </Button>
+              </div>
+
+              {savedSettings?.backup_last_run && (
+                <p className="text-sm text-muted-foreground">
+                  Last backup: {new Date(savedSettings.backup_last_run).toLocaleString()}
+                  {savedSettings?.backup_last_status && (
+                    <span className={savedSettings.backup_last_status === "success" ? "text-green-600" : "text-destructive"}>
+                      {" "}({savedSettings.backup_last_status})
+                    </span>
+                  )}
+                </p>
+              )}
+
+              <div>
+                <Label className="mb-2 block">Recent Backups</Label>
+                {backupStatusLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : !backupStatus?.backups.length ? (
+                  <p className="text-sm text-muted-foreground py-4">No backups yet.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>File</TableHead>
+                        <TableHead>Size</TableHead>
+                        <TableHead>Created</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {backupStatus.backups.slice(0, 10).map((b) => (
+                        <TableRow key={b.name} data-testid={`row-backup-${b.name}`}>
+                          <TableCell className="font-mono text-xs">{b.name}</TableCell>
+                          <TableCell>{(b.size / 1024 / 1024).toFixed(2)} MB</TableCell>
+                          <TableCell>{new Date(b.createdAt).toLocaleString()}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

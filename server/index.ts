@@ -14,6 +14,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
 import { initializeDatabase, pool, storage } from "./storage";
+import { startBackupScheduler } from "./backup";
 import path from "path";
 import { writeFileSync } from "fs";
 
@@ -192,6 +193,8 @@ app.use((req, res, next) => {
 
     // Seed default roles (must run after users + menus/groups exist)
     await storage.seedDefaultRoles();
+
+    startBackupScheduler();
 
     await registerRoutes(httpServer, app);
 
