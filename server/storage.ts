@@ -1,6 +1,19 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "path";
 
-import { 
+// dotenv's default `import "dotenv/config"` resolves .env relative to
+// process.cwd(), not the exe's own folder. A Windows Service can launch
+// with an arbitrary working directory (commonly System32), which silently
+// fails to find .env and crashes the process before startup error-handling
+// even runs. Resolve explicitly against the exe's directory instead.
+dotenv.config({
+  path: path.join(
+    (process as any).pkg ? path.dirname(process.execPath) : process.cwd(),
+    ".env",
+  ),
+});
+
+import {
   type User, 
   type InsertUser,
   type Medicine,
