@@ -81,12 +81,9 @@ Filename: "{app}\open-app.url"; Section: "InternetShortcut"; Key: "IconFile"; St
 Filename: "{app}\open-app.url"; Section: "InternetShortcut"; Key: "IconIndex"; String: "0"
 
 [Run]
-; Write .env, init DB, install service — all after files are copied
-Filename: "{sys}\cmd.exe"; \
-  Parameters: "/c ""{app}\setup-after-install.bat"" > ""{app}\setup-log.txt"" 2>&1"; \
-  Flags: runhidden waituntilterminated; \
-  StatusMsg: "Configuring database and Windows service..."; \
-  Description: "Finalising installation"
+; setup-after-install.bat is run directly from Pascal code in
+; CurStepChanged via Exec() instead of a declarative [Run] entry here -
+; see the comment there for why.
 
 ; Open in browser when user clicks Finish
 Filename: "{app}\open-app.url"; \
@@ -160,7 +157,7 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   EnvContent, SetupBat, PgPath: String;
-  F: Integer;
+  ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then begin
 
@@ -197,6 +194,13 @@ begin
     // ── Write setup-after-install.bat ────────────────────────────
     SetupBat :=
       '@echo off' + #13#10 +
+      // Self-relaunch with output redirected to a log file, rather than
+      // having [Run] append "> log 2>&1" to the cmd.exe invocation - see
+      // the comment on the [Run] entry for why that was unreliable.
+      'if not "%~1"=="__LOGGED__" (' + #13#10 +
+      '  call "%~f0" __LOGGED__ > "' + ExpandConstant('{app}') + '\setup-log.txt" 2>&1' + #13#10 +
+      '  exit /b %errorlevel%' + #13#10 +
+      ')' + #13#10 +
       'setlocal' + #13#10 +
       'set "PATH=' + PgPath + ';%PATH%"' + #13#10 +
       'set "PGPASSWORD=' + GetPgPass('') + '"' + #13#10 +
@@ -212,14 +216,14 @@ begin
       '' + #13#10 +
       'echo [2/3] Installing Windows service (WinSW)...' + #13#10 +
       'echo ^<service^> > "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
-      'echo   ^<id^>AadhiraiPharma^</id^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
+      'echo   ^<id^>{#ServiceName}^</id^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<name^>Aadhirai Pharma^</name^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<description^>Aadhirai Pharma Management System^</description^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<executable^>' + ExpandConstant('{app}') + '\aadhirai-pharma-server.exe^</executable^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<startmode^>Automatic^</startmode^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo   ^<log mode="roll"/^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
       'echo ^</service^> >> "' + ExpandConstant('{app}') + '\AadhiraiPharmaService.xml"' + #13#10 +
-      'sc query AadhiraiPharma >nul 2>&1 && (sc stop AadhiraiPharma & sc delete AadhiraiPharma)' + #13#10 +
+      'sc query {#ServiceName} >nul 2>&1 && (sc stop {#ServiceName} & sc delete {#ServiceName})' + #13#10 +
       '"' + ExpandConstant('{app}') + '\AadhiraiPharmaService.exe" install' + #13#10 +
       '"' + ExpandConstant('{app}') + '\AadhiraiPharmaService.exe" start' + #13#10 +
       '' + #13#10 +
@@ -233,9 +237,9 @@ begin
       // later.
       'set WAITED=0' + #13#10 +
       ':waitloop' + #13#10 +
-      'sc query AadhiraiPharma | find "RUNNING" >nul 2>&1' + #13#10 +
+      'sc query {#ServiceName} | find "RUNNING" >nul 2>&1' + #13#10 +
       'if not errorlevel 1 goto running' + #13#10 +
-      'sc query AadhiraiPharma | find "STOPPED" >nul 2>&1' + #13#10 +
+      'sc query {#ServiceName} | find "STOPPED" >nul 2>&1' + #13#10 +
       'if not errorlevel 1 goto failed' + #13#10 +
       'set /a WAITED=%WAITED%+2' + #13#10 +
       'if %WAITED% GEQ 60 goto timeout' + #13#10 +
@@ -257,5 +261,20 @@ begin
       'echo Done.' + #13#10;
 
     SaveStringToFile(ExpandConstant('{app}\setup-after-install.bat'), SetupBat, False);
+
+    // Run directly via Pascal's Exec() rather than a declarative [Run]
+    // entry - both plain CreateProcess-style Exec (no shellexec flag) and
+    // ShellExecute-style Exec (shellexec flag) failed instantly through
+    // the [Run] section for this specific .bat file, in ways that
+    // reproduced even for a trivial freshly-written 2-line diagnostic
+    // .bat, and could not be reproduced when launching the exact same
+    // command manually outside the installer. Exec() from [Code] is a
+    // different, well-trodden code path and lets us set WorkingDir
+    // explicitly, which the [Run] section does not.
+    if not Exec(ExpandConstant('{sys}\cmd.exe'), '/c "' + ExpandConstant('{app}\setup-after-install.bat') + '"',
+      ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
+      SaveStringToFile(ExpandConstant('{app}\setup-log.txt'),
+        'Failed to launch setup-after-install.bat: ' + SysErrorMessage(ResultCode), False);
+    end;
   end;
 end;
