@@ -54,14 +54,12 @@ echo [STEP 2] Checking PostgreSQL...
 set PG_INSTALLED=0
 where psql >nul 2>&1 && set PG_INSTALLED=1
 if "%PG_INSTALLED%"=="0" (
-    :: Check common install paths
-    if exist "C:\Program Files\PostgreSQL\16\bin\psql.exe" (
-        set "PATH=%PATH%;C:\Program Files\PostgreSQL\16\bin"
-        set PG_INSTALLED=1
-    )
-    if exist "C:\Program Files\PostgreSQL\15\bin\psql.exe" (
-        set "PATH=%PATH%;C:\Program Files\PostgreSQL\15\bin"
-        set PG_INSTALLED=1
+    :: Check common install paths (versions 18 down to 14)
+    for %%V in (18 17 16 15 14) do (
+        if exist "C:\Program Files\PostgreSQL\%%V\bin\psql.exe" (
+            set "PATH=%PATH%;C:\Program Files\PostgreSQL\%%V\bin"
+            set PG_INSTALLED=1
+        )
     )
 )
 

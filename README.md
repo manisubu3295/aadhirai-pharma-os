@@ -1,11 +1,210 @@
 # Aadhirai Pharma Management System
 
-A full-stack pharmacy management system built with Express.js, React, and PostgreSQL.
-Runs fully **offline** as a Windows LAN portal — no internet required after setup.
+A pharmacy management system that runs fully **offline** on Windows.  
+Access it from any computer on the same network using just a web browser.
 
 ---
 
-## Table of Contents
+## 📋 Quick Navigation
+
+- [For Users — Install using Setup Wizard](#-for-users--install-using-setup-wizard) ← **Start here if you just want to install**
+- [For Developers — Source Code Setup](#-for-developers--source-code-setup)
+- [Default Login Credentials](#-default-login-credentials)
+- [Accessing the App](#-accessing-the-app)
+- [Updating the App](#-updating-the-app)
+- [Uninstall](#-uninstall)
+- [Troubleshooting](#-troubleshooting)
+
+---
+
+## 👨‍💼 For Users — Install using Setup Wizard
+
+> No technical knowledge required. Follow these steps on the **pharmacy server PC** (the main computer).
+
+### Before you begin
+
+Make sure **PostgreSQL** is installed on this computer.  
+👉 Download: https://www.postgresql.org/download/windows  
+During installation, set a password for the `postgres` user — **remember this password**, you will need it.
+
+---
+
+### Step 1 — Download the installer
+
+Go to the **`release` branch** of this repository and download:
+
+```
+AadhiraiPharma-Setup-v1.0.0.exe
+```
+
+Or download from the [Releases](../../releases) page.
+
+---
+
+### Step 2 — Run as Administrator
+
+1. Right-click `AadhiraiPharma-Setup-v1.0.0.exe`
+2. Click **"Run as administrator"**
+3. Click **Yes** if Windows asks for permission
+
+---
+
+### Step 3 — Follow the Setup Wizard
+
+The wizard will ask you a few questions:
+
+| Question | What to enter |
+|----------|--------------|
+| Database name | Leave as default (`medora_shivalaya`) or type your preferred name |
+| Application port | Leave as `3000` (press Next) |
+| PostgreSQL password | Enter the password you set during PostgreSQL installation |
+
+Click **Next** through the remaining screens and wait for installation to finish (~2 minutes).
+
+---
+
+### Step 4 — Open the app
+
+Once installation is complete:
+- A **"Aadhirai Pharma" shortcut** will appear on the Desktop
+- Double-click it to open the app in your browser
+- Or open any browser and go to: **http://localhost:3000**
+
+---
+
+### Step 5 — First login
+
+Use these default credentials (change them after first login):
+
+| Role | Username | Password |
+|------|----------|----------|
+| Owner / Admin | `owner` | `password123` |
+| Pharmacist | `pharmacist` | `password123` |
+| Cashier | `cashier` | `password123` |
+
+> ⚠️ **Change all passwords immediately after first login** via Settings → User Management.
+
+---
+
+### Other computers on the same network
+
+On any other PC connected to the same Wi-Fi or LAN:
+1. Open a browser
+2. Go to `http://[SERVER-IP]:3000`  
+   *(Replace `[SERVER-IP]` with the IP address of the server PC — shown in `CREDENTIALS.txt` after install)*
+
+---
+
+## 🔧 For Developers — Source Code Setup
+
+### Requirements
+
+| Software | Version | Download |
+|---|---|---|
+| Windows | 10 or 11 | — |
+| Node.js | LTS (v20+) | https://nodejs.org |
+| PostgreSQL | 15+ | https://www.postgresql.org/download/windows |
+| Git | Latest | https://git-scm.com/download/win |
+
+### Clone and install
+
+```bash
+git clone https://github.com/manisubu3295/aadhirai-pharma-os.git
+cd aadhirai-pharma-os
+```
+
+Right-click `setup.bat` → **Run as administrator** and follow the prompts.
+
+### Development server
+
+```bash
+npm run dev
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+### Build installer EXE
+
+Requires [Inno Setup 7](https://jrsoftware.org/isdl.php) installed.
+
+```bat
+build-installer.bat
+```
+
+Outputs to `release\`:
+- `aadhirai-pharma-server.exe` — standalone server (no Node.js required)
+- `AadhiraiPharma-Setup-v1.0.0.exe` — full setup wizard
+
+### Database commands
+
+```bash
+npm run db:push   # apply schema changes
+npm run seed      # seed default users & demo data
+```
+
+---
+
+## 🔑 Default Login Credentials
+
+> **Change all passwords immediately after first login** via Settings → User Management.
+
+| Role | Username | Password | Access |
+|------|----------|----------|--------|
+| Owner / Admin | `owner` | `password123` | Full access |
+| Pharmacist | `pharmacist` | `password123` | Inventory + dispensing |
+| Cashier | `cashier` | `password123` | Billing only |
+
+---
+
+## 🌐 Accessing the App
+
+| From | URL |
+|------|-----|
+| This computer | `http://localhost:3000` |
+| Other PCs on same network | `http://<SERVER-IP>:3000` |
+
+Find your server IP: open Command Prompt → type `ipconfig` → look for **IPv4 Address**.
+
+---
+
+## 🔄 Updating the App
+
+**Via installer (recommended for non-technical users):**  
+Download and run the new `AadhiraiPharma-Setup-v1.0.0.exe` from the `release` branch.
+
+**Via source (developers):**
+
+Right-click `update.bat` → **Run as administrator**
+
+---
+
+## ❌ Uninstall
+
+Go to **Windows Settings → Apps → Aadhirai Pharma → Uninstall**  
+(or right-click `uninstall.bat` → Run as administrator for source installs)
+
+---
+
+## 🛠 Troubleshooting
+
+| Problem | Solution |
+|---------|---------|
+| App won't open in browser | Make sure the **AadhiraiPharma** Windows service is running (`services.msc`) |
+| "Cannot connect to database" | Open `services.msc` → start **postgresql-x64-18** |
+| Other computers can't access | Run as Admin: `netsh advfirewall firewall add rule name="AadhiraiPharma" dir=in action=allow protocol=TCP localport=3000` |
+| Forgot login password | Contact your system administrator to reset via User Management |
+| Port already in use | Change `PORT=3000` in `.env` to another number and restart the service |
+
+---
+
+## 📞 Support
+
+For issues contact the development team.
+
 
 - [Requirements](#requirements)
 - [Fresh Installation](#fresh-installation)

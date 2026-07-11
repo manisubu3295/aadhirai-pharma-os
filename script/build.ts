@@ -1,6 +1,8 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, readdir } from "fs/promises";
+import { existsSync } from "fs";
+import path from "path";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -32,7 +34,14 @@ const allowlist = [
 ];
 
 async function buildAll() {
-  await rm("dist", { recursive: true, force: true });
+  // Remove dist entries individually, skipping daemon/ (locked by running service)
+  if (existsSync("dist")) {
+    const entries = await readdir("dist");
+    for (const entry of entries) {
+      if (entry === "daemon") continue; // service log dir — may be locked
+      await rm(path.join("dist", entry), { recursive: true, force: true });
+    }
+  }
 
   console.log("building client...");
   await viteBuild();

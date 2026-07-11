@@ -24,6 +24,7 @@ import { z } from "zod";
 import bcrypt from "bcrypt";
 import { inventoryPostingController } from "./controllers/inventory-posting.controller";
 import { assistantController } from "./controllers/assistant.controller";
+import { InventoryPostingRepository } from "./repositories/inventory-posting.repository";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -2787,6 +2788,99 @@ export async function registerRoutes(
       } else {
         res.status(500).json({ error: "Failed to create stock adjustment" });
       }
+    }
+  });
+
+  // ─── Inventory Batch List & Opening Stock ─────────────────────────────────
+
+  const inventoryRepo = new InventoryPostingRepository();
+
+  // GET /api/inventory/batches - list all inventory batches with medicine info
+  app.get("/api/inventory/batches", requireAuth, async (req, res) => {
+    try {
+      const medicineId = req.query.medicineId ? Number(req.query.medicineId) : undefined;
+      const batches = await inventoryRepo.listInventoryBatches(medicineId ? { medicineId } : undefined);
+      res.json(batches);
+    } catch (error) {
+      console.error("Error fetching inventory batches:", error);
+      res.status(500).json({ error: "Failed to fetch inventory batches" });
+    }
+  });
+
+  // GET /api/inventory/stock-summary - total available stock per medicine/generic
+  app.get("/api/inventory/stock-summary", requireAuth, async (req, res) => {
+    try {
+      const batches = await inventoryRepo.listInventoryBatches();
+      const summaryMap = new Map<number, {
+        medicineId: number;
+        medicineName: string;
+        genericName: string | null;
+        manufacturer: string;
+        totalAvailableQty: number;
+        batchCount: number;
+      }>();
+
+      for (const b of batches) {
+        const existing = summaryMap.get(b.medicineId);
+        if (existing) {
+          existing.totalAvailableQty += b.availableQtyBase;
+          existing.batchCount += 1;
+        } else {
+          summaryMap.set(b.medicineId, {
+            medicineId: b.medicineId,
+            medicineName: b.medicineName,
+            genericName: b.genericName,
+            manufacturer: b.manufacturer,
+            totalAvailableQty: b.availableQtyBase,
+            batchCount: 1,
+          });
+        }
+      }
+
+      const summary = Array.from(summaryMap.values()).sort((a, b) =>
+        a.medicineName.localeCompare(b.medicineName),
+      );
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching stock summary:", error);
+      res.status(500).json({ error: "Failed to fetch stock summary" });
+    }
+  });
+
+  // POST /api/inventory/opening-stock - create opening stock entry for a batch
+  app.post("/api/inventory/opening-stock", requireAuth, async (req, res) => {
+    try {
+      const openingStockSchema = z.object({
+        medicineId: z.number().int().positive("Medicine is required"),
+        batchNumber: z.string().trim().min(1, "Batch number is required"),
+        expiryDate: z.string().trim().min(1, "Expiry date is required"),
+        qtyBase: z.number().int().positive("Quantity must be greater than zero"),
+        costPrice: z.string().optional().nullable(),
+        mrp: z.string().optional().nullable(),
+        sellingPrice: z.string().optional().nullable(),
+        packSize: z.number().int().min(1).optional(),
+        locationId: z.number().int().optional().nullable(),
+      });
+
+      const data = openingStockSchema.parse(req.body);
+      const userId = req.session?.userId ?? null;
+
+      const result = await inventoryRepo.openingStockEntry({
+        ...data,
+        userId,
+      });
+
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
+        });
+      }
+      console.error("Error creating opening stock:", error);
+      const msg = error instanceof Error ? error.message : "Failed to create opening stock";
+      res.status(400).json({ error: msg });
     }
   });
 

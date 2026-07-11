@@ -10,3 +10,6 @@ vite.config.ts.*
 
 # Generated at install time — not for git
 CREDENTIALS.txt
+# Release build artifacts
+release/
+innosetup-*.exe

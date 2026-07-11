@@ -731,4 +731,181 @@ export class InventoryPostingRepository {
     const itemResult = await tx.query(`SELECT * FROM sale_items WHERE sale_id = $1 ORDER BY id`, [saleId]);
     return { sale: saleResult.rows[0], items: itemResult.rows };
   }
+
+  // ─── Opening Stock / Stock Maintenance ────────────────────────────────────
+
+  async listInventoryBatches(filters?: { medicineId?: number }): Promise<Array<{
+    id: number;
+    medicineId: number;
+    medicineName: string;
+    genericName: string | null;
+    manufacturer: string;
+    batchNumber: string;
+    expiryDate: string;
+    availableQtyBase: number;
+    totalInwardQtyBase: number;
+    packSize: number;
+    purchaseRateSnapshot: string | null;
+    mrpSnapshot: string | null;
+    defaultSaleRateSnapshot: string | null;
+    locationId: number | null;
+    createdAt: string;
+    updatedAt: string;
+  }>> {
+    const params: unknown[] = [];
+    let where = "";
+    if (filters?.medicineId) {
+      params.push(filters.medicineId);
+      where = `AND ib.medicine_id = $${params.length}`;
+    }
+
+    const result = await pool.query(
+      `
+        SELECT
+          ib.id,
+          ib.medicine_id,
+          m.name AS medicine_name,
+          m.generic_name,
+          m.manufacturer,
+          ib.batch_number,
+          ib.expiry_date,
+          ib.available_qty_base,
+          ib.total_inward_qty_base,
+          COALESCE(ib.conversion_factor_snapshot, m.pack_size, 1) AS pack_size,
+          ib.purchase_rate_snapshot,
+          ib.mrp_snapshot,
+          ib.default_sale_rate_snapshot,
+          ib.warehouse_id AS location_id,
+          ib.created_at,
+          ib.updated_at
+        FROM inventory_batches ib
+        JOIN medicines m ON m.id = ib.medicine_id
+        WHERE 1=1 ${where}
+        ORDER BY m.name ASC, ib.expiry_date ASC, ib.batch_number ASC
+      `,
+      params,
+    );
+
+    return result.rows.map((row: any) => ({
+      id: Number(row.id),
+      medicineId: Number(row.medicine_id),
+      medicineName: String(row.medicine_name),
+      genericName: row.generic_name ?? null,
+      manufacturer: String(row.manufacturer || ""),
+      batchNumber: String(row.batch_number),
+      expiryDate: String(row.expiry_date || ""),
+      availableQtyBase: Number(row.available_qty_base || 0),
+      totalInwardQtyBase: Number(row.total_inward_qty_base || 0),
+      packSize: Number(row.pack_size || 1),
+      purchaseRateSnapshot: row.purchase_rate_snapshot ?? null,
+      mrpSnapshot: row.mrp_snapshot ?? null,
+      defaultSaleRateSnapshot: row.default_sale_rate_snapshot ?? null,
+      locationId: row.location_id == null ? null : Number(row.location_id),
+      createdAt: row.created_at ? String(row.created_at) : "",
+      updatedAt: row.updated_at ? String(row.updated_at) : "",
+    }));
+  }
+
+  async openingStockEntry(data: {
+    medicineId: number;
+    batchNumber: string;
+    expiryDate: string;
+    qtyBase: number;
+    costPrice?: string | null;
+    mrp?: string | null;
+    sellingPrice?: string | null;
+    packSize?: number;
+    locationId?: number | null;
+    userId?: string | null;
+  }): Promise<{ batchId: number; availableQtyBase: number }> {
+    return this.withTransaction(async (tx) => {
+      const conversionFactor = Math.max(1, Number(data.packSize || 1) || 1);
+      const qtyBase = Math.max(0, Number(data.qtyBase) || 0);
+
+      if (!data.batchNumber?.trim()) {
+        throw new Error("Batch number is required for opening stock");
+      }
+      if (!data.expiryDate?.trim()) {
+        throw new Error("Expiry date is required for opening stock");
+      }
+      if (qtyBase <= 0) {
+        throw new Error("Quantity must be greater than zero");
+      }
+
+      // Upsert the inventory batch
+      const batchResult = await tx.query(
+        `
+          INSERT INTO inventory_batches (
+            medicine_id, warehouse_id, batch_number, expiry_date,
+            purchase_rate_snapshot, mrp_snapshot, default_sale_rate_snapshot,
+            unit_snapshot, conversion_factor_snapshot,
+            total_inward_qty_base, available_qty_base, updated_at
+          ) VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7,
+            'STRIP', $8,
+            $9, $9, NOW()
+          )
+          ON CONFLICT (medicine_id, warehouse_id, batch_number, expiry_date)
+          DO UPDATE SET
+            total_inward_qty_base = inventory_batches.total_inward_qty_base + EXCLUDED.total_inward_qty_base,
+            available_qty_base = inventory_batches.available_qty_base + EXCLUDED.available_qty_base,
+            updated_at = NOW(),
+            purchase_rate_snapshot = COALESCE(EXCLUDED.purchase_rate_snapshot, inventory_batches.purchase_rate_snapshot),
+            mrp_snapshot = COALESCE(EXCLUDED.mrp_snapshot, inventory_batches.mrp_snapshot),
+            default_sale_rate_snapshot = COALESCE(EXCLUDED.default_sale_rate_snapshot, inventory_batches.default_sale_rate_snapshot),
+            conversion_factor_snapshot = COALESCE(EXCLUDED.conversion_factor_snapshot, inventory_batches.conversion_factor_snapshot)
+          RETURNING id, available_qty_base
+        `,
+        [
+          data.medicineId,
+          data.locationId ?? null,
+          data.batchNumber.trim(),
+          data.expiryDate.trim(),
+          data.costPrice ?? null,
+          data.mrp ?? null,
+          data.sellingPrice ?? null,
+          conversionFactor,
+          qtyBase,
+        ],
+      );
+
+      const batchId = Number(batchResult.rows[0].id);
+      const availableQtyBase = Number(batchResult.rows[0].available_qty_base || 0);
+
+      // Insert inventory ledger entry
+      await tx.query(
+        `
+          INSERT INTO inventory_ledger (
+            medicine_id, warehouse_id, batch_id,
+            txn_type, txn_source, source_id, source_line_id,
+            qty_base, balance_after_base, unit_snapshot, conversion_factor_snapshot,
+            purchase_rate_snapshot, mrp_snapshot,
+            remarks, metadata
+          ) VALUES (
+            $1, $2, $3,
+            'IN', 'OPENING', NULL, NULL,
+            $4, $5, 'STRIP', $6,
+            $7, $8,
+            'Opening stock entry', '{}'::jsonb
+          )
+        `,
+        [
+          data.medicineId,
+          data.locationId ?? null,
+          batchId,
+          qtyBase,
+          availableQtyBase,
+          conversionFactor,
+          data.costPrice ?? null,
+          data.mrp ?? null,
+        ],
+      );
+
+      // Update medicine running total
+      await this.updateMedicineStock(tx, data.medicineId, qtyBase);
+
+      return { batchId, availableQtyBase };
+    });
+  }
 }

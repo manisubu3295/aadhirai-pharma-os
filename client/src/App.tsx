@@ -39,6 +39,7 @@ import NoAccess from "@/pages/NoAccess";
 import Expenses from "@/pages/Expenses";
 import Approvals from "@/pages/Approvals";
 import StockAdjustments from "@/pages/StockAdjustments";
+import StockMaintenance from "@/pages/StockMaintenance";
 import ShiftHandover from "@/pages/ShiftHandover";
 import MyActivity from "@/pages/MyActivity";
 import MySales from "@/pages/MySales";
@@ -197,6 +198,11 @@ function Router() {
       <Route path="/stock-adjustments">
         <ProtectedRoute>
           <StockAdjustments />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/stock-maintenance">
+        <ProtectedRoute>
+          <StockMaintenance />
         </ProtectedRoute>
       </Route>
       <Route path="/shift-handover">

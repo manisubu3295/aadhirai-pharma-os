@@ -73,7 +73,6 @@ interface MedicineFormData {
   genericName: string;
   skuName: string;
   manufacturer: string;
-  quantity: number;
   packSize: number;
   price: string;
   costPrice: string;
@@ -93,7 +92,6 @@ const emptyForm: MedicineFormData = {
   genericName: "",
   skuName: "",
   manufacturer: "",
-  quantity: 0,
   packSize: 10,
   price: "",
   costPrice: "",
@@ -119,10 +117,6 @@ interface MedicineFormFieldsProps {
 }
 
 const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormData, isPro, locations, genericOptions, fieldErrors, clearFieldError }: MedicineFormFieldsProps) {
-  const safeQuantity = Math.max(0, Number(formData.quantity) || 0);
-  const safePackSize = Math.max(1, Number(formData.packSize) || 1);
-  const fullStrips = Math.floor(safeQuantity / safePackSize);
-  const remainingUnits = safeQuantity % safePackSize;
   const getFieldClass = (field: keyof MedicineFormData, baseClass = "mt-1.5") =>
     `${baseClass}${fieldErrors[field] ? " border-destructive focus-visible:ring-destructive" : ""}`;
 
@@ -193,23 +187,6 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
         </Select>
       </div>
       <div>
-        <Label htmlFor="quantity">Quantity (base units)</Label>
-        <NumericInput
-          min={0}
-          value={formData.quantity}
-          onChange={(value) => {
-            clearFieldError("quantity");
-            setFormData(prev => ({ ...prev, quantity: value }));
-          }}
-          className={getFieldClass("quantity")}
-          data-testid="input-quantity"
-        />
-        {fieldErrors.quantity && <p className="text-xs text-destructive mt-1">{fieldErrors.quantity}</p>}
-        <p className="text-xs text-muted-foreground mt-1">
-          Enter tablet/unit count, not strips.
-        </p>
-      </div>
-      <div>
         <Label htmlFor="packSize">Pack Size (units per strip)</Label>
         <NumericInput
           min={1}
@@ -223,9 +200,7 @@ const MedicineFormFields = memo(function MedicineFormFields({ formData, setFormD
         />
         {fieldErrors.packSize && <p className="text-xs text-destructive mt-1">{fieldErrors.packSize}</p>}
         <p className="text-xs text-muted-foreground mt-1">Units per strip/pack (e.g., 10 tablets per strip)</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Current equivalent: {fullStrips} strips + {remainingUnits} units ({safeQuantity} base units)
-        </p>
+        <p className="text-xs text-muted-foreground mt-1 text-amber-600">Stock quantity is managed via Opening Stock or GRN — not here.</p>
       </div>
       <div>
         <Label htmlFor="reorderLevel">Reorder Level</Label>
@@ -410,10 +385,7 @@ export default function Inventory() {
   const fieldLabelToKey: Record<string, keyof MedicineFormData> = {
     name: "name",
     "generic name": "genericName",
-    "batch number": "batchNumber",
     manufacturer: "manufacturer",
-    "expiry date": "expiryDate",
-    quantity: "quantity",
     "pack size": "packSize",
     "selling price": "price",
     "cost price": "costPrice",
@@ -533,10 +505,7 @@ export default function Inventory() {
       const res = await fetch("/api/medicines", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...data,
-          status: data.quantity <= 0 ? "Out of Stock" : data.quantity <= (data.reorderLevel ?? 100) ? "Low Stock" : "In Stock",
-        }),
+        body: JSON.stringify(data),
       });
       if (!res.ok) {
         let errorMessage = "Failed to create medicine";
@@ -574,10 +543,7 @@ export default function Inventory() {
       const res = await fetch(`/api/medicines/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...data,
-          status: Number(data.quantity) <= 0 ? "Out of Stock" : Number(data.quantity) <= (data.reorderLevel ?? 100) ? "Low Stock" : "In Stock",
-        }),
+        body: JSON.stringify(data),
       });
       if (!res.ok) {
         let errorMessage = "Failed to update medicine";
@@ -730,7 +696,6 @@ export default function Inventory() {
       genericName: (medicine as any).genericName || "",
       skuName: (medicine as any).skuName || "",
       manufacturer: medicine.manufacturer,
-      quantity: medicine.quantity,
       packSize: medicine.packSize || 10,
       price: String(medicine.price),
       costPrice: medicine.costPrice ? String(medicine.costPrice) : "",
@@ -810,6 +775,7 @@ export default function Inventory() {
     }
   };
 
+
   const exportInventoryCSV = () => {
     const headers = ["ID", "Name", "Generic Name", "Manufacturer", "Category", "Quantity", "Reorder Level", "Cost Price", "Selling Price", "MRP", "GST%", "HSN Code", "Barcode", "Min Stock", "Max Stock", "Status"];
     const rows = filteredMedicines.map(m => [
@@ -858,6 +824,17 @@ export default function Inventory() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                window.location.href = "/stock-maintenance";
+              }}
+              data-testid="button-stock-maintenance"
+            >
+              Opening Stock
+            </Button>
             <Button
               variant="outline"
               size="sm"

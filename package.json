@@ -3,10 +3,23 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "pkg": {
+    "assets": [
+      "dist/public/**/*"
+    ],
+    "targets": [
+      "node20-win-x64"
+    ],
+    "outputPath": "release",
+    "scripts": [
+      "dist/index.cjs"
+    ]
+  },
   "scripts": {
     "dev:client": "vite dev --port 5000",
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
+    "build:exe": "@yao-pkg/pkg dist/index.cjs --target node20-win-x64 --output release/aadhirai-pharma-server.exe",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "test": "node --import tsx --test server/tests/inventory-posting.service.test.ts",
@@ -105,9 +118,10 @@
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^5.0.4",
+    "@yao-pkg/pkg": "^6.14.2",
     "autoprefixer": "^10.4.21",
     "cross-env": "^7.0.3",
-    "drizzle-kit": "^0.18.1",
+    "drizzle-kit": "^0.31.10",
     "esbuild": "^0.25.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.14",
