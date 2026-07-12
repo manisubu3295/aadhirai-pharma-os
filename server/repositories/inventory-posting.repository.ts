@@ -1,4 +1,6 @@
 import { pool } from "../storage";
+import type { SalePaymentRow } from "@shared/salePayments";
+import type { DoctorCommissionConfig } from "@shared/doctorCommission";
 
 export type TxClient = {
   query: (text: string, values?: unknown[]) => Promise<{ rows: any[]; rowCount: number | null }>;
@@ -28,6 +30,7 @@ export interface SalePostingInput {
   printInvoice?: boolean;
   sendViaEmail?: boolean;
   userId?: string | null;
+  payments?: SalePaymentRow[];
 }
 
 export interface SalePostingLineInput {
@@ -156,6 +159,61 @@ export class InventoryPostingRepository {
       ],
     );
     return { id: Number(result.rows[0].id) };
+  }
+
+  async createSalePayments(tx: TxClient, saleId: number, rows: SalePaymentRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    const values: unknown[] = [];
+    const placeholders = rows
+      .map((row, i) => {
+        const base = i * 4;
+        values.push(saleId, row.method, row.amount.toFixed(2), row.reference ?? null);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+      })
+      .join(", ");
+    await tx.query(
+      `INSERT INTO sale_payments (sale_id, method, amount, reference) VALUES ${placeholders}`,
+      values,
+    );
+  }
+
+  async getDoctorCommissionConfig(tx: TxClient, doctorId: number): Promise<DoctorCommissionConfig | null> {
+    const result = await tx.query(
+      `SELECT commission_basis, commission_rate, commission_fixed_amount, min_sale_amount FROM doctors WHERE id = $1`,
+      [doctorId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      commissionBasis: row.commission_basis,
+      commissionRate: row.commission_rate,
+      commissionFixedAmount: row.commission_fixed_amount,
+      minSaleAmount: row.min_sale_amount,
+    };
+  }
+
+  async createDoctorCommissionTransaction(tx: TxClient, data: {
+    doctorId: number;
+    saleId?: number | null;
+    type: "EARNED" | "PAID";
+    amount: number;
+    saleAmount?: number | null;
+    notes?: string | null;
+  }): Promise<void> {
+    await tx.query(
+      `
+        INSERT INTO doctor_commission_transactions (doctor_id, sale_id, type, amount, sale_amount, notes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [
+        data.doctorId,
+        data.saleId ?? null,
+        data.type,
+        data.amount.toFixed(2),
+        data.saleAmount != null ? data.saleAmount.toFixed(2) : null,
+        data.notes ?? null,
+      ],
+    );
   }
 
   async createSaleItem(tx: TxClient, data: {
@@ -729,6 +787,10 @@ export class InventoryPostingRepository {
   async getSaleWithItems(tx: TxClient, saleId: number): Promise<{ sale: any; items: any[] }> {
     const saleResult = await tx.query(`SELECT * FROM sales WHERE id = $1`, [saleId]);
     const itemResult = await tx.query(`SELECT * FROM sale_items WHERE sale_id = $1 ORDER BY id`, [saleId]);
+    const paymentResult = await tx.query(
+      `SELECT method, amount, reference FROM sale_payments WHERE sale_id = $1 ORDER BY id`,
+      [saleId],
+    );
     const row = saleResult.rows[0];
 
     // `SELECT *` via raw pg returns snake_case column names as-is (unlike
@@ -766,6 +828,11 @@ export class InventoryPostingRepository {
       sendViaEmail: row.send_via_email,
       userId: row.user_id,
       createdAt: row.created_at,
+      payments: paymentResult.rows.map((p: any) => ({
+        method: p.method,
+        amount: Number(p.amount),
+        reference: p.reference,
+      })),
     };
 
     const items = itemResult.rows.map((item: any) => ({

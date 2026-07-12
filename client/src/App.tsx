@@ -18,6 +18,7 @@ import Customers from "@/pages/Customers";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import Collections from "@/pages/Collections";
+import DoctorReferrals from "@/pages/DoctorReferrals";
 import LocationMaster from "@/pages/LocationMaster";
 import AuditLog from "@/pages/AuditLog";
 import TallyExport from "@/pages/TallyExport";
@@ -91,6 +92,11 @@ function Router() {
       <Route path="/collections">
         <ProtectedRoute>
           <Collections />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/doctor-referrals">
+        <ProtectedRoute>
+          <DoctorReferrals />
         </ProtectedRoute>
       </Route>
       <Route path="/locations">

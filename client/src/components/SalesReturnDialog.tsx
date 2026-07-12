@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RotateCcw } from "lucide-react";
 import { format } from "date-fns";
+import type { SalePayment } from "@shared/schema";
+import { getSaleCreditPortion } from "@shared/salePayments";
 
 interface SaleItem {
   id: number;
@@ -28,8 +30,11 @@ interface SaleWithReturns {
     id: number;
     invoiceNo: string;
     customerName: string;
+    customerId?: number | null;
     total: string;
     paymentMethod: string;
+    receivedAmount: string;
+    payments?: SalePayment[];
   };
   items: SaleItem[];
   returns: any[];
@@ -149,13 +154,13 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
       });
       setReturnQuantities(initialQty);
       
-      if (saleData.sale.paymentMethod?.toLowerCase() === "credit") {
+      if (getSaleCreditPortion(saleData.sale, saleData.sale.payments) > 0) {
         setRefundMode("adjustment");
       }
     }
   }, [saleData]);
 
-  const isCreditBill = saleData?.sale.paymentMethod?.toLowerCase() === "credit";
+  const isCreditBill = saleData ? getSaleCreditPortion(saleData.sale, saleData.sale.payments) > 0 : false;
 
   const createReturnMutation = useMutation({
     mutationFn: async (data: { originalSaleId: number; refundMode: string; reason: string; items: ReturnItem[] }) => {

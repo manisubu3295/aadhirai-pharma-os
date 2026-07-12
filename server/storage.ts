@@ -85,6 +85,9 @@ import {
   type ApprovalRequest,
   type InsertApprovalRequest,
   type StockAdjustment,
+  type SalePayment,
+  type DoctorCommissionTransaction,
+  type InsertDoctorCommissionTransaction,
   users,
   medicines,
   genericNames,
@@ -92,6 +95,8 @@ import {
   doctors,
   sales,
   saleItems,
+  salePayments,
+  doctorCommissionTransactions,
   locations,
   auditLogs,
   creditPayments,
@@ -126,7 +131,8 @@ import {
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
-import { eq, desc, sql, and, gte, lte, or } from "drizzle-orm";
+import { eq, desc, sql, and, gte, lte, or, inArray } from "drizzle-orm";
+import { resolveSalePayments } from "@shared/salePayments";
 
 console.log("Database URL:" + JSON.stringify(process.env.DATABASE_URL));
 console.log("DATABASE_URL =", process.env.DATABASE_URL);
@@ -331,7 +337,27 @@ console.log("Connected DB:", r.rows[0].db);
         registration_no TEXT,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
-      
+
+      ALTER TABLE doctors
+        ADD COLUMN IF NOT EXISTS commission_basis TEXT,
+        ADD COLUMN IF NOT EXISTS commission_rate DECIMAL(5,2),
+        ADD COLUMN IF NOT EXISTS commission_fixed_amount DECIMAL(10,2),
+        ADD COLUMN IF NOT EXISTS min_sale_amount DECIMAL(10,2) DEFAULT 0;
+
+      CREATE TABLE IF NOT EXISTS doctor_commission_transactions (
+        id SERIAL PRIMARY KEY,
+        doctor_id INTEGER NOT NULL,
+        sale_id INTEGER,
+        type TEXT NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        sale_amount DECIMAL(10,2),
+        notes TEXT,
+        user_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS doctor_commission_transactions_doctor_id_idx ON doctor_commission_transactions(doctor_id);
+
       CREATE TABLE IF NOT EXISTS locations (
         id SERIAL PRIMARY KEY,
         rack TEXT NOT NULL,
@@ -379,6 +405,8 @@ console.log("Connected DB:", r.rows[0].db);
         reference TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
+
+      CREATE INDEX IF NOT EXISTS sale_payments_sale_id_idx ON sale_payments(sale_id);
 
       CREATE TABLE IF NOT EXISTS sale_items (
         id SERIAL PRIMARY KEY,
@@ -993,16 +1021,19 @@ export interface IStorage {
   updateCustomer(id: number, customer: Partial<InsertCustomer>): Promise<Customer | undefined>;
   deleteCustomer(id: number): Promise<boolean>;
   
-  getDoctors(): Promise<Doctor[]>;
+  getDoctors(): Promise<(Doctor & { commissionBalance: string })[]>;
   getDoctor(id: number): Promise<Doctor | undefined>;
   createDoctor(doctor: InsertDoctor): Promise<Doctor>;
   updateDoctor(id: number, doctor: Partial<InsertDoctor>): Promise<Doctor | undefined>;
   deleteDoctor(id: number): Promise<boolean>;
+  getDoctorCommissionBalance(doctorId: number): Promise<string>;
+  getDoctorCommissionTransactions(doctorId?: number): Promise<DoctorCommissionTransaction[]>;
+  createDoctorCommissionPayout(data: { doctorId: number; amount: string; notes?: string | null; userId?: string | null }): Promise<DoctorCommissionTransaction>;
   
-  getSales(limit?: number): Promise<Sale[]>;
-  getSalesByUser(userId: string, options?: { from?: Date; to?: Date; search?: string }): Promise<Sale[]>;
-  getSalesWithFilters(options: { userId?: string; from?: Date; to?: Date; search?: string; limit?: number }): Promise<Sale[]>;
-  getSale(id: number): Promise<Sale | undefined>;
+  getSales(limit?: number): Promise<(Sale & { payments: SalePayment[] })[]>;
+  getSalesByUser(userId: string, options?: { from?: Date; to?: Date; search?: string }): Promise<(Sale & { payments: SalePayment[] })[]>;
+  getSalesWithFilters(options: { userId?: string; from?: Date; to?: Date; search?: string; limit?: number }): Promise<(Sale & { payments: SalePayment[] })[]>;
+  getSale(id: number): Promise<(Sale & { payments: SalePayment[] }) | undefined>;
   getSaleByInvoiceNo(invoiceNo: string): Promise<Sale | undefined>;
   createSale(sale: InsertSale, items: CreateSaleItem[]): Promise<{ sale: Sale; items: SaleItem[] }>;
   getSaleItems(saleId: number): Promise<SaleItem[]>;
@@ -1062,7 +1093,7 @@ export interface IStorage {
   
   getSalesReturns(): Promise<SalesReturn[]>;
   getSalesReturn(id: number): Promise<SalesReturn | undefined>;
-  getSaleWithReturns(saleId: number): Promise<{ sale: Sale; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined>;
+  getSaleWithReturns(saleId: number): Promise<{ sale: Sale & { payments: SalePayment[] }; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined>;
   createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn>;
   getSalesReturnItems(returnId: number): Promise<SalesReturnItem[]>;
   getTotalReturnsForPeriod(startDate: Date, endDate: Date): Promise<string>;
@@ -1101,6 +1132,7 @@ export interface IStorage {
 
   getUserNavigation(userId: string, role: string, roleId: number | null): Promise<MenuWithPermissions[]>;
   seedDefaultMenus(): Promise<void>;
+  ensureDoctorReferralsMenu(): Promise<void>;
   seedDefaultRoles(): Promise<void>;
   
   // Supplier Ledger & Payments
@@ -1951,8 +1983,46 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async getDoctors(): Promise<Doctor[]> {
-    return await db.select().from(doctors).orderBy(doctors.name);
+  async getDoctors(): Promise<(Doctor & { commissionBalance: string })[]> {
+    const rows = await db.select().from(doctors).orderBy(doctors.name);
+    if (rows.length === 0) return [];
+
+    const balances = await db.select({
+      doctorId: doctorCommissionTransactions.doctorId,
+      balance: sql<string>`COALESCE(SUM(CASE WHEN ${doctorCommissionTransactions.type} = 'EARNED' THEN ${doctorCommissionTransactions.amount} ELSE -${doctorCommissionTransactions.amount} END), 0)`
+    }).from(doctorCommissionTransactions)
+      .where(inArray(doctorCommissionTransactions.doctorId, rows.map(r => r.id)))
+      .groupBy(doctorCommissionTransactions.doctorId);
+
+    const balanceMap = new Map(balances.map(b => [b.doctorId, b.balance]));
+    return rows.map(r => ({ ...r, commissionBalance: balanceMap.get(r.id) || "0" }));
+  }
+
+  async getDoctorCommissionBalance(doctorId: number): Promise<string> {
+    const result = await db.select({
+      balance: sql<string>`COALESCE(SUM(CASE WHEN ${doctorCommissionTransactions.type} = 'EARNED' THEN ${doctorCommissionTransactions.amount} ELSE -${doctorCommissionTransactions.amount} END), 0)`
+    }).from(doctorCommissionTransactions).where(eq(doctorCommissionTransactions.doctorId, doctorId));
+    return result[0]?.balance || "0";
+  }
+
+  async getDoctorCommissionTransactions(doctorId?: number): Promise<DoctorCommissionTransaction[]> {
+    if (doctorId) {
+      return await db.select().from(doctorCommissionTransactions)
+        .where(eq(doctorCommissionTransactions.doctorId, doctorId))
+        .orderBy(desc(doctorCommissionTransactions.createdAt));
+    }
+    return await db.select().from(doctorCommissionTransactions).orderBy(desc(doctorCommissionTransactions.createdAt));
+  }
+
+  async createDoctorCommissionPayout(data: { doctorId: number; amount: string; notes?: string | null; userId?: string | null }): Promise<DoctorCommissionTransaction> {
+    const result = await db.insert(doctorCommissionTransactions).values({
+      doctorId: data.doctorId,
+      type: "PAID",
+      amount: data.amount,
+      notes: data.notes ?? null,
+      userId: data.userId ?? null,
+    }).returning();
+    return result[0];
   }
 
   async getDoctor(id: number): Promise<Doctor | undefined> {
@@ -1975,39 +2045,51 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async getSales(limit: number = 100): Promise<Sale[]> {
-    return await db.select().from(sales).orderBy(desc(sales.createdAt)).limit(limit);
+  private async attachSalePayments<T extends { id: number }>(rows: T[]): Promise<(T & { payments: SalePayment[] })[]> {
+    if (rows.length === 0) return [];
+    const paymentRows = await db.select().from(salePayments).where(inArray(salePayments.saleId, rows.map(r => r.id)));
+    const bySale = new Map<number, SalePayment[]>();
+    for (const p of paymentRows) {
+      if (!bySale.has(p.saleId)) bySale.set(p.saleId, []);
+      bySale.get(p.saleId)!.push(p);
+    }
+    return rows.map(r => ({ ...r, payments: bySale.get(r.id) || [] }));
   }
 
-  async getSalesByUser(userId: string, options?: { from?: Date; to?: Date; search?: string }): Promise<Sale[]> {
+  async getSales(limit: number = 100): Promise<(Sale & { payments: SalePayment[] })[]> {
+    const results = await db.select().from(sales).orderBy(desc(sales.createdAt)).limit(limit);
+    return this.attachSalePayments(results);
+  }
+
+  async getSalesByUser(userId: string, options?: { from?: Date; to?: Date; search?: string }): Promise<(Sale & { payments: SalePayment[] })[]> {
     const conditions = [eq(sales.userId, userId)];
-    
+
     if (options?.from) {
       conditions.push(gte(sales.createdAt, options.from));
     }
     if (options?.to) {
       conditions.push(lte(sales.createdAt, options.to));
     }
-    
+
     let results = await db.select().from(sales)
       .where(and(...conditions))
       .orderBy(desc(sales.createdAt));
-    
+
     if (options?.search) {
       const searchLower = options.search.toLowerCase();
-      results = results.filter(s => 
+      results = results.filter(s =>
         s.invoiceNo?.toLowerCase().includes(searchLower) ||
         s.customerName?.toLowerCase().includes(searchLower) ||
         s.customerPhone?.includes(searchLower)
       );
     }
-    
-    return results;
+
+    return this.attachSalePayments(results);
   }
 
-  async getSalesWithFilters(options: { userId?: string; from?: Date; to?: Date; search?: string; limit?: number }): Promise<Sale[]> {
+  async getSalesWithFilters(options: { userId?: string; from?: Date; to?: Date; search?: string; limit?: number }): Promise<(Sale & { payments: SalePayment[] })[]> {
     const conditions: any[] = [];
-    
+
     if (options.userId) {
       conditions.push(eq(sales.userId, options.userId));
     }
@@ -2017,34 +2099,36 @@ export class DatabaseStorage implements IStorage {
     if (options.to) {
       conditions.push(lte(sales.createdAt, options.to));
     }
-    
+
     let query = db.select().from(sales);
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as any;
     }
-    
+
     const hasDateFilter = options.from || options.to;
     const effectiveLimit = options.limit || (hasDateFilter ? undefined : 10000);
-    
+
     let orderedQuery = query.orderBy(desc(sales.createdAt));
     let results = effectiveLimit ? await orderedQuery.limit(effectiveLimit) : await orderedQuery;
-    
+
     if (options.search) {
       const searchLower = options.search.toLowerCase();
-      results = results.filter(s => 
+      results = results.filter(s =>
         s.invoiceNo?.toLowerCase().includes(searchLower) ||
         s.customerName?.toLowerCase().includes(searchLower) ||
         s.customerPhone?.includes(searchLower)
       );
     }
-    
-    return results;
+
+    return this.attachSalePayments(results);
   }
 
-  async getSale(id: number): Promise<Sale | undefined> {
+  async getSale(id: number): Promise<(Sale & { payments: SalePayment[] }) | undefined> {
     const result = await db.select().from(sales).where(eq(sales.id, id)).limit(1);
-    return result[0];
+    if (!result[0]) return undefined;
+    const [withPayments] = await this.attachSalePayments(result);
+    return withPayments;
   }
 
   async getSaleByInvoiceNo(invoiceNo: string): Promise<Sale | undefined> {
@@ -2636,11 +2720,11 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getSaleWithReturns(saleId: number): Promise<{ sale: Sale; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined> {
+  async getSaleWithReturns(saleId: number): Promise<{ sale: Sale & { payments: SalePayment[] }; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined> {
     const saleResult = await db.select().from(sales).where(eq(sales.id, saleId)).limit(1);
     if (!saleResult[0]) return undefined;
-    
-    const sale = saleResult[0];
+
+    const [sale] = await this.attachSalePayments(saleResult);
     const items = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
     const returns = await db.select().from(salesReturns).where(eq(salesReturns.originalSaleId, saleId)).orderBy(desc(salesReturns.createdAt));
     
@@ -2962,6 +3046,7 @@ export class DatabaseStorage implements IStorage {
       { key: 'customers.collections', label: 'Collections', routePath: '/collections', icon: 'CreditCard', displayOrder: 22 },
       { key: 'reports.sales', label: 'Sales Reports', routePath: '/reports', icon: 'FileText', displayOrder: 30 },
       { key: 'reports.analytics', label: 'Owner Analytics', routePath: '/owner-dashboard', icon: 'BarChart3', displayOrder: 31 },
+      { key: 'reports.doctor-referrals', label: 'Doctor Referrals', routePath: '/doctor-referrals', icon: 'Stethoscope', displayOrder: 32 },
       { key: 'admin.audit', label: 'Audit Log', routePath: '/audit-log', icon: 'Shield', displayOrder: 40 },
       { key: 'admin.tally', label: 'Tally Export', routePath: '/tally-export', icon: 'Calculator', displayOrder: 41 },
       { key: 'admin.day-closing', label: 'Day Closing', routePath: '/day-closing', icon: 'CalendarCheck', displayOrder: 42 },
@@ -3001,7 +3086,7 @@ export class DatabaseStorage implements IStorage {
       { group: operations[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit', 'sales.refund', 'operations.expenses', 'operations.approvals', 'operations.stock-adjustments', 'operations.shift-handover', 'operations.my-sales', 'operations.my-activity'] },
       { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn', 'inventory.returns'] },
       { group: customersGroup[0].id, keys: ['customers.accounts', 'customers.doctors', 'customers.collections'] },
-      { group: reports[0].id, keys: ['reports.sales', 'reports.analytics'] },
+      { group: reports[0].id, keys: ['reports.sales', 'reports.analytics', 'reports.doctor-referrals'] },
       { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.day-closing', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups', 'admin.user-access', 'admin.roles'] },
       { group: billing[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit'] },
     ];
@@ -3014,6 +3099,28 @@ export class DatabaseStorage implements IStorage {
         }
       }
     }
+  }
+
+  async ensureDoctorReferralsMenu(): Promise<void> {
+    await pool.query(`
+      INSERT INTO menus (key, label, route_path, icon, display_order, is_active)
+      SELECT 'reports.doctor-referrals', 'Doctor Referrals', '/doctor-referrals', 'Stethoscope',
+             (SELECT COALESCE(MAX(display_order), 0) + 1 FROM menus WHERE key LIKE 'reports.%'), true
+      WHERE NOT EXISTS (SELECT 1 FROM menus WHERE key = 'reports.doctor-referrals')
+    `);
+
+    await pool.query(`
+      INSERT INTO menu_group_menus (menu_group_id, menu_id)
+      SELECT DISTINCT mgm.menu_group_id, dr.id
+      FROM menu_group_menus mgm
+      JOIN menus m ON m.id = mgm.menu_id
+      JOIN menus dr ON dr.key = 'reports.doctor-referrals'
+      WHERE m.key LIKE 'reports.%' AND m.key != 'reports.doctor-referrals'
+        AND NOT EXISTS (
+          SELECT 1 FROM menu_group_menus existing
+          WHERE existing.menu_group_id = mgm.menu_group_id AND existing.menu_id = dr.id
+        )
+    `);
   }
 
   async seedDefaultRoles(): Promise<void> {
@@ -3242,22 +3349,31 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  private async sumCashSalePayments(startOfDay: Date, endOfDay: Date): Promise<number> {
+    const dayRows = await db.select().from(sales).where(and(
+      gte(sales.createdAt, startOfDay),
+      lte(sales.createdAt, endOfDay)
+    ));
+    if (dayRows.length === 0) return 0;
+
+    const rowsWithPayments = await this.attachSalePayments(dayRows);
+    let total = 0;
+    for (const sale of rowsWithPayments) {
+      for (const p of resolveSalePayments(sale, sale.payments)) {
+        if (p.method.toLowerCase() === "cash") total += p.amount;
+      }
+    }
+    return total;
+  }
+
   async computeExpectedCash(businessDate: string, openingCash: string): Promise<string> {
     // Get all cash sales for the day
     const startOfDay = new Date(businessDate);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(businessDate);
     endOfDay.setHours(23, 59, 59, 999);
-    
-    const cashSalesResult = await db.select({
-      total: sql<string>`COALESCE(SUM(${sales.receivedAmount}), 0)`
-    }).from(sales).where(and(
-      eq(sales.paymentMethod, 'cash'),
-      gte(sales.createdAt, startOfDay),
-      lte(sales.createdAt, endOfDay)
-    ));
-    
-    const cashSales = parseFloat(cashSalesResult[0]?.total || "0");
+
+    const cashSales = await this.sumCashSalePayments(startOfDay, endOfDay);
     const opening = parseFloat(openingCash);
     
     // Get cash refunds for the day
@@ -3287,15 +3403,7 @@ export class DatabaseStorage implements IStorage {
     endOfDay.setHours(23, 59, 59, 999);
     
     // Get cash sales for the day
-    const cashSalesResult = await db.select({
-      total: sql<string>`COALESCE(SUM(${sales.receivedAmount}), 0)`
-    }).from(sales).where(and(
-      eq(sales.paymentMethod, 'cash'),
-      gte(sales.createdAt, startOfDay),
-      lte(sales.createdAt, endOfDay)
-    ));
-    
-    const cashSalesAmount = parseFloat(cashSalesResult[0]?.total || "0");
+    const cashSalesAmount = await this.sumCashSalePayments(startOfDay, endOfDay);
     const opening = parseFloat(openingCash);
     
     // Get cash refunds/expenses for the day

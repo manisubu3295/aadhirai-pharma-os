@@ -22,6 +22,8 @@ import {
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { NumericInput } from "@/components/ui/numeric-input";
+import type { SalePayment } from "@shared/schema";
+import { isSaleCreditBill } from "@shared/salePayments";
 
 interface Customer {
   id: number;
@@ -38,9 +40,11 @@ interface Sale {
   invoiceNo: string;
   total: string;
   paymentMethod: string;
+  receivedAmount: string;
   status: string;
   createdAt: string;
   customerId: number | null;
+  payments?: SalePayment[];
 }
 
 interface CreditPayment {
@@ -187,7 +191,7 @@ export default function CreditBilling() {
   };
 
   const getCustomerCreditSales = (customerId: number) => {
-    return sales.filter(s => s.customerId === customerId && s.paymentMethod === "Credit");
+    return sales.filter(s => s.customerId === customerId && isSaleCreditBill(s, s.payments));
   };
 
   const getCustomerPayments = (customerId: number) => {

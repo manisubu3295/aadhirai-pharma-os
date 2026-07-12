@@ -191,6 +191,11 @@ app.use((req, res, next) => {
     // Seed default menus if not already seeded
     await storage.seedDefaultMenus();
 
+    // Idempotent: adds the Doctor Referrals menu (and grants it to whichever
+    // groups already see other reports.* menus) on every startup, so it
+    // shows up on already-seeded databases too, not just fresh installs.
+    await storage.ensureDoctorReferralsMenu();
+
     // Seed default roles (must run after users + menus/groups exist)
     await storage.seedDefaultRoles();
 

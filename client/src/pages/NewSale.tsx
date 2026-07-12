@@ -64,7 +64,8 @@ import { useAuth } from "@/lib/auth";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
 import { useSettings } from "@/contexts/SettingsContext";
 import { generateSaleInvoicePdfBlob } from "@/lib/pdfUtils";
-import type { Customer, Doctor, Medicine, HeldBill, Sale, SaleItem as SaleItemSchema } from "@shared/schema";
+import type { Customer, Doctor, Medicine, HeldBill, Sale, SaleItem as SaleItemSchema, SalePayment } from "@shared/schema";
+import { buildSalePaymentPlan } from "@shared/salePayments";
 
 interface SaleItem {
   id: string;
@@ -89,6 +90,15 @@ interface SaleItem {
 }
 
 type SaleUnit = "STRIP" | "TABLET" | "CAPSULE" | "PACK" | "BOTTLE" | "VIAL" | "TUBE" | "SACHET" | "PIECE";
+
+interface PaymentRow {
+  id: string;
+  method: string;
+  amount: string;
+  reference: string;
+}
+
+const emptyPaymentRow = (): PaymentRow => ({ id: `pay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, method: "cash", amount: "", reference: "" });
 
 const normalizeMedicineCategory = (value?: string | null): string => {
   const normalized = String(value || "").trim().toLowerCase();
@@ -239,6 +249,8 @@ export default function NewSale() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentReference, setPaymentReference] = useState("");
   const [receivedAmount, setReceivedAmount] = useState("");
+  const [isSplitMode, setIsSplitMode] = useState(false);
+  const [paymentRows, setPaymentRows] = useState<PaymentRow[]>([]);
   const [printInvoice, setPrintInvoice] = useState(false);
   const [sendViaEmail, setSendViaEmail] = useState(false);
   const [billDiscountPercent, setBillDiscountPercent] = useState("0");
@@ -248,7 +260,7 @@ export default function NewSale() {
   const [heldBillsDialogOpen, setHeldBillsDialogOpen] = useState(false);
   const [newMedicineDialog, setNewMedicineDialog] = useState(false);
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
-  const [printSaleData, setPrintSaleData] = useState<{sale: Sale; items: SaleItemSchema[]} | null>(null);
+  const [printSaleData, setPrintSaleData] = useState<{sale: Sale & { payments?: SalePayment[] }; items: SaleItemSchema[]} | null>(null);
   const [invoiceSearchInput, setInvoiceSearchInput] = useState("");
   const [searchingInvoice, setSearchingInvoice] = useState(false);
   const [reprintDialogOpen, setReprintDialogOpen] = useState(false);
@@ -363,7 +375,7 @@ export default function NewSale() {
       }
       return res.json();
     },
-    onSuccess: (saleResult: { sale: Sale; items: SaleItemSchema[] }, variables) => {
+    onSuccess: (saleResult: { sale: Sale & { payments?: SalePayment[] }; items: SaleItemSchema[] }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
@@ -659,8 +671,19 @@ export default function NewSale() {
     const netAmount = discountedSubtotal + tax;
     const roundedNet = Math.round(netAmount);
     const roundOff = roundedNet - netAmount;
-    const received = Number(receivedAmount) || 0;
-    const change = received - roundedNet;
+
+    const splitPlan = isSplitMode
+      ? buildSalePaymentPlan({
+          total: roundedNet,
+          rows: paymentRows.map((r) => ({ method: r.method, amount: Number(r.amount) || 0, reference: r.reference })),
+          hasCustomer: !!selectedCustomer,
+        })
+      : null;
+
+    const received = isSplitMode ? splitPlan!.receivedAmount : (Number(receivedAmount) || 0);
+    const change = isSplitMode ? splitPlan!.changeAmount : Math.max(0, received - roundedNet);
+    const creditPortion = isSplitMode ? splitPlan!.creditPortion : 0;
+    const paymentError = isSplitMode ? splitPlan!.error : null;
 
     return {
       subtotal,
@@ -672,11 +695,25 @@ export default function NewSale() {
       netAmount: roundedNet,
       roundOff,
       received,
-      change: change > 0 ? change : 0,
+      change,
+      creditPortion,
+      paymentError,
       totalMRP,
       totalItemDiscount,
     };
-  }, [items, billDiscountPercent, receivedAmount, isGstEnabled]);
+  }, [items, billDiscountPercent, receivedAmount, isGstEnabled, isSplitMode, paymentRows, selectedCustomer]);
+
+  const canSubmitSale = useMemo(() => {
+    if (items.length === 0 || createSaleMutation.isPending) return false;
+    if (isSplitMode) {
+      if (paymentRows.filter((r) => Number(r.amount) > 0).length === 0) return false;
+      if (calculations.paymentError) return false;
+      return true;
+    }
+    if (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0) return false;
+    if (paymentMethod === "credit" && !selectedCustomer) return false;
+    return true;
+  }, [items, createSaleMutation.isPending, isSplitMode, paymentRows, calculations, paymentMethod, selectedCustomer]);
 
   const resetForm = () => {
     setItems([]);
@@ -686,9 +723,41 @@ export default function NewSale() {
     setPaymentMethod("cash");
     setPaymentReference("");
     setReceivedAmount("");
+    setIsSplitMode(false);
+    setPaymentRows([]);
     setPrintInvoice(false);
     setSendViaEmail(false);
     setBillDiscountPercent("0");
+  };
+
+  const addPaymentRow = () => {
+    setPaymentRows((prev) => [...prev, emptyPaymentRow()]);
+  };
+
+  const updatePaymentRowMethod = (rowId: string, method: string) => {
+    setPaymentRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, method } : r)));
+  };
+
+  const updatePaymentRowAmount = (rowId: string, amount: string) => {
+    setPaymentRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, amount } : r)));
+  };
+
+  const updatePaymentRowReference = (rowId: string, reference: string) => {
+    setPaymentRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, reference } : r)));
+  };
+
+  const removePaymentRow = (rowId: string) => {
+    setPaymentRows((prev) => prev.filter((r) => r.id !== rowId));
+  };
+
+  const toggleSplitMode = () => {
+    setIsSplitMode((prev) => {
+      const next = !prev;
+      if (next && paymentRows.length === 0) {
+        setPaymentRows([emptyPaymentRow()]);
+      }
+      return next;
+    });
   };
 
   const handleGenerateInvoice = () => {
@@ -743,6 +812,11 @@ export default function NewSale() {
           paymentReference: paymentReference || null,
           receivedAmount: calculations.received.toFixed(2),
           changeAmount: calculations.change.toFixed(2),
+          payments: isSplitMode
+            ? paymentRows
+                .filter((r) => Number(r.amount) > 0)
+                .map((r) => ({ method: r.method, amount: Number(r.amount).toFixed(2), reference: r.reference || null }))
+            : [{ method: paymentMethod, amount: calculations.received.toFixed(2), reference: paymentReference || null }],
           status: "Completed",
           printInvoice,
           sendViaEmail,
@@ -956,15 +1030,11 @@ export default function NewSale() {
       }, 100);
     } else if (e.key === 'F8') {
       e.preventDefault();
-      const isDisabled = items.length === 0 || 
-        createSaleMutation.isPending ||
-        (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0) ||
-        (paymentMethod === "credit" && !selectedCustomer);
-      if (!isDisabled) {
+      if (canSubmitSale) {
         handleGenerateInvoice();
       }
     }
-  }, [items, paymentMethod, calculations, selectedCustomer, createSaleMutation.isPending]);
+  }, [items, canSubmitSale, handleGenerateInvoice]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyboardShortcuts);
@@ -1453,79 +1523,178 @@ export default function NewSale() {
               </div>
 
               <div className="space-y-3 mb-4">
-                <Label className="text-sm font-medium">Payment</Label>
-                <RadioGroup
-                  value={paymentMethod}
-                  onValueChange={setPaymentMethod}
-                  className="grid grid-cols-4 gap-2"
-                >
-                  <div className="flex items-center space-x-1">
-                    <RadioGroupItem value="cash" id="cash" data-testid="radio-cash" className="h-3.5 w-3.5" />
-                    <Label htmlFor="cash" className="font-normal cursor-pointer text-xs">Cash</Label>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <RadioGroupItem value="upi" id="upi" data-testid="radio-upi" className="h-3.5 w-3.5" />
-                    <Label htmlFor="upi" className="font-normal cursor-pointer text-xs">UPI</Label>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <RadioGroupItem value="card" id="card" data-testid="radio-card" className="h-3.5 w-3.5" />
-                    <Label htmlFor="card" className="font-normal cursor-pointer text-xs">Card</Label>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <RadioGroupItem value="credit" id="credit" data-testid="radio-credit" className="h-3.5 w-3.5" />
-                    <Label htmlFor="credit" className="font-normal cursor-pointer text-xs">Credit</Label>
-                  </div>
-                </RadioGroup>
-
-                {(paymentMethod === "upi" || paymentMethod === "card" || paymentMethod === "credit") && (
-                  <Input
-                    value={paymentReference}
-                    onChange={(e) => setPaymentReference(e.target.value)}
-                    placeholder="Reference (optional)"
-                    className="h-8 text-sm"
-                    data-testid="input-payment-reference"
-                  />
-                )}
-              </div>
-
-              <div className="mb-4 space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label className="font-medium text-sm">Received</Label>
-                  <div className="flex items-center gap-1">
-                    <span className="text-sm">₹</span>
-                    <NumericInput
-                      min={0}
-                      allowDecimal={true}
-                      value={parseFloat(receivedAmount) || 0}
-                      onChange={(value) => setReceivedAmount(String(value))}
-                      placeholder="0"
-                      className={cn(
-                        "w-20 h-8 text-right",
-                        paymentMethod !== "credit" && 
-                        calculations.received < calculations.netAmount && 
-                        calculations.netAmount > 0 &&
-                        "border-red-500"
-                      )}
-                      data-testid="input-received"
-                    />
-                  </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Payment</Label>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs"
+                    onClick={toggleSplitMode}
+                    data-testid="button-toggle-split-payment"
+                  >
+                    {isSplitMode ? "Use single payment method" : "Split payment"}
+                  </Button>
                 </div>
-                {paymentMethod !== "credit" && 
-                 calculations.received < calculations.netAmount && 
-                 calculations.netAmount > 0 && (
-                  <div className="text-xs text-red-500 text-right" data-testid="text-underpaid-error">
-                    Pay full amount
-                  </div>
-                )}
-                {calculations.change > 0 && (
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Change</span>
-                    <span className="font-medium text-green-600" data-testid="text-change">
-                      ₹{calculations.change.toFixed(2)}
-                    </span>
+
+                {!isSplitMode ? (
+                  <>
+                    <RadioGroup
+                      value={paymentMethod}
+                      onValueChange={setPaymentMethod}
+                      className="grid grid-cols-4 gap-2"
+                    >
+                      <div className="flex items-center space-x-1">
+                        <RadioGroupItem value="cash" id="cash" data-testid="radio-cash" className="h-3.5 w-3.5" />
+                        <Label htmlFor="cash" className="font-normal cursor-pointer text-xs">Cash</Label>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <RadioGroupItem value="upi" id="upi" data-testid="radio-upi" className="h-3.5 w-3.5" />
+                        <Label htmlFor="upi" className="font-normal cursor-pointer text-xs">UPI</Label>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <RadioGroupItem value="card" id="card" data-testid="radio-card" className="h-3.5 w-3.5" />
+                        <Label htmlFor="card" className="font-normal cursor-pointer text-xs">Card</Label>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <RadioGroupItem value="credit" id="credit" data-testid="radio-credit" className="h-3.5 w-3.5" />
+                        <Label htmlFor="credit" className="font-normal cursor-pointer text-xs">Credit</Label>
+                      </div>
+                    </RadioGroup>
+
+                    {(paymentMethod === "upi" || paymentMethod === "card" || paymentMethod === "credit") && (
+                      <Input
+                        value={paymentReference}
+                        onChange={(e) => setPaymentReference(e.target.value)}
+                        placeholder="Reference (optional)"
+                        className="h-8 text-sm"
+                        data-testid="input-payment-reference"
+                      />
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    {paymentRows.map((row) => (
+                      <div key={row.id} className="flex items-center gap-1.5" data-testid={`row-payment-${row.id}`}>
+                        <Select value={row.method} onValueChange={(value) => updatePaymentRowMethod(row.id, value)}>
+                          <SelectTrigger className="h-8 w-[88px] text-xs" data-testid={`select-payment-method-${row.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">Cash</SelectItem>
+                            <SelectItem value="upi">UPI</SelectItem>
+                            <SelectItem value="card">Card</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <NumericInput
+                          min={0}
+                          allowDecimal={true}
+                          value={parseFloat(row.amount) || 0}
+                          onChange={(value) => updatePaymentRowAmount(row.id, String(value))}
+                          placeholder="Amount"
+                          className="h-8 flex-1 text-right"
+                          data-testid={`input-payment-amount-${row.id}`}
+                        />
+                        <Input
+                          value={row.reference}
+                          onChange={(e) => updatePaymentRowReference(row.id, e.target.value)}
+                          placeholder="Ref"
+                          className="h-8 w-16 text-xs"
+                          data-testid={`input-payment-reference-${row.id}`}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0"
+                          onClick={() => removePaymentRow(row.id)}
+                          data-testid={`button-remove-payment-${row.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={addPaymentRow}
+                      data-testid="button-add-payment-row"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add payment method
+                    </Button>
                   </div>
                 )}
               </div>
+
+              {!isSplitMode ? (
+                <div className="mb-4 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label className="font-medium text-sm">Received</Label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm">₹</span>
+                      <NumericInput
+                        min={0}
+                        allowDecimal={true}
+                        value={parseFloat(receivedAmount) || 0}
+                        onChange={(value) => setReceivedAmount(String(value))}
+                        placeholder="0"
+                        className={cn(
+                          "w-20 h-8 text-right",
+                          paymentMethod !== "credit" &&
+                          calculations.received < calculations.netAmount &&
+                          calculations.netAmount > 0 &&
+                          "border-red-500"
+                        )}
+                        data-testid="input-received"
+                      />
+                    </div>
+                  </div>
+                  {paymentMethod !== "credit" &&
+                   calculations.received < calculations.netAmount &&
+                   calculations.netAmount > 0 && (
+                    <div className="text-xs text-red-500 text-right" data-testid="text-underpaid-error">
+                      Pay full amount
+                    </div>
+                  )}
+                  {calculations.change > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground">Change</span>
+                      <span className="font-medium text-green-600" data-testid="text-change">
+                        ₹{calculations.change.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mb-4 space-y-1.5 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Received</span>
+                    <span className="font-medium">₹{calculations.received.toFixed(2)}</span>
+                  </div>
+                  {calculations.change > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Change</span>
+                      <span className="font-medium text-green-600" data-testid="text-change">
+                        ₹{calculations.change.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {calculations.creditPortion > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Remaining (Credit)</span>
+                      <span className="font-medium text-amber-600">₹{calculations.creditPortion.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {calculations.paymentError && (
+                    <div className="text-xs text-red-500 text-right" data-testid="text-underpaid-error">
+                      {calculations.paymentError}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-4 mb-4 text-xs">
                 <div className="flex items-center space-x-1.5">
@@ -1550,7 +1719,7 @@ export default function NewSale() {
                 </div>
               </div>
 
-              {paymentMethod === "credit" && !selectedCustomer && (
+              {((isSplitMode && calculations.creditPortion > 0) || (!isSplitMode && paymentMethod === "credit")) && !selectedCustomer && (
                 <div className="text-xs text-red-500 text-center mb-2" data-testid="text-credit-customer-required">
                   Select customer for credit
                 </div>
@@ -1558,12 +1727,7 @@ export default function NewSale() {
               <Button
                 className="w-full bg-primary hover:bg-primary/90 h-10 text-sm mt-auto"
                 onClick={handleGenerateInvoice}
-                disabled={
-                  items.length === 0 || 
-                  createSaleMutation.isPending ||
-                  (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0) ||
-                  (paymentMethod === "credit" && !selectedCustomer)
-                }
+                disabled={!canSubmitSale}
                 data-testid="button-generate-invoice"
               >
                 {createSaleMutation.isPending ? "Generating..." : "Generate Invoice (F8)"}

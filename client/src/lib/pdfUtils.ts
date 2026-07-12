@@ -1,7 +1,8 @@
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 import type { TDocumentDefinitions, Content, TableCell, StyleDictionary } from "pdfmake/interfaces";
-import type { Sale, SaleItem } from "@shared/schema";
+import type { Sale, SaleItem, SalePayment } from "@shared/schema";
+import { resolveSalePayments } from "@shared/salePayments";
 
 pdfMake.vfs = pdfFonts.vfs;
 
@@ -61,7 +62,7 @@ interface InvoiceSettings {
 }
 
 export function generateSaleInvoicePdfBlob(
-  sale: Sale,
+  sale: Sale & { payments?: SalePayment[] },
   items: SaleItem[],
   storeInfo: StoreInfo,
   invoiceSettings?: InvoiceSettings,
@@ -173,7 +174,16 @@ export function generateSaleInvoicePdfBlob(
       },
       {
         columns: [
-          { width: "*", text: `Payment: ${(sale.paymentMethod || "").toUpperCase()}` },
+          {
+            width: "*",
+            text: (() => {
+              const effectivePayments = resolveSalePayments(sale, sale.payments);
+              if (effectivePayments.length > 1) {
+                return effectivePayments.map((p) => `${p.method.toUpperCase()}: ₹${p.amount.toFixed(2)}\n`);
+              }
+              return `Payment: ${(sale.paymentMethod || "").toUpperCase()}`;
+            })(),
+          },
           {
             width: 200,
             table: {

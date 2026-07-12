@@ -9,6 +9,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import type { SalePayment } from "@shared/schema";
+import { isSaleCreditBill } from "@shared/salePayments";
 interface Medicine {
   id: number;
   name: string;
@@ -21,9 +23,12 @@ interface Sale {
   id: number;
   invoiceNo: string;
   customerName: string;
+  customerId?: number | null;
   total: string;
   paymentMethod: string;
+  receivedAmount: string;
   createdAt: string;
+  payments?: SalePayment[];
 }
 
 interface Notification {
@@ -90,7 +95,7 @@ export function Header({ title, onToggleSidebar }: { title: string; onToggleSide
   });
 
   const recentCreditBills = sales.filter(s => {
-    if (s.paymentMethod?.toLowerCase() !== "credit") return false;
+    if (!isSaleCreditBill(s, s.payments)) return false;
     const saleDate = new Date(s.createdAt);
     const threeDaysAgo = new Date();
     threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);

@@ -32,7 +32,8 @@ import { useState, memo } from "react";
 import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
-import type { Customer, CreditPayment, Sale } from "@shared/schema";
+import type { Customer, CreditPayment, Sale, SalePayment } from "@shared/schema";
+import { isSaleCreditBill } from "@shared/salePayments";
 
 interface CustomerFormData {
   name: string;
@@ -238,9 +239,9 @@ export default function Customers() {
       const response = await fetch(`/api/sales`);
       if (!response.ok) return [];
       const allSales = await response.json();
-      return allSales.filter((s: Sale) => 
-        s.customerId === selectedCustomer.id && 
-        s.paymentMethod === "Credit"
+      return allSales.filter((s: Sale & { payments?: SalePayment[] }) =>
+        s.customerId === selectedCustomer.id &&
+        isSaleCreditBill(s, s.payments)
       );
     },
     enabled: !!selectedCustomer && paymentHistoryDialogOpen,

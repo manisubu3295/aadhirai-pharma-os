@@ -31,6 +31,8 @@ import {
 import { useState } from "react";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
+import type { SalePayment } from "@shared/schema";
+import { resolveSalePayments, isSaleCreditBill } from "@shared/salePayments";
 
 interface Sale {
   id: number;
@@ -43,8 +45,10 @@ interface Sale {
   tax: string;
   total: string;
   paymentMethod: string;
+  receivedAmount: string;
   status: string;
   createdAt: string;
+  payments?: SalePayment[];
 }
 
 interface UserInfo {
@@ -94,8 +98,8 @@ export default function MySales() {
 
   const totalSales = sales.length;
   const totalAmount = sales.reduce((sum, s) => sum + parseFloat(s.total || "0"), 0);
-  const cashSales = sales.filter(s => s.paymentMethod?.toLowerCase() === "cash").length;
-  const creditSales = sales.filter(s => s.paymentMethod?.toLowerCase() === "credit").length;
+  const cashSales = sales.filter(s => resolveSalePayments(s, s.payments).some(p => p.method.toLowerCase() === "cash")).length;
+  const creditSales = sales.filter(s => isSaleCreditBill(s, s.payments)).length;
 
   const getPaymentBadge = (method: string) => {
     const colors: Record<string, string> = {
@@ -103,6 +107,7 @@ export default function MySales() {
       upi: "bg-blue-100 text-blue-800",
       card: "bg-purple-100 text-purple-800",
       credit: "bg-orange-100 text-orange-800",
+      split: "bg-indigo-100 text-indigo-800",
     };
     return colors[method?.toLowerCase()] || "bg-gray-100 text-gray-800";
   };

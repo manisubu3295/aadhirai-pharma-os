@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
-import type { Sale, SaleItem } from "@shared/schema";
+import type { Sale, SaleItem, SalePayment } from "@shared/schema";
+import { resolveSalePayments } from "@shared/salePayments";
 
 interface InvoiceSettings {
   showMrp?: boolean;
@@ -10,7 +11,7 @@ interface InvoiceSettings {
 }
 
 interface PrintableInvoiceProps {
-  sale: Sale;
+  sale: Sale & { payments?: SalePayment[] };
   items: SaleItem[];
   storeInfo?: {
     name: string;
@@ -180,13 +181,32 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
 
         <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
           <div>
-            <p><strong>Payment Method:</strong> {sale.paymentMethod.toUpperCase()}</p>
-            {Number(sale.receivedAmount) > 0 && (
-              <p><strong>Received:</strong> ₹{Number(sale.receivedAmount).toFixed(2)}</p>
-            )}
-            {Number(sale.changeAmount) > 0 && (
-              <p><strong>Change:</strong> ₹{Number(sale.changeAmount).toFixed(2)}</p>
-            )}
+            {(() => {
+              const effectivePayments = resolveSalePayments(sale, sale.payments);
+              if (effectivePayments.length > 1) {
+                return (
+                  <>
+                    <p><strong>Payment Method:</strong> SPLIT</p>
+                    {effectivePayments.map((p, i) => (
+                      <p key={i}>
+                        &nbsp;&nbsp;{p.method.toUpperCase()}: ₹{p.amount.toFixed(2)}{p.reference ? ` (${p.reference})` : ""}
+                      </p>
+                    ))}
+                  </>
+                );
+              }
+              return (
+                <>
+                  <p><strong>Payment Method:</strong> {sale.paymentMethod.toUpperCase()}</p>
+                  {Number(sale.receivedAmount) > 0 && (
+                    <p><strong>Received:</strong> ₹{Number(sale.receivedAmount).toFixed(2)}</p>
+                  )}
+                  {Number(sale.changeAmount) > 0 && (
+                    <p><strong>Change:</strong> ₹{Number(sale.changeAmount).toFixed(2)}</p>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
 

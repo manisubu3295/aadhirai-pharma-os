@@ -19,24 +19,38 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Stethoscope, Phone, BadgeCheck, Crown, Lock, FileDown, Upload, Download } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { NumericInput } from "@/components/ui/numeric-input";
+import { Search, MoreHorizontal, Plus, Edit, Stethoscope, Phone, BadgeCheck, Crown, Lock, FileDown, Upload, Download, IndianRupee } from "lucide-react";
 import { useState, memo } from "react";
 import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/lib/planContext";
 import type { Doctor } from "@shared/schema";
 
+type DoctorWithBalance = Doctor & { commissionBalance: string };
+
 interface DoctorFormData {
   name: string;
   specialization: string;
   phone: string;
   registrationNo: string;
+  commissionBasis: string;
+  commissionRate: string;
+  commissionFixedAmount: string;
+  minSaleAmount: string;
 }
 
 const emptyForm: DoctorFormData = {
@@ -44,6 +58,16 @@ const emptyForm: DoctorFormData = {
   specialization: "",
   phone: "",
   registrationNo: "",
+  commissionBasis: "none",
+  commissionRate: "",
+  commissionFixedAmount: "",
+  minSaleAmount: "",
+};
+
+const commissionBasisLabels: Record<string, string> = {
+  subtotal_pretax: "of Subtotal (pre-tax)",
+  total_with_gst: "of Total (incl. GST)",
+  fixed: "Fixed per sale",
 };
 
 interface DoctorFormFieldsProps {
@@ -94,17 +118,92 @@ const DoctorFormFields = memo(function DoctorFormFields({ formData, setFormData 
           data-testid="input-doctor-registration"
         />
       </div>
+      <div className="pt-2 border-t">
+        <Label htmlFor="commissionBasis">Referral Commission</Label>
+        <Select
+          value={formData.commissionBasis}
+          onValueChange={(value) => setFormData(prev => ({ ...prev, commissionBasis: value }))}
+        >
+          <SelectTrigger id="commissionBasis" data-testid="select-commission-basis">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No commission</SelectItem>
+            <SelectItem value="subtotal_pretax">% of Subtotal (pre-tax)</SelectItem>
+            <SelectItem value="total_with_gst">% of Total (incl. GST)</SelectItem>
+            <SelectItem value="fixed">Fixed amount per sale</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {(formData.commissionBasis === "subtotal_pretax" || formData.commissionBasis === "total_with_gst") && (
+        <div>
+          <Label htmlFor="commissionRate">Commission Rate (%)</Label>
+          <NumericInput
+            min={0}
+            allowDecimal={true}
+            value={parseFloat(formData.commissionRate) || 0}
+            onChange={(value) => setFormData(prev => ({ ...prev, commissionRate: String(value) }))}
+            placeholder="e.g., 5"
+            data-testid="input-commission-rate"
+          />
+        </div>
+      )}
+      {formData.commissionBasis === "fixed" && (
+        <div>
+          <Label htmlFor="commissionFixedAmount">Fixed Amount (₹)</Label>
+          <NumericInput
+            min={0}
+            allowDecimal={true}
+            value={parseFloat(formData.commissionFixedAmount) || 0}
+            onChange={(value) => setFormData(prev => ({ ...prev, commissionFixedAmount: String(value) }))}
+            placeholder="e.g., 50"
+            data-testid="input-commission-fixed-amount"
+          />
+        </div>
+      )}
+      {formData.commissionBasis !== "none" && (
+        <div>
+          <Label htmlFor="minSaleAmount">Minimum Sale Amount (₹, optional)</Label>
+          <NumericInput
+            min={0}
+            allowDecimal={true}
+            value={parseFloat(formData.minSaleAmount) || 0}
+            onChange={(value) => setFormData(prev => ({ ...prev, minSaleAmount: String(value) }))}
+            placeholder="0 = always earns commission"
+            data-testid="input-min-sale-amount"
+          />
+        </div>
+      )}
     </div>
   );
 });
+
+function toDoctorPayload(formData: DoctorFormData) {
+  return {
+    name: formData.name,
+    specialization: formData.specialization || null,
+    phone: formData.phone || null,
+    registrationNo: formData.registrationNo || null,
+    commissionBasis: formData.commissionBasis === "none" ? null : formData.commissionBasis,
+    commissionRate:
+      formData.commissionBasis === "subtotal_pretax" || formData.commissionBasis === "total_with_gst"
+        ? (formData.commissionRate || "0")
+        : null,
+    commissionFixedAmount: formData.commissionBasis === "fixed" ? (formData.commissionFixedAmount || "0") : null,
+    minSaleAmount: formData.commissionBasis === "none" ? "0" : (formData.minSaleAmount || "0"),
+  };
+}
 
 export default function Doctors() {
   const [searchTerm, setSearchTerm] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [payoutDialogOpen, setPayoutDialogOpen] = useState(false);
+  const [selectedDoctor, setSelectedDoctor] = useState<DoctorWithBalance | null>(null);
   const [formData, setFormData] = useState<DoctorFormData>(emptyForm);
+  const [payoutAmount, setPayoutAmount] = useState(0);
+  const [payoutNotes, setPayoutNotes] = useState("");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -132,7 +231,7 @@ export default function Doctors() {
     );
   }
 
-  const { data: doctors = [], isLoading } = useQuery<Doctor[]>({
+  const { data: doctors = [], isLoading } = useQuery<DoctorWithBalance[]>({
     queryKey: ["/api/doctors"],
     queryFn: async () => {
       const response = await fetch("/api/doctors");
@@ -146,7 +245,7 @@ export default function Doctors() {
       const res = await fetch("/api/doctors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(toDoctorPayload(data)),
       });
       if (!res.ok) throw new Error("Failed to create doctor");
       return res.json();
@@ -167,7 +266,7 @@ export default function Doctors() {
       const res = await fetch(`/api/doctors/${data.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(toDoctorPayload(data)),
       });
       if (!res.ok) throw new Error("Failed to update doctor");
       return res.json();
@@ -184,6 +283,33 @@ export default function Doctors() {
     },
   });
 
+  const payoutMutation = useMutation({
+    mutationFn: async (data: { doctorId: number; amount: number; notes: string }) => {
+      const res = await fetch("/api/doctor-commissions/payout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to record payout");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor-commissions/transactions"] });
+      setPayoutDialogOpen(false);
+      setPayoutAmount(0);
+      setPayoutNotes("");
+      setSelectedDoctor(null);
+      toast({ title: "Payout recorded successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to record payout", description: error.message, variant: "destructive" });
+    },
+  });
+
   const filteredDoctors = doctors.filter((doctor) =>
     doctor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (doctor.specialization && doctor.specialization.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -191,15 +317,26 @@ export default function Doctors() {
     (doctor.registrationNo && doctor.registrationNo.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const openEditDialog = (doctor: Doctor) => {
+  const openEditDialog = (doctor: DoctorWithBalance) => {
     setSelectedDoctor(doctor);
     setFormData({
       name: doctor.name,
       specialization: doctor.specialization || "",
       phone: doctor.phone || "",
       registrationNo: doctor.registrationNo || "",
+      commissionBasis: doctor.commissionBasis || "none",
+      commissionRate: doctor.commissionRate || "",
+      commissionFixedAmount: doctor.commissionFixedAmount || "",
+      minSaleAmount: doctor.minSaleAmount || "",
     });
     setEditDialogOpen(true);
+  };
+
+  const openPayoutDialog = (doctor: DoctorWithBalance) => {
+    setSelectedDoctor(doctor);
+    setPayoutAmount(parseFloat(doctor.commissionBalance) || 0);
+    setPayoutNotes("");
+    setPayoutDialogOpen(true);
   };
 
   const handleSubmit = () => {
@@ -215,9 +352,14 @@ export default function Doctors() {
     updateMutation.mutate({ ...formData, id: selectedDoctor.id });
   };
 
+  const handleRecordPayout = () => {
+    if (!selectedDoctor || payoutAmount <= 0) return;
+    payoutMutation.mutate({ doctorId: selectedDoctor.id, amount: payoutAmount, notes: payoutNotes });
+  };
+
   return (
     <AppLayout title="Doctors">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
@@ -258,6 +400,21 @@ export default function Doctors() {
                 <p className="text-sm text-muted-foreground">With Phone</p>
                 <p className="text-2xl font-bold text-purple-600" data-testid="text-doctors-with-phone">
                   {doctors.filter(d => d.phone).length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-amber-100">
+                <IndianRupee className="h-6 w-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Commission Owed</p>
+                <p className="text-2xl font-bold text-amber-600" data-testid="text-total-commission-owed">
+                  ₹{doctors.reduce((sum, d) => sum + (parseFloat(d.commissionBalance) || 0), 0).toFixed(2)}
                 </p>
               </div>
             </div>
@@ -314,11 +471,15 @@ export default function Doctors() {
                     <TableHead>Specialization</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Registration No.</TableHead>
+                    <TableHead>Commission</TableHead>
+                    <TableHead>Balance Owed</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredDoctors.map((doctor) => (
+                  {filteredDoctors.map((doctor) => {
+                    const balance = parseFloat(doctor.commissionBalance) || 0;
+                    return (
                     <TableRow key={doctor.id} data-testid={`row-doctor-${doctor.id}`}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -346,6 +507,18 @@ export default function Doctors() {
                         ) : "-"}
                       </TableCell>
                       <TableCell>
+                        {doctor.commissionBasis ? (
+                          <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">
+                            {doctor.commissionBasis === "fixed"
+                              ? `₹${Number(doctor.commissionFixedAmount).toFixed(2)} / sale`
+                              : `${Number(doctor.commissionRate).toFixed(2)}% ${commissionBasisLabels[doctor.commissionBasis]}`}
+                          </span>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell className={balance > 0 ? "font-medium text-amber-600" : "text-muted-foreground"}>
+                        ₹{balance.toFixed(2)}
+                      </TableCell>
+                      <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" data-testid={`button-actions-doctor-${doctor.id}`}>
@@ -356,11 +529,17 @@ export default function Doctors() {
                             <DropdownMenuItem onClick={() => openEditDialog(doctor)} data-testid={`menu-edit-doctor-${doctor.id}`}>
                               <Edit className="h-4 w-4 mr-2" /> Edit
                             </DropdownMenuItem>
+                            {balance > 0 && (
+                              <DropdownMenuItem onClick={() => openPayoutDialog(doctor)} data-testid={`menu-pay-commission-${doctor.id}`}>
+                                <IndianRupee className="h-4 w-4 mr-2" /> Pay Commission
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -397,6 +576,55 @@ export default function Doctors() {
             </Button>
             <Button onClick={handleUpdate} disabled={updateMutation.isPending} data-testid="button-update-doctor">
               {updateMutation.isPending ? "Updating..." : "Update Doctor"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={payoutDialogOpen} onOpenChange={setPayoutDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pay Commission — {selectedDoctor?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center bg-muted/50 p-3 rounded">
+              <span className="text-sm text-muted-foreground">Balance Owed</span>
+              <span className="font-bold text-amber-600">
+                ₹{selectedDoctor ? (parseFloat(selectedDoctor.commissionBalance) || 0).toFixed(2) : "0.00"}
+              </span>
+            </div>
+            <div>
+              <Label htmlFor="payoutAmount">Amount (₹)</Label>
+              <NumericInput
+                min={0}
+                max={selectedDoctor ? parseFloat(selectedDoctor.commissionBalance) || 0 : 0}
+                allowDecimal={true}
+                value={payoutAmount}
+                onChange={setPayoutAmount}
+                data-testid="input-payout-amount"
+              />
+            </div>
+            <div>
+              <Label htmlFor="payoutNotes">Notes (optional)</Label>
+              <Input
+                id="payoutNotes"
+                value={payoutNotes}
+                onChange={(e) => setPayoutNotes(e.target.value)}
+                placeholder="e.g., Paid via bank transfer"
+                data-testid="input-payout-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayoutDialogOpen(false)} data-testid="button-cancel-payout">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRecordPayout}
+              disabled={payoutMutation.isPending || payoutAmount <= 0}
+              data-testid="button-record-payout"
+            >
+              {payoutMutation.isPending ? "Recording..." : "Record Payout"}
             </Button>
           </DialogFooter>
         </DialogContent>

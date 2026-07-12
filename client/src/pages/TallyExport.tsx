@@ -11,18 +11,23 @@ import { FileSpreadsheet, Download, Settings, ShoppingCart, Package, CreditCard,
 import { usePlan } from "@/lib/planContext";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { endOfLocalDay, formatAppDate, parseServerDate, startOfLocalDay } from "@/lib/dateTime";
+import type { SalePayment } from "@shared/schema";
+import { resolveSalePayments } from "@shared/salePayments";
 
 interface Sale {
   id: number;
   invoiceNo: string;
   customerName: string;
   customerGstin: string | null;
+  customerId?: number | null;
   subtotal: string;
   cgst: string;
   sgst: string;
   total: string;
   paymentMethod: string;
+  receivedAmount: string;
   createdAt: string;
+  payments?: SalePayment[];
 }
 
 export default function TallyExport() {
@@ -97,21 +102,27 @@ export default function TallyExport() {
     downloadCSV(csvContent, "tally_sales_vouchers");
   };
 
+  const getCashPaymentRows = () => filteredSales.flatMap(sale =>
+    resolveSalePayments(sale, sale.payments)
+      .filter(p => p.method.toLowerCase() === "cash")
+      .map(p => ({ sale, amount: p.amount }))
+  );
+
   const generateReceiptVoucherCSV = () => {
-    const cashSales = filteredSales.filter(s => s.paymentMethod.toLowerCase() === "cash");
+    const cashRows = getCashPaymentRows();
     const headers = [
       "Voucher Type", "Voucher Date", "Voucher Number", "Dr Ledger", "Cr Ledger", "Amount"
     ];
-    
-    const rows = cashSales.map(sale => [
+
+    const rows = cashRows.map(({ sale, amount }) => [
       "Receipt",
       formatAppDate(sale.createdAt, "dd-MM-yyyy"),
       `RCP-${sale.id}`,
       ledgerConfig.cashLedger,
       sale.customerName,
-      sale.total
+      amount.toFixed(2)
     ]);
-    
+
     const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
     downloadCSV(csvContent, "tally_receipt_vouchers");
   };
@@ -233,7 +244,7 @@ export default function TallyExport() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold mb-2">
-                    {filteredSales.filter(s => s.paymentMethod.toLowerCase() === "cash").length}
+                    {getCashPaymentRows().length}
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">Cash transactions</p>
                   <Button onClick={generateReceiptVoucherCSV} className="w-full" variant="outline" data-testid="button-export-receipt-vouchers">

@@ -5,6 +5,7 @@ import {
   type SalePostingInput,
   type SalePostingLineInput,
 } from "../repositories/inventory-posting.repository";
+import { computeDoctorCommission } from "@shared/doctorCommission";
 
 export const toBaseQty = (unitQty: number, conversionFactorSnapshot: number): number => {
   const qty = Math.max(0, Number(unitQty) || 0);
@@ -165,6 +166,18 @@ export class InventoryPostingService {
     return this.repository.withTransaction(async (tx) => {
       const sale = await this.repository.createSaleHeader(tx, input.header);
 
+      const paymentRows =
+        input.header.payments && input.header.payments.length > 0
+          ? input.header.payments
+          : [
+              {
+                method: (input.header.paymentMethod || "").toLowerCase(),
+                amount: Number(input.header.receivedAmount || 0),
+                reference: input.header.paymentReference ?? null,
+              },
+            ];
+      await this.repository.createSalePayments(tx, sale.id, paymentRows);
+
       for (const line of input.lines) {
         const unit = String(line.unitType || "TABLET").toUpperCase();
         const isPackBasedUnit = unit === "STRIP" || unit === "PACK";
@@ -264,11 +277,30 @@ export class InventoryPostingService {
         }
       }
 
-      if ((input.header.paymentMethod || "").toLowerCase() === "credit" && input.header.customerId) {
-        const total = Number(input.header.total || "0") || 0;
-        const received = Number(input.header.receivedAmount || "0") || 0;
-        const unpaid = Math.max(0, total - received);
-        await this.repository.increaseCustomerOutstandingForCredit(tx, input.header.customerId, unpaid);
+      if (input.header.customerId) {
+        const creditAmount = paymentRows
+          .filter((row) => row.method.toLowerCase() === "credit")
+          .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        await this.repository.increaseCustomerOutstandingForCredit(tx, input.header.customerId, creditAmount);
+      }
+
+      if (input.header.doctorId) {
+        const doctorConfig = await this.repository.getDoctorCommissionConfig(tx, input.header.doctorId);
+        if (doctorConfig) {
+          const commissionAmount = computeDoctorCommission(doctorConfig, {
+            subtotal: Number(input.header.subtotal || 0),
+            total: Number(input.header.total || 0),
+          });
+          if (commissionAmount > 0) {
+            await this.repository.createDoctorCommissionTransaction(tx, {
+              doctorId: input.header.doctorId,
+              saleId: sale.id,
+              type: "EARNED",
+              amount: commissionAmount,
+              saleAmount: Number(input.header.subtotal || 0),
+            });
+          }
+        }
       }
 
       return this.repository.getSaleWithItems(tx, sale.id);

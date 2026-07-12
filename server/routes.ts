@@ -23,6 +23,7 @@ import {
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { inventoryPostingController } from "./controllers/inventory-posting.controller";
+import { getSaleCreditPortion, resolveSalePayments } from "@shared/salePayments";
 import { assistantController } from "./controllers/assistant.controller";
 import { InventoryPostingRepository } from "./repositories/inventory-posting.repository";
 
@@ -95,6 +96,53 @@ function parseDateQueryStart(value: string): Date {
 
 function parseDateQueryEnd(value: string): Date {
   return new Date(`${value}T23:59:59.999`);
+}
+
+async function buildDoctorReferralReport(year: number | null, periodKeyFn: (date: Date) => string) {
+  const transactions = await storage.getDoctorCommissionTransactions();
+  const doctorsList = await storage.getDoctors();
+  const doctorNameById = new Map(doctorsList.map(d => [d.id, d.name]));
+
+  const buckets = new Map<string, {
+    period: string;
+    doctorId: number;
+    doctorName: string;
+    salesCount: number;
+    salesValue: number;
+    commissionEarned: number;
+    commissionPaid: number;
+  }>();
+
+  for (const txn of transactions) {
+    const date = new Date(txn.createdAt);
+    if (year !== null && date.getFullYear() !== year) continue;
+
+    const period = periodKeyFn(date);
+    const key = `${period}|${txn.doctorId}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        period,
+        doctorId: txn.doctorId,
+        doctorName: doctorNameById.get(txn.doctorId) || `Doctor ${txn.doctorId}`,
+        salesCount: 0,
+        salesValue: 0,
+        commissionEarned: 0,
+        commissionPaid: 0,
+      });
+    }
+    const bucket = buckets.get(key)!;
+    if (txn.type === "EARNED") {
+      bucket.salesCount += 1;
+      bucket.salesValue += parseFloat(String(txn.saleAmount || 0));
+      bucket.commissionEarned += parseFloat(String(txn.amount));
+    } else if (txn.type === "PAID") {
+      bucket.commissionPaid += parseFloat(String(txn.amount));
+    }
+  }
+
+  return Array.from(buckets.values()).sort((a, b) =>
+    a.period.localeCompare(b.period) || a.doctorName.localeCompare(b.doctorName)
+  );
 }
 
 function regenerateSession(req: Request): Promise<void> {
@@ -1108,16 +1156,16 @@ export async function registerRoutes(
         const saleDate = new Date(sale.createdAt);
         if (saleDate.getFullYear() === year) {
           const monthKey = `${year}-${(saleDate.getMonth() + 1).toString().padStart(2, '0')}`;
-          const amount = parseFloat(String(sale.total));
-          const method = sale.paymentMethod?.toLowerCase() || 'cash';
-          
-          if (monthlyData[monthKey]) {
-            monthlyData[monthKey].total += amount;
-            if (method === 'cash') monthlyData[monthKey].cash += amount;
-            else if (method === 'card') monthlyData[monthKey].card += amount;
-            else if (method === 'upi') monthlyData[monthKey].upi += amount;
-            else if (method === 'credit') monthlyData[monthKey].credit += amount;
-            else monthlyData[monthKey].cash += amount;
+          if (!monthlyData[monthKey]) return;
+
+          for (const p of resolveSalePayments(sale, sale.payments)) {
+            const method = p.method.toLowerCase();
+            monthlyData[monthKey].total += p.amount;
+            if (method === 'cash') monthlyData[monthKey].cash += p.amount;
+            else if (method === 'card') monthlyData[monthKey].card += p.amount;
+            else if (method === 'upi') monthlyData[monthKey].upi += p.amount;
+            else if (method === 'credit') monthlyData[monthKey].credit += p.amount;
+            else monthlyData[monthKey].cash += p.amount;
           }
         }
       });
@@ -1153,15 +1201,16 @@ export async function registerRoutes(
         if (saleDate.getFullYear() === year) {
           const month = saleDate.getMonth();
           const quarter = month < 3 ? 'Q1' : month < 6 ? 'Q2' : month < 9 ? 'Q3' : 'Q4';
-          const amount = parseFloat(String(sale.total));
-          const method = sale.paymentMethod?.toLowerCase() || 'cash';
-          
-          quarterlyData[quarter].total += amount;
-          if (method === 'cash') quarterlyData[quarter].cash += amount;
-          else if (method === 'card') quarterlyData[quarter].card += amount;
-          else if (method === 'upi') quarterlyData[quarter].upi += amount;
-          else if (method === 'credit') quarterlyData[quarter].credit += amount;
-          else quarterlyData[quarter].cash += amount;
+
+          for (const p of resolveSalePayments(sale, sale.payments)) {
+            const method = p.method.toLowerCase();
+            quarterlyData[quarter].total += p.amount;
+            if (method === 'cash') quarterlyData[quarter].cash += p.amount;
+            else if (method === 'card') quarterlyData[quarter].card += p.amount;
+            else if (method === 'upi') quarterlyData[quarter].upi += p.amount;
+            else if (method === 'credit') quarterlyData[quarter].credit += p.amount;
+            else quarterlyData[quarter].cash += p.amount;
+          }
         }
       });
       
@@ -1191,16 +1240,16 @@ export async function registerRoutes(
         if (!yearlyData[year]) {
           yearlyData[year] = { cash: 0, card: 0, upi: 0, credit: 0, total: 0 };
         }
-        
-        const amount = parseFloat(String(sale.total));
-        const method = sale.paymentMethod?.toLowerCase() || 'cash';
-        
-        yearlyData[year].total += amount;
-        if (method === 'cash') yearlyData[year].cash += amount;
-        else if (method === 'card') yearlyData[year].card += amount;
-        else if (method === 'upi') yearlyData[year].upi += amount;
-        else if (method === 'credit') yearlyData[year].credit += amount;
-        else yearlyData[year].cash += amount;
+
+        for (const p of resolveSalePayments(sale, sale.payments)) {
+          const method = p.method.toLowerCase();
+          yearlyData[year].total += p.amount;
+          if (method === 'cash') yearlyData[year].cash += p.amount;
+          else if (method === 'card') yearlyData[year].card += p.amount;
+          else if (method === 'upi') yearlyData[year].upi += p.amount;
+          else if (method === 'credit') yearlyData[year].credit += p.amount;
+          else yearlyData[year].cash += p.amount;
+        }
       });
       
       const result = Object.entries(yearlyData).map(([year, data]) => ({
@@ -1254,6 +1303,43 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Item collections error:", error);
       res.status(500).json({ error: "Failed to fetch item collections" });
+    }
+  });
+
+  app.get("/api/reports/doctor-referrals/monthly", async (req, res) => {
+    try {
+      const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
+      const result = await buildDoctorReferralReport(year, (date) =>
+        `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`
+      );
+      res.json(result);
+    } catch (error) {
+      console.error("Monthly doctor referrals error:", error);
+      res.status(500).json({ error: "Failed to fetch monthly doctor referrals" });
+    }
+  });
+
+  app.get("/api/reports/doctor-referrals/quarterly", async (req, res) => {
+    try {
+      const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
+      const result = await buildDoctorReferralReport(year, (date) => {
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        return `${date.getFullYear()}-Q${quarter}`;
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Quarterly doctor referrals error:", error);
+      res.status(500).json({ error: "Failed to fetch quarterly doctor referrals" });
+    }
+  });
+
+  app.get("/api/reports/doctor-referrals/yearly", async (req, res) => {
+    try {
+      const result = await buildDoctorReferralReport(null, (date) => `${date.getFullYear()}`);
+      res.json(result);
+    } catch (error) {
+      console.error("Yearly doctor referrals error:", error);
+      res.status(500).json({ error: "Failed to fetch yearly doctor referrals" });
     }
   });
 
@@ -1442,6 +1528,62 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Credit billing payment error:", error);
       res.status(500).json({ error: "Failed to record payment" });
+    }
+  });
+
+  app.get("/api/doctor-commissions/transactions", async (req, res) => {
+    try {
+      const doctorId = req.query.doctorId ? parseInt(req.query.doctorId as string) : undefined;
+      const transactions = await storage.getDoctorCommissionTransactions(doctorId);
+      res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch doctor commission transactions" });
+    }
+  });
+
+  app.post("/api/doctor-commissions/payout", async (req, res) => {
+    try {
+      const { doctorId, amount, notes } = req.body;
+
+      if (!doctorId || amount === undefined) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const payoutAmount = typeof amount === 'number' ? amount : parseFloat(amount);
+
+      if (isNaN(payoutAmount) || payoutAmount <= 0) {
+        return res.status(400).json({ error: "Payout amount must be greater than zero" });
+      }
+
+      const doctor = await storage.getDoctor(doctorId);
+      if (!doctor) {
+        return res.status(404).json({ error: "Doctor not found" });
+      }
+
+      const currentBalance = parseFloat(await storage.getDoctorCommissionBalance(doctorId));
+
+      if (payoutAmount > currentBalance + 0.01) {
+        return res.status(400).json({ error: "Payout cannot exceed commission balance" });
+      }
+
+      const userId = req.session?.userId || null;
+      const transaction = await storage.createDoctorCommissionPayout({
+        doctorId,
+        amount: payoutAmount.toFixed(2),
+        notes: notes || null,
+        userId,
+      });
+
+      const newBalance = Math.max(0, currentBalance - payoutAmount);
+
+      res.status(201).json({
+        transaction,
+        newBalance: newBalance.toFixed(2),
+        message: "Payout recorded successfully"
+      });
+    } catch (error) {
+      console.error("Doctor commission payout error:", error);
+      res.status(500).json({ error: "Failed to record payout" });
     }
   });
 
@@ -1949,10 +2091,10 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Original sale not found" });
       }
       
-      const originalPaymentMethod = saleWithReturns.sale.paymentMethod?.toLowerCase();
+      const originalCreditPortion = getSaleCreditPortion(saleWithReturns.sale, saleWithReturns.sale.payments);
       const requestedRefundMode = returnData.refundMode?.toLowerCase();
-      
-      if (originalPaymentMethod === "credit") {
+
+      if (originalCreditPortion > 0) {
         const allowedCreditRefundModes = ["credit", "adjustment", "credit_adjustment"];
         if (!allowedCreditRefundModes.includes(requestedRefundMode)) {
           return res.status(400).json({ 

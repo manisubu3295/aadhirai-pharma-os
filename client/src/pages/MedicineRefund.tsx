@@ -395,9 +395,11 @@ export default function MedicineRefund() {
                       <TableCell>{sale.customerPhone || "-"}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          sale.paymentMethod?.toLowerCase() === "credit" 
-                            ? "bg-amber-100 text-amber-700" 
-                            : "bg-green-100 text-green-700"
+                          sale.paymentMethod?.toLowerCase() === "credit"
+                            ? "bg-amber-100 text-amber-700"
+                            : sale.paymentMethod?.toLowerCase() === "split"
+                              ? "bg-indigo-100 text-indigo-700"
+                              : "bg-green-100 text-green-700"
                         }`}>
                           {sale.paymentMethod}
                         </span>

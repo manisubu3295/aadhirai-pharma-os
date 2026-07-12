@@ -39,7 +39,8 @@ import {
   Pie,
   Cell
 } from "recharts";
-import type { Sale, Medicine, Customer } from "@shared/schema";
+import type { Sale, Medicine, Customer, SalePayment } from "@shared/schema";
+import { resolveSalePayments } from "@shared/salePayments";
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -68,7 +69,7 @@ export default function OwnerDashboard() {
     );
   }
 
-  const { data: sales = [] } = useQuery<Sale[]>({
+  const { data: sales = [] } = useQuery<(Sale & { payments?: SalePayment[] })[]>({
     queryKey: ["/api/sales"],
     queryFn: async () => {
       const res = await fetch("/api/sales");
@@ -121,8 +122,9 @@ export default function OwnerDashboard() {
   }));
 
   const paymentMethodBreakdown = last30DaysSales.reduce((acc, sale) => {
-    const method = sale.paymentMethod;
-    acc[method] = (acc[method] || 0) + Number(sale.total);
+    for (const p of resolveSalePayments(sale, sale.payments)) {
+      acc[p.method] = (acc[p.method] || 0) + p.amount;
+    }
     return acc;
   }, {} as Record<string, number>);
 

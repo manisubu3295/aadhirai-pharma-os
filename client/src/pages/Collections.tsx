@@ -17,7 +17,8 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { useToast } from "@/hooks/use-toast";
 import { generateSaleInvoicePdfBlob } from "@/lib/pdfUtils";
 import { endOfLocalDay, formatAppDate, formatAppDateTime, parseServerDate, startOfLocalDay } from "@/lib/dateTime";
-import type { Sale as SaleType, SaleItem } from "@shared/schema";
+import type { Sale as SaleType, SaleItem, SalePayment } from "@shared/schema";
+import { resolveSalePayments } from "@shared/salePayments";
 
 interface Sale {
   id: number;
@@ -38,6 +39,7 @@ interface Sale {
   changeAmount: string;
   createdAt: string;
   userId: string | null;
+  payments?: SalePayment[];
 }
 
 interface SalesReturn {
@@ -244,8 +246,11 @@ export default function Collections() {
   };
 
   const filteredSales = filterByDateRange(sales).filter((sale) => {
-    const paymentMatch = paymentFilter === "all" || sale.paymentMethod.toLowerCase() === paymentFilter.toLowerCase();
-    const searchMatch = !searchTerm || 
+    const effectivePayments = resolveSalePayments(sale, sale.payments);
+    const paymentMatch =
+      paymentFilter === "all" ||
+      (paymentFilter === "split" ? effectivePayments.length > 1 : effectivePayments.some(p => p.method.toLowerCase() === paymentFilter.toLowerCase()));
+    const searchMatch = !searchTerm ||
       sale.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       sale.customerName?.toLowerCase().includes(searchTerm.toLowerCase());
     return paymentMatch && searchMatch;
@@ -265,8 +270,10 @@ export default function Collections() {
   const formattedTotalRefund = `${totalRefundAmount > 0 ? "-" : ""}₹${totalRefundAmount.toFixed(2)}`;
 
   const paymentTotals = filteredSales.reduce((acc, sale) => {
-    const method = sale.paymentMethod || 'Unknown';
-    acc[method] = (acc[method] || 0) + safeParseFloat(sale.total);
+    for (const p of resolveSalePayments(sale, sale.payments)) {
+      const method = p.method || 'Unknown';
+      acc[method] = (acc[method] || 0) + p.amount;
+    }
     return acc;
   }, {} as Record<string, number>);
 
@@ -276,20 +283,21 @@ export default function Collections() {
     const staffId = sale.userId || 0;
     const staff = users.find(u => u.id === staffId);
     const staffName = staff?.name || staff?.username || "Unknown";
-    
+
     if (!acc[staffName]) {
       acc[staffName] = { name: staffName, cash: 0, card: 0, upi: 0, credit: 0, total: 0, count: 0 };
     }
-    
-    const amount = safeParseFloat(sale.total);
-    const method = sale.paymentMethod?.toLowerCase() || 'unknown';
-    acc[staffName].total += amount;
+
     acc[staffName].count += 1;
-    if (method === 'cash') acc[staffName].cash += amount;
-    else if (method === 'card') acc[staffName].card += amount;
-    else if (method === 'upi') acc[staffName].upi += amount;
-    else if (method === 'credit') acc[staffName].credit += amount;
-    
+    for (const p of resolveSalePayments(sale, sale.payments)) {
+      const method = p.method.toLowerCase();
+      acc[staffName].total += p.amount;
+      if (method === 'cash') acc[staffName].cash += p.amount;
+      else if (method === 'card') acc[staffName].card += p.amount;
+      else if (method === 'upi') acc[staffName].upi += p.amount;
+      else if (method === 'credit') acc[staffName].credit += p.amount;
+    }
+
     return acc;
   }, {} as Record<string, { name: string; cash: number; card: number; upi: number; credit: number; total: number; count: number }>);
 
@@ -364,8 +372,15 @@ export default function Collections() {
       case "cash": return <Banknote className="w-4 h-4" />;
       case "card": return <CreditCard className="w-4 h-4" />;
       case "upi": return <QrCode className="w-4 h-4" />;
+      case "split": return <Share2 className="w-4 h-4" />;
       default: return <Wallet className="w-4 h-4" />;
     }
+  };
+
+  const formatPaymentBreakdown = (sale: Sale) => {
+    const effectivePayments = resolveSalePayments(sale, sale.payments);
+    if (effectivePayments.length <= 1) return sale.paymentMethod;
+    return effectivePayments.map(p => `${p.method.charAt(0).toUpperCase() + p.method.slice(1)} ₹${p.amount.toFixed(2)}`).join(" + ");
   };
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
@@ -418,6 +433,7 @@ export default function Collections() {
               <SelectItem value="card">Card</SelectItem>
               <SelectItem value="upi">UPI</SelectItem>
               <SelectItem value="credit">Credit</SelectItem>
+              <SelectItem value="split">Split</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -473,7 +489,7 @@ export default function Collections() {
                       onClick={() => exportToCSV(
                         `collections_daily_${dateFrom}_to_${dateTo}.csv`,
                         ["Invoice No", "Date", "Customer", "Payment Method", "Amount"],
-                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, formatAppDateTime(s.createdAt, "dd/MM/yyyy HH:mm"), s.customerName, s.paymentMethod, s.total])
+                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, formatAppDateTime(s.createdAt, "dd/MM/yyyy HH:mm"), s.customerName, formatPaymentBreakdown(s), s.total])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -485,7 +501,7 @@ export default function Collections() {
                       onClick={() => exportToPDF(
                         "Daily Collections Report",
                         ["Invoice No", "Date", "Customer", "Payment", "Amount"],
-                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, formatAppDate(s.createdAt, "dd/MM/yyyy"), s.customerName, s.paymentMethod, `₹${safeParseFloat(s.total).toFixed(2)}`])
+                        filteredSales.map(s => [s.invoiceNo || `INV-${s.id}`, formatAppDate(s.createdAt, "dd/MM/yyyy"), s.customerName, formatPaymentBreakdown(s), `₹${safeParseFloat(s.total).toFixed(2)}`])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -565,7 +581,7 @@ export default function Collections() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               {getPaymentIcon(sale.paymentMethod)}
-                              {sale.paymentMethod}
+                              {formatPaymentBreakdown(sale)}
                             </div>
                           </TableCell>
                           <TableCell className="text-right font-semibold">₹{safeParseFloat(sale.total).toFixed(2)}</TableCell>

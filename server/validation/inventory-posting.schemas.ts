@@ -24,6 +24,12 @@ export const salePostingLineSchema = z.object({
   taxMode: taxModeSchema.optional(),
 });
 
+export const salePaymentRowSchema = z.object({
+  method: z.string().min(1),
+  amount: z.union([z.string(), z.number()]).transform((value) => String(value)),
+  reference: z.string().nullable().optional(),
+});
+
 export const salePostingRequestSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
   customerName: z.string().min(1),
@@ -47,6 +53,7 @@ export const salePostingRequestSchema = z.object({
   printInvoice: z.boolean().optional(),
   sendViaEmail: z.boolean().optional(),
   userId: z.string().nullable().optional(),
+  payments: z.array(salePaymentRowSchema).optional(),
   items: z.array(salePostingLineSchema).min(1),
 });
 

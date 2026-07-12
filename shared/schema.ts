@@ -139,8 +139,27 @@ export const doctors = pgTable("doctors", {
   specialization: text("specialization"),
   phone: text("phone"),
   registrationNo: text("registration_no"),
+  commissionBasis: text("commission_basis"),
+  commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }),
+  commissionFixedAmount: decimal("commission_fixed_amount", { precision: 10, scale: 2 }),
+  minSaleAmount: decimal("min_sale_amount", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const doctorCommissionTransactions = pgTable("doctor_commission_transactions", {
+  id: serial("id").primaryKey(),
+  doctorId: integer("doctor_id").notNull(),
+  saleId: integer("sale_id"),
+  type: text("type").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  saleAmount: decimal("sale_amount", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  userId: varchar("user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertDoctorCommissionTransactionSchema = createInsertSchema(doctorCommissionTransactions).omit({ id: true, createdAt: true });
+export type InsertDoctorCommissionTransaction = z.infer<typeof insertDoctorCommissionTransactionSchema>;
+export type DoctorCommissionTransaction = typeof doctorCommissionTransactions.$inferSelect;
 
 export const sales = pgTable("sales", {
   id: serial("id").primaryKey(),

@@ -172,6 +172,7 @@ export function Sidebar({ isCollapsed = false, isOpen = false, onClose }: Sideba
       items: [
         { icon: FileText, label: "Sales Reports", href: "/reports" },
         { icon: BarChart3, label: "Owner Analytics", href: "/owner-dashboard", ownerOnly: true },
+        { icon: Stethoscope, label: "Doctor Referrals", href: "/doctor-referrals" },
         { icon: Shield, label: "Audit Log", href: "/audit-log", ownerOnly: true },
         { icon: Calculator, label: "Tally Export", href: "/tally-export", ownerOnly: true },
       ]

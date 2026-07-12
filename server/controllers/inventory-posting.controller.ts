@@ -7,6 +7,7 @@ import {
   grnPostingRequestSchema,
   salePostingRequestSchema,
 } from "../validation/inventory-posting.schemas";
+import { buildLegacyPaymentPlan, buildSalePaymentPlan } from "@shared/salePayments";
 
 const postingService = new InventoryPostingService();
 
@@ -14,16 +15,55 @@ export class InventoryPostingController {
   async createSale(req: Request, res: Response): Promise<Response | void> {
     try {
       const payload = salePostingRequestSchema.parse(req.body);
-      const { items, ...saleHeader } = payload;
+      const { items, payments: enteredPayments, ...saleHeader } = payload;
 
-      const paymentMethod = (payload.paymentMethod || "").toLowerCase();
       const netAmount = parseFloat(String(payload.total || 0));
-      const receivedAmount = parseFloat(String(payload.receivedAmount || 0));
+      const hasCustomer = !!payload.customerId;
 
-      if (paymentMethod !== "credit" && receivedAmount < netAmount) {
-        return res.status(400).json({
-          error: "Received amount cannot be less than net amount for non-credit payments.",
+      let plan: {
+        paymentMethod: string;
+        rows: { method: string; amount: number; reference?: string | null }[];
+        receivedAmount: number;
+        changeAmount: number;
+        creditPortion: number;
+        error: string | null;
+      };
+
+      if (enteredPayments && enteredPayments.length > 1) {
+        plan = buildSalePaymentPlan({
+          total: netAmount,
+          rows: enteredPayments.map((r) => ({ method: r.method, amount: parseFloat(String(r.amount)), reference: r.reference })),
+          hasCustomer,
         });
+      } else {
+        const singleRow = enteredPayments?.[0];
+        const legacyMethod = singleRow?.method || payload.paymentMethod || "";
+        const legacyReceived = singleRow ? parseFloat(String(singleRow.amount)) : parseFloat(String(payload.receivedAmount || 0));
+        const legacyReference = singleRow?.reference ?? payload.paymentReference ?? null;
+        const legacy = buildLegacyPaymentPlan({
+          total: netAmount,
+          paymentMethod: legacyMethod,
+          receivedAmount: legacyReceived,
+          reference: legacyReference,
+        });
+        const method = legacyMethod.toLowerCase();
+        plan = {
+          paymentMethod: method,
+          rows: legacy.rows,
+          receivedAmount: legacyReceived,
+          changeAmount: legacy.changeAmount,
+          creditPortion: legacy.creditPortion,
+          error:
+            method !== "credit" && legacyReceived < netAmount
+              ? "Received amount cannot be less than net amount for non-credit payments."
+              : legacy.creditPortion > 0 && !hasCustomer
+                ? "Select a customer to record a credit remainder."
+                : null,
+        };
+      }
+
+      if (plan.error) {
+        return res.status(400).json({ error: plan.error });
       }
 
       const userId = req.session?.userId || payload.userId || null;
@@ -35,6 +75,10 @@ export class InventoryPostingController {
           const result = await postingService.postSale({
             header: {
               ...saleHeader,
+              paymentMethod: plan.paymentMethod,
+              receivedAmount: String(plan.receivedAmount),
+              changeAmount: String(plan.changeAmount),
+              payments: plan.rows,
               invoiceNo,
               userId,
             },
