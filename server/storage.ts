@@ -494,7 +494,10 @@ console.log("Connected DB:", r.rows[0].db);
         price_per_unit DECIMAL(10,2) NOT NULL,
         refund_amount DECIMAL(10,2) NOT NULL
       );
-      
+
+      ALTER TABLE sales_return_items
+        ADD COLUMN IF NOT EXISTS expiry_date TEXT;
+
       CREATE TABLE IF NOT EXISTS sequences (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
@@ -1095,6 +1098,7 @@ export interface IStorage {
   getSalesReturn(id: number): Promise<SalesReturn | undefined>;
   getSaleWithReturns(saleId: number): Promise<{ sale: Sale & { payments: SalePayment[] }; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined>;
   createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn>;
+  restockBatch(medicineId: number, batchNumber: string, expiryDate: string, qtyBaseDelta: number): Promise<boolean>;
   getSalesReturnItems(returnId: number): Promise<SalesReturnItem[]>;
   getTotalReturnsForPeriod(startDate: Date, endDate: Date): Promise<string>;
   
@@ -2746,19 +2750,48 @@ export class DatabaseStorage implements IStorage {
     return { sale, items: itemsWithReturned, returns };
   }
 
+  // Restocks the exact batch a return came from (matched by the same
+  // medicine_id/batch_number/expiry_date unique key GRN/opening-stock use)
+  // rather than creating a new batch row. Returns false if no matching
+  // batch row exists, so the caller can surface that as a data anomaly
+  // instead of silently fabricating a duplicate batch.
+  async restockBatch(medicineId: number, batchNumber: string, expiryDate: string, qtyBaseDelta: number): Promise<boolean> {
+    if (qtyBaseDelta <= 0) return true;
+    const result = await pool.query(
+      `
+        UPDATE inventory_batches
+        SET
+          available_qty_base = available_qty_base + $4,
+          total_outward_qty_base = GREATEST(total_outward_qty_base - $4, 0),
+          updated_at = NOW()
+        WHERE medicine_id = $1 AND batch_number = $2 AND expiry_date = $3
+      `,
+      [medicineId, batchNumber, expiryDate, qtyBaseDelta],
+    );
+    return (result.rowCount || 0) > 0;
+  }
+
   async createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn> {
     const returnResult = await db.insert(salesReturns).values(returnData).returning();
     const createdReturn = returnResult[0];
-    
+
     if (items.length > 0) {
       const itemsWithReturnId = items.map(item => ({ ...item, salesReturnId: createdReturn.id }));
       await db.insert(salesReturnItems).values(itemsWithReturnId);
-      
+
       for (const item of items) {
+        const restocked = item.expiryDate
+          ? await this.restockBatch(item.medicineId, item.batchNumber, item.expiryDate, item.quantityReturned)
+          : false;
+        if (!restocked) {
+          console.error(
+            `[SALES_RETURN] No matching batch ${item.batchNumber}/${item.expiryDate || "?"} for medicine ${item.medicineId} — only the medicine's aggregate quantity was restocked.`
+          );
+        }
         await this.updateMedicineStock(item.medicineId, item.quantityReturned);
       }
     }
-    
+
     return createdReturn;
   }
 

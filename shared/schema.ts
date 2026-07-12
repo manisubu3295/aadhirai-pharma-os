@@ -562,6 +562,7 @@ export const salesReturnItems = pgTable("sales_return_items", {
   medicineId: integer("medicine_id").notNull(),
   medicineName: text("medicine_name").notNull(),
   batchNumber: text("batch_number").notNull(),
+  expiryDate: text("expiry_date"),
   quantityReturned: integer("quantity_returned").notNull(),
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }).notNull(),
   refundAmount: decimal("refund_amount", { precision: 10, scale: 2 }).notNull(),

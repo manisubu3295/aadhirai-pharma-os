@@ -2124,6 +2124,7 @@ export async function registerRoutes(
         returnItem.refundAmount = pricePerUnit * returnItem.quantityReturned;
         returnItem.medicineName = saleItem.medicineName;
         returnItem.batchNumber = saleItem.batchNumber;
+        returnItem.expiryDate = saleItem.expiryDate;
         totalRefundAmount += returnItem.refundAmount;
       }
       

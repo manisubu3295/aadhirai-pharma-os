@@ -19,11 +19,23 @@ interface SaleItem {
   medicineId: number;
   medicineName: string;
   batchNumber: string;
+  expiryDate: string;
   quantity: number;
   price: string;
   total: string;
   returnedQty: number;
+  unitType: string;
+  packSize: number;
 }
+
+const humanizeUnit = (unit: string): string => {
+  const normalized = (unit || "").toUpperCase();
+  const labels: Record<string, string> = {
+    STRIP: "Strip", TABLET: "Tablet", CAPSULE: "Capsule", PACK: "Pack",
+    BOTTLE: "Bottle", VIAL: "Vial", TUBE: "Tube", SACHET: "Sachet", PIECE: "Piece",
+  };
+  return labels[normalized] || (normalized.charAt(0) + normalized.slice(1).toLowerCase());
+};
 
 interface SaleWithReturns {
   sale: {
@@ -56,6 +68,7 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [returnQuantities, setReturnQuantities] = useState<Record<number, string>>({});
+  const [returnUnits, setReturnUnits] = useState<Record<number, "PACK" | "BASE">>({});
   const [refundMode, setRefundMode] = useState("cash");
   const [reason, setReason] = useState("");
   const [autoPrint, setAutoPrint] = useState(true);
@@ -149,11 +162,14 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
   useEffect(() => {
     if (saleData) {
       const initialQty: Record<number, string> = {};
+      const initialUnits: Record<number, "PACK" | "BASE"> = {};
       saleData.items.forEach(item => {
         initialQty[item.id] = "";
+        initialUnits[item.id] = item.packSize > 1 ? "PACK" : "BASE";
       });
       setReturnQuantities(initialQty);
-      
+      setReturnUnits(initialUnits);
+
       if (getSaleCreditPortion(saleData.sale, saleData.sale.payments) > 0) {
         setRefundMode("adjustment");
       }
@@ -205,21 +221,33 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
   const handleQuantityChange = (itemId: number, value: string) => {
     setReturnQuantities(prev => ({ ...prev, [itemId]: value }));
   };
-  
-  const getReturnQty = (itemId: number): number => {
-    const val = returnQuantities[itemId];
-    return val === "" || val === undefined ? 0 : parseInt(val) || 0;
+
+  const handleUnitChange = (itemId: number, unit: "PACK" | "BASE") => {
+    setReturnUnits(prev => ({ ...prev, [itemId]: unit }));
+  };
+
+  const getUnitFactor = (item: SaleItem): number => {
+    return returnUnits[item.id] === "PACK" ? (item.packSize || 1) : 1;
+  };
+
+  // Converts the entered quantity (in whichever unit — pack or base — is
+  // currently selected for this row) into base units, since sale_items and
+  // inventory_batches both track stock in base units.
+  const getReturnQtyBase = (item: SaleItem): number => {
+    const val = returnQuantities[item.id];
+    const enteredQty = val === "" || val === undefined ? 0 : parseFloat(val) || 0;
+    return Math.round(enteredQty * getUnitFactor(item));
   };
 
   const handleSubmit = () => {
     if (!saleId || !saleData) return;
 
     const items: ReturnItem[] = saleData.items
-      .filter(item => getReturnQty(item.id) > 0)
+      .filter(item => getReturnQtyBase(item) > 0)
       .map(item => ({
         saleItemId: item.id,
         medicineId: item.medicineId,
-        quantityReturned: getReturnQty(item.id),
+        quantityReturned: getReturnQtyBase(item),
       }));
 
     if (items.length === 0) {
@@ -232,9 +260,9 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
       if (saleItem) {
         const maxReturnable = saleItem.quantity - saleItem.returnedQty;
         if (item.quantityReturned > maxReturnable) {
-          toast({ 
-            title: `Cannot return ${item.quantityReturned} of ${saleItem.medicineName}. Max: ${maxReturnable}`, 
-            variant: "destructive" 
+          toast({
+            title: `Cannot return ${item.quantityReturned} of ${saleItem.medicineName}. Max: ${maxReturnable}`,
+            variant: "destructive"
           });
           return;
         }
@@ -250,8 +278,7 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
   };
 
   const totalRefund = saleData?.items.reduce((sum, item) => {
-    const qty = getReturnQty(item.id);
-    return sum + qty * parseFloat(item.price);
+    return sum + getReturnQtyBase(item) * parseFloat(item.price);
   }, 0) || 0;
 
   return (
@@ -285,26 +312,58 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
               <TableBody>
                 {saleData.items.map((item) => {
                   const maxReturnable = item.quantity - item.returnedQty;
-                  const returnQtyNum = getReturnQty(item.id);
-                  const lineTotal = returnQtyNum * parseFloat(item.price);
+                  const hasPack = item.packSize > 1;
+                  const unit = returnUnits[item.id] || (hasPack ? "PACK" : "BASE");
+                  const unitFactor = getUnitFactor(item);
+                  const maxReturnableInUnit = unitFactor > 0 ? Math.floor(maxReturnable / unitFactor) : maxReturnable;
+                  const lineTotal = getReturnQtyBase(item) * parseFloat(item.price);
 
                   return (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">{item.medicineName}</TableCell>
                       <TableCell>{item.batchNumber}</TableCell>
-                      <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-right">
+                        {item.quantity}
+                        {hasPack && (
+                          <span className="text-xs text-muted-foreground block">
+                            ({Math.floor(item.quantity / item.packSize)} {humanizeUnit(item.unitType)})
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">{item.returnedQty}</TableCell>
                       <TableCell className="text-right">
-                        <Input
-                          type="number"
-                          min={0}
-                          max={maxReturnable}
-                          value={returnQuantities[item.id] ?? ""}
-                          onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                          className="w-20 ml-auto text-right"
-                          disabled={maxReturnable === 0}
-                          data-testid={`input-return-qty-${item.id}`}
-                        />
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={maxReturnableInUnit}
+                            value={returnQuantities[item.id] ?? ""}
+                            onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                            className="w-20 text-right"
+                            disabled={maxReturnable === 0}
+                            data-testid={`input-return-qty-${item.id}`}
+                          />
+                          {hasPack ? (
+                            <Select
+                              value={unit}
+                              onValueChange={(value) => handleUnitChange(item.id, value as "PACK" | "BASE")}
+                              disabled={maxReturnable === 0}
+                            >
+                              <SelectTrigger className="w-24" data-testid={`select-return-unit-${item.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="PACK">{humanizeUnit(item.unitType)}</SelectItem>
+                                <SelectItem value="BASE">Unit</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-xs text-muted-foreground w-24">{humanizeUnit(item.unitType)}</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Max: {maxReturnableInUnit} {unit === "PACK" ? humanizeUnit(item.unitType) : "unit"}(s)
+                        </div>
                       </TableCell>
                       <TableCell className="text-right font-semibold">
                         ₹{lineTotal.toFixed(2)}
