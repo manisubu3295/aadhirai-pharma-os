@@ -479,6 +479,7 @@ export default function Customers() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[90px]">Code</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>GSTIN</TableHead>
@@ -491,6 +492,9 @@ export default function Customers() {
                 <TableBody>
                   {filteredCustomers.map((customer) => (
                     <TableRow key={customer.id} data-testid={`row-customer-${customer.id}`}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        CUST-{String(customer.id).padStart(3, '0')}
+                      </TableCell>
                       <TableCell className="font-medium">
                         <div>{customer.name}</div>
                         {customer.address && (

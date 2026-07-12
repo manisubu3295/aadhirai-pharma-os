@@ -922,7 +922,7 @@ export default function Inventory() {
                     return (
                     <TableRow key={item.id} data-testid={`row-medicine-${item.id}`}>
                       <TableCell className="font-mono text-xs text-muted-foreground">
-                        INV-{String(item.id).padStart(3, '0')}
+                        MED-{String(item.id).padStart(3, '0')}
                       </TableCell>
                       <TableCell className="font-medium">
                         <div>{item.name}</div>

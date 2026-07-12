@@ -467,6 +467,7 @@ export default function Doctors() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[90px]">Code</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Specialization</TableHead>
                     <TableHead>Phone</TableHead>
@@ -481,6 +482,9 @@ export default function Doctors() {
                     const balance = parseFloat(doctor.commissionBalance) || 0;
                     return (
                     <TableRow key={doctor.id} data-testid={`row-doctor-${doctor.id}`}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        DOC-{String(doctor.id).padStart(3, '0')}
+                      </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">

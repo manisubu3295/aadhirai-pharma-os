@@ -107,9 +107,7 @@ export default function UserMenuAccess() {
     mutationFn: async () => {
       const permissions: UserMenuPermission[] = [];
       menuPermissions.forEach((perms, menuId) => {
-        if (perms.canView || perms.canEdit) {
-          permissions.push({ menuId, canView: perms.canView, canEdit: perms.canEdit });
-        }
+        permissions.push({ menuId, canView: perms.canView, canEdit: perms.canEdit });
       });
 
       const res = await fetch(`/api/admin/users/${selectedUserId}/menus`, {
@@ -368,8 +366,10 @@ export default function UserMenuAccess() {
 
                 <TabsContent value="role" className="mt-4">
                   <p className="text-sm text-muted-foreground mb-4">
-                    Assign a role to grant this user every menu group linked to that role. Role access
-                    is a baseline — individual menus and menu groups above can still add more on top.
+                    Assign a role to grant this user every menu group linked to that role. Priority:
+                    Individual Menus (highest) → Menu Groups → Role baseline (lowest). Assigning a role
+                    here only sets the baseline — use Individual Menus above to grant or revoke specific
+                    items on top of it.
                   </p>
                   <div className="w-72 mb-6">
                     <Select

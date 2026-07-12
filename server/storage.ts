@@ -3031,15 +3031,14 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    // Override with direct permissions (ensure type safety for local environments)
+    // Direct per-user assignments are the most specific layer and take full
+    // authority over the role/group baseline for that menu — they can grant
+    // access the baseline doesn't have, or revoke access the baseline does.
     for (const dm of directMenus) {
       const menuIdNum = Number(dm.menuId);
-      const canViewBool = Boolean(dm.canView);
-      const canEditBool = Boolean(dm.canEdit);
-      const existing = permissionsMap.get(menuIdNum) || { canView: false, canEdit: false };
       permissionsMap.set(menuIdNum, {
-        canView: existing.canView || canViewBool,
-        canEdit: existing.canEdit || canEditBool
+        canView: Boolean(dm.canView),
+        canEdit: Boolean(dm.canEdit),
       });
     }
     

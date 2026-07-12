@@ -900,7 +900,7 @@ export default function Settings() {
               </div>
             </div>
             <div>
-              <Label htmlFor="userRole">Role</Label>
+              <Label htmlFor="userRole">System Role (login permissions)</Label>
               <Select
                 value={userFormData.role}
                 onValueChange={(v) => setUserFormData({ ...userFormData, role: v })}
@@ -914,9 +914,12 @@ export default function Settings() {
                   <SelectItem value="cashier">Cashier</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Controls what this user can access at the API level (Owner, Pharmacist, Cashier). Fixed set — not editable in Role Master.
+              </p>
             </div>
             <div>
-              <Label htmlFor="userRoleId">Role Master Role (optional)</Label>
+              <Label htmlFor="userRoleId">Menu Access Role (optional)</Label>
               <Select
                 value={userFormData.roleId != null ? String(userFormData.roleId) : "none"}
                 onValueChange={(v) =>
@@ -937,7 +940,7 @@ export default function Settings() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
-                Grants this user the menu access assigned to that role in Role Master.
+                Sets which sidebar menus this user sees by default, via Role Master. Does not affect login permissions above.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
