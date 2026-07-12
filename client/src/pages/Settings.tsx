@@ -60,8 +60,17 @@ interface UserFormData {
   password: string;
   name: string;
   role: string;
+  roleId: number | null;
   email: string;
   phone: string;
+}
+
+interface Role {
+  id: number;
+  name: string;
+  description: string | null;
+  isSuperAdmin: boolean;
+  isActive: boolean;
 }
 
 interface SettingsData {
@@ -107,6 +116,7 @@ const emptyUserForm: UserFormData = {
   password: "",
   name: "",
   role: "cashier",
+  roleId: null,
   email: "",
   phone: "",
 };
@@ -128,6 +138,15 @@ export default function Settings() {
     queryFn: async () => {
       const res = await fetch("/api/users");
       if (!res.ok) throw new Error("Failed to fetch users");
+      return res.json();
+    },
+  });
+
+  const { data: roles = [] } = useQuery<Role[]>({
+    queryKey: ["/api/admin/roles"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/roles", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch roles");
       return res.json();
     },
   });
@@ -882,8 +901,8 @@ export default function Settings() {
             </div>
             <div>
               <Label htmlFor="userRole">Role</Label>
-              <Select 
-                value={userFormData.role} 
+              <Select
+                value={userFormData.role}
                 onValueChange={(v) => setUserFormData({ ...userFormData, role: v })}
               >
                 <SelectTrigger className="mt-1.5" data-testid="select-user-role">
@@ -895,6 +914,31 @@ export default function Settings() {
                   <SelectItem value="cashier">Cashier</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label htmlFor="userRoleId">Role Master Role (optional)</Label>
+              <Select
+                value={userFormData.roleId != null ? String(userFormData.roleId) : "none"}
+                onValueChange={(v) =>
+                  setUserFormData({ ...userFormData, roleId: v === "none" ? null : parseInt(v) })
+                }
+              >
+                <SelectTrigger className="mt-1.5" data-testid="select-user-role-id">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {roles.filter((r) => r.isActive).map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)}>
+                      {r.name}
+                      {r.isSuperAdmin ? " (Super Admin)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Grants this user the menu access assigned to that role in Role Master.
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

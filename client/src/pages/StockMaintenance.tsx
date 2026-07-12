@@ -35,6 +35,9 @@ import {
   AlertTriangle,
   Layers,
   BarChart3,
+  ListPlus,
+  Save,
+  X,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -122,10 +125,21 @@ function expiryClass(expiryDate: string): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+interface BulkRow {
+  batchNumber: string;
+  expiryDate: string;
+  qtyBase: string;
+}
+
+const emptyBulkRow: BulkRow = { batchNumber: "", expiryDate: "", qtyBase: "" };
+
 export default function StockMaintenance() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState<"batches" | "summary">("batches");
+  const [activeTab, setActiveTab] = useState<"batches" | "summary" | "bulk">("batches");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [bulkRows, setBulkRows] = useState<Record<number, BulkRow>>({});
+  const [bulkMedicineIds, setBulkMedicineIds] = useState<number[]>([]);
+  const [bulkMedicineSearch, setBulkMedicineSearch] = useState("");
   const [formData, setFormData] = useState<OpeningStockForm>(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof OpeningStockForm, string>>>({});
   const [medicineSearch, setMedicineSearch] = useState("");
@@ -200,6 +214,35 @@ export default function StockMaintenance() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [medicines, medicineSearch]);
 
+  const batchesByMedicine = useMemo(() => {
+    const map = new Map<number, InventoryBatch[]>();
+    for (const b of batches) {
+      const list = map.get(b.medicineId) || [];
+      list.push(b);
+      map.set(b.medicineId, list);
+    }
+    return map;
+  }, [batches]);
+
+  const filteredBulkMedicineOptions = useMemo(() => {
+    const q = bulkMedicineSearch.toLowerCase();
+    if (!q) return [];
+    return medicines
+      .filter(
+        (m) =>
+          !bulkMedicineIds.includes(m.id) &&
+          (m.name.toLowerCase().includes(q) ||
+            ((m as any).genericName || "").toLowerCase().includes(q)),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 20);
+  }, [medicines, bulkMedicineSearch, bulkMedicineIds]);
+
+  const bulkMedicines = useMemo(
+    () => bulkMedicineIds.map((id) => medicines.find((m) => m.id === id)).filter((m): m is Medicine => !!m),
+    [bulkMedicineIds, medicines],
+  );
+
   // ── Mutation ──────────────────────────────────────────────────────────────────
 
   const createMutation = useMutation({
@@ -240,6 +283,87 @@ export default function StockMaintenance() {
       toast({ title: "Failed to save opening stock", description: error.message, variant: "destructive" });
     },
   });
+
+  const isDuplicateBatch = (medicineId: number, batchNumber: string): boolean => {
+    const typed = batchNumber.trim().toLowerCase();
+    if (!typed) return false;
+    return (batchesByMedicine.get(medicineId) || []).some(
+      (b) => b.batchNumber.trim().toLowerCase() === typed,
+    );
+  };
+
+  const bulkEligibleEntries = useMemo(() => {
+    const entries: Array<{ medicineId: number; batchNumber: string; expiryDate: string; qtyBase: number; packSize?: number }> = [];
+    for (const [medicineIdStr, row] of Object.entries(bulkRows)) {
+      const medicineId = Number(medicineIdStr);
+      const batchNumber = row.batchNumber.trim();
+      const expiryDate = row.expiryDate.trim();
+      const qtyBase = parseInt(row.qtyBase, 10);
+      if (!batchNumber || !expiryDate || !qtyBase || qtyBase <= 0) continue;
+      if (isDuplicateBatch(medicineId, batchNumber)) continue;
+      const med = medicines.find((m) => m.id === medicineId);
+      entries.push({ medicineId, batchNumber, expiryDate, qtyBase, packSize: (med as any)?.packSize || undefined });
+    }
+    return entries;
+  }, [bulkRows, batchesByMedicine, medicines]);
+
+  const bulkMutation = useMutation({
+    mutationFn: async (entries: typeof bulkEligibleEntries) => {
+      const res = await fetch("/api/inventory/opening-stock/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || payload?.details || "Failed to save opening stock");
+      }
+      return res.json() as Promise<{ success: number; failed: number; errors: string[] }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory/batches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory/stock-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
+      setBulkRows({});
+      setBulkMedicineIds([]);
+      setBulkMedicineSearch("");
+      if (result.failed > 0) {
+        toast({
+          title: `${result.success} saved, ${result.failed} failed`,
+          description: result.errors.slice(0, 3).join(" · "),
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `${result.success} batch${result.success === 1 ? "" : "es"} saved successfully` });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save bulk opening stock", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateBulkRow = (medicineId: number, field: keyof BulkRow, value: string) => {
+    setBulkRows((prev) => ({
+      ...prev,
+      [medicineId]: { ...(prev[medicineId] || emptyBulkRow), [field]: value },
+    }));
+  };
+
+  const addBulkMedicine = (medicineId: number) => {
+    setBulkMedicineIds((prev) => (prev.includes(medicineId) ? prev : [...prev, medicineId]));
+    setBulkMedicineSearch("");
+  };
+
+  const removeBulkMedicine = (medicineId: number) => {
+    setBulkMedicineIds((prev) => prev.filter((id) => id !== medicineId));
+    setBulkRows((prev) => {
+      const next = { ...prev };
+      delete next[medicineId];
+      return next;
+    });
+  };
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -327,6 +451,14 @@ export default function StockMaintenance() {
                 onClick={() => setActiveTab("summary")}
               >
                 <BarChart3 className="mr-1 h-4 w-4" /> Stock Summary
+              </Button>
+              <Button
+                variant={activeTab === "bulk" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveTab("bulk")}
+                data-testid="button-tab-bulk"
+              >
+                <ListPlus className="mr-1 h-4 w-4" /> Bulk Add
               </Button>
             </div>
           </div>
@@ -444,10 +576,153 @@ export default function StockMaintenance() {
             )
           )}
 
+          {/* ─── Bulk Add Opening Stock Tab ─────────────────────────────────── */}
+          {activeTab === "bulk" && (
+            <>
+              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                <p className="text-xs text-muted-foreground max-w-2xl">
+                  Enter a batch number, expiry, and quantity to create a <strong>new</strong> batch for a medicine.
+                  If a batch number already exists for that medicine, the row is skipped here — use{" "}
+                  <strong>Stock Adjustments</strong> to change an existing batch's quantity instead.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => bulkMutation.mutate(bulkEligibleEntries)}
+                  disabled={bulkEligibleEntries.length === 0 || bulkMutation.isPending}
+                  data-testid="button-save-bulk-opening-stock"
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {bulkMutation.isPending
+                    ? "Saving…"
+                    : `Save All Changes${bulkEligibleEntries.length > 0 ? ` (${bulkEligibleEntries.length})` : ""}`}
+                </Button>
+              </div>
+
+              <div className="mb-4 max-w-md">
+                <Label>Search &amp; Add Medicine</Label>
+                <Input
+                  placeholder="Search medicine by name or generic…"
+                  value={bulkMedicineSearch}
+                  onChange={(e) => setBulkMedicineSearch(e.target.value)}
+                  className="mt-1.5 mb-1"
+                  data-testid="input-bulk-medicine-search"
+                />
+                {bulkMedicineSearch.trim().length > 0 && filteredBulkMedicineOptions.length > 0 && (
+                  <div className="border rounded-md max-h-40 overflow-y-auto text-sm">
+                    {filteredBulkMedicineOptions.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-muted transition-colors"
+                        onClick={() => addBulkMedicine(m.id)}
+                        data-testid={`option-bulk-add-${m.id}`}
+                      >
+                        <span className="font-medium">{m.name}</span>
+                        {(m as any).genericName && (
+                          <span className="text-muted-foreground ml-2 text-xs">({(m as any).genericName})</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {bulkMedicines.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  Search and add medicines above to enter their opening stock.
+                </div>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Medicine</TableHead>
+                        <TableHead>Existing Batches</TableHead>
+                        <TableHead>New Batch Number</TableHead>
+                        <TableHead>New Expiry</TableHead>
+                        <TableHead className="text-right">New Quantity</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {bulkMedicines.map((med) => {
+                        const row = bulkRows[med.id] || emptyBulkRow;
+                        const existing = batchesByMedicine.get(med.id) || [];
+                        const duplicate = isDuplicateBatch(med.id, row.batchNumber);
+                        return (
+                          <TableRow key={med.id}>
+                            <TableCell className="font-medium">
+                              <div>{med.name}</div>
+                              <div className="text-xs text-muted-foreground">{(med as any).manufacturer}</div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[220px]">
+                              {existing.length === 0
+                                ? "No batches yet"
+                                : existing
+                                    .map((b) => `${b.batchNumber} (exp ${b.expiryDate}, ${b.availableQtyBase})`)
+                                    .join(" · ")}
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                placeholder="e.g., BT-2025-001"
+                                value={row.batchNumber}
+                                onChange={(e) => updateBulkRow(med.id, "batchNumber", e.target.value)}
+                                className={`h-8 w-40 ${duplicate ? "border-destructive" : ""}`}
+                                data-testid={`input-bulk-batch-${med.id}`}
+                              />
+                              {duplicate && (
+                                <p className="text-xs text-destructive mt-1">
+                                  Already exists — use Stock Adjustments
+                                </p>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="month"
+                                value={row.expiryDate}
+                                onChange={(e) => updateBulkRow(med.id, "expiryDate", e.target.value)}
+                                className="h-8 w-36"
+                                data-testid={`input-bulk-expiry-${med.id}`}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                type="number"
+                                min={0}
+                                placeholder="0"
+                                value={row.qtyBase}
+                                onChange={(e) => updateBulkRow(med.id, "qtyBase", e.target.value)}
+                                className="h-8 w-24 ml-auto text-right"
+                                data-testid={`input-bulk-qty-${med.id}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => removeBulkMedicine(med.id)}
+                                data-testid={`button-remove-bulk-${med.id}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </>
+          )}
+
           <div className="mt-3 text-xs text-muted-foreground">
             {activeTab === "batches"
               ? `Showing ${filteredBatches.length} of ${batches.length} batches`
-              : `Showing ${filteredSummary.length} of ${summary.length} medicines`}
+              : activeTab === "summary"
+              ? `Showing ${filteredSummary.length} of ${summary.length} medicines`
+              : `${bulkMedicines.length} medicine(s) added · ${bulkEligibleEntries.length} row(s) ready to save`}
           </div>
         </CardContent>
       </Card>

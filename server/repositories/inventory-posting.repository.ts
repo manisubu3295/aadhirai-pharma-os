@@ -794,6 +794,14 @@ export class InventoryPostingRepository {
 
   // ─── Opening Stock / Stock Maintenance ────────────────────────────────────
 
+  async hasBatches(medicineId: number): Promise<boolean> {
+    const result = await pool.query(
+      `SELECT 1 FROM inventory_batches WHERE medicine_id = $1 LIMIT 1`,
+      [medicineId],
+    );
+    return result.rows.length > 0;
+  }
+
   async listInventoryBatches(filters?: { medicineId?: number }): Promise<Array<{
     id: number;
     medicineId: number;
@@ -866,7 +874,11 @@ export class InventoryPostingRepository {
     }));
   }
 
-  async openingStockEntry(data: {
+  // Opening Stock creates a brand-new batch only. If a batch with the same
+  // number already exists for this medicine (regardless of expiry), it's
+  // rejected — correcting an existing batch's quantity is Stock Adjustments'
+  // job, not Opening Stock's, so the two tools stay non-overlapping.
+  async createNewBatchOpeningStock(data: {
     medicineId: number;
     batchNumber: string;
     expiryDate: string;
@@ -881,18 +893,29 @@ export class InventoryPostingRepository {
     return this.withTransaction(async (tx) => {
       const conversionFactor = Math.max(1, Number(data.packSize || 1) || 1);
       const qtyBase = Math.max(0, Number(data.qtyBase) || 0);
+      const batchNumber = data.batchNumber?.trim() || "";
+      const expiryDate = data.expiryDate?.trim() || "";
 
-      if (!data.batchNumber?.trim()) {
+      if (!batchNumber) {
         throw new Error("Batch number is required for opening stock");
       }
-      if (!data.expiryDate?.trim()) {
+      if (!expiryDate) {
         throw new Error("Expiry date is required for opening stock");
       }
       if (qtyBase <= 0) {
         throw new Error("Quantity must be greater than zero");
       }
 
-      // Upsert the inventory batch
+      const existing = await tx.query(
+        `SELECT id FROM inventory_batches WHERE medicine_id = $1 AND lower(trim(batch_number)) = lower(trim($2)) LIMIT 1`,
+        [data.medicineId, batchNumber],
+      );
+      if (existing.rows.length > 0) {
+        throw new Error(
+          `Batch '${batchNumber}' already exists for this medicine — use Stock Adjustments to change its quantity.`,
+        );
+      }
+
       const batchResult = await tx.query(
         `
           INSERT INTO inventory_batches (
@@ -906,22 +929,13 @@ export class InventoryPostingRepository {
             'STRIP', $8,
             $9, $9, NOW()
           )
-          ON CONFLICT (medicine_id, warehouse_id, batch_number, expiry_date)
-          DO UPDATE SET
-            total_inward_qty_base = inventory_batches.total_inward_qty_base + EXCLUDED.total_inward_qty_base,
-            available_qty_base = inventory_batches.available_qty_base + EXCLUDED.available_qty_base,
-            updated_at = NOW(),
-            purchase_rate_snapshot = COALESCE(EXCLUDED.purchase_rate_snapshot, inventory_batches.purchase_rate_snapshot),
-            mrp_snapshot = COALESCE(EXCLUDED.mrp_snapshot, inventory_batches.mrp_snapshot),
-            default_sale_rate_snapshot = COALESCE(EXCLUDED.default_sale_rate_snapshot, inventory_batches.default_sale_rate_snapshot),
-            conversion_factor_snapshot = COALESCE(EXCLUDED.conversion_factor_snapshot, inventory_batches.conversion_factor_snapshot)
           RETURNING id, available_qty_base
         `,
         [
           data.medicineId,
           data.locationId ?? null,
-          data.batchNumber.trim(),
-          data.expiryDate.trim(),
+          batchNumber,
+          expiryDate,
           data.costPrice ?? null,
           data.mrp ?? null,
           data.sellingPrice ?? null,
@@ -966,6 +980,152 @@ export class InventoryPostingRepository {
       await this.updateMedicineStock(tx, data.medicineId, qtyBase);
 
       return { batchId, availableQtyBase };
+    });
+  }
+
+  // Stock Adjustments increases/decreases an existing batch only — no path
+  // to create a new batch here (that's createNewBatchOpeningStock's job).
+  async createBatchStockAdjustment(data: {
+    medicineId: number;
+    batchId: number;
+    adjustmentQty: number;
+    adjustmentType: "INCREASE" | "DECREASE";
+    reasonCode: string;
+    notes?: string | null;
+    userId: string;
+    userName?: string | null;
+  }): Promise<{
+    id: number;
+    medicineId: number;
+    medicineName: string;
+    batchNumber: string;
+    batchId: number;
+    expiryDate: string;
+    adjustmentQty: number;
+    adjustmentType: string;
+    reasonCode: string;
+    notes: string | null;
+    createdByUserId: string;
+    createdByUserName: string | null;
+    createdAt: string;
+    availableQtyBase: number;
+  }> {
+    return this.withTransaction(async (tx) => {
+      const qty = Math.abs(Number(data.adjustmentQty) || 0);
+      if (qty <= 0) {
+        throw new Error("Quantity must be greater than zero");
+      }
+      const delta = data.adjustmentType === "DECREASE" ? -qty : qty;
+
+      const batchRows = await tx.query(
+        `SELECT batch_number, expiry_date, available_qty_base FROM inventory_batches WHERE id = $1 AND medicine_id = $2 FOR UPDATE`,
+        [data.batchId, data.medicineId],
+      );
+      if (batchRows.rows.length === 0) {
+        throw new Error("Batch not found for this medicine");
+      }
+      const batch = batchRows.rows[0];
+      const currentAvailable = Number(batch.available_qty_base || 0);
+
+      if (delta < 0 && currentAvailable + delta < 0) {
+        throw new Error(
+          `Insufficient stock in this batch. Available: ${currentAvailable}, Requested: ${qty}`,
+        );
+      }
+
+      const medicineRows = await tx.query(`SELECT name FROM medicines WHERE id = $1`, [data.medicineId]);
+      if (medicineRows.rows.length === 0) {
+        throw new Error("Medicine not found");
+      }
+      const medicineName = String(medicineRows.rows[0].name);
+
+      const updateResult = await tx.query(
+        `
+          UPDATE inventory_batches
+          SET
+            available_qty_base = available_qty_base + $2,
+            total_inward_qty_base = total_inward_qty_base + CASE WHEN $2 > 0 THEN $2 ELSE 0 END,
+            total_outward_qty_base = total_outward_qty_base + CASE WHEN $2 < 0 THEN -$2 ELSE 0 END,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING available_qty_base
+        `,
+        [data.batchId, delta],
+      );
+      const availableQtyBase = Number(updateResult.rows[0].available_qty_base || 0);
+
+      const adjustmentResult = await tx.query(
+        `
+          INSERT INTO stock_adjustments (
+            medicine_id, medicine_name, batch_number, batch_id, expiry_date,
+            adjustment_qty, adjustment_type, reason_code, notes,
+            created_by_user_id, created_by_user_name
+          ) VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9,
+            $10, $11
+          )
+          RETURNING *
+        `,
+        [
+          data.medicineId,
+          medicineName,
+          batch.batch_number,
+          data.batchId,
+          batch.expiry_date,
+          qty,
+          data.adjustmentType,
+          data.reasonCode,
+          data.notes ?? null,
+          data.userId,
+          data.userName ?? null,
+        ],
+      );
+      const adjustment = adjustmentResult.rows[0];
+
+      await tx.query(
+        `
+          INSERT INTO inventory_ledger (
+            medicine_id, warehouse_id, batch_id,
+            txn_type, txn_source, source_id, source_line_id,
+            qty_base, balance_after_base, unit_snapshot, conversion_factor_snapshot,
+            remarks, metadata
+          ) VALUES (
+            $1, NULL, $2,
+            $3, 'ADJUSTMENT', $4, NULL,
+            $5, $6, 'STRIP', 1,
+            $7, '{}'::jsonb
+          )
+        `,
+        [
+          data.medicineId,
+          data.batchId,
+          delta > 0 ? "IN" : "OUT",
+          adjustment.id,
+          qty,
+          availableQtyBase,
+          `Stock adjustment: ${data.reasonCode}`,
+        ],
+      );
+
+      await this.updateMedicineStock(tx, data.medicineId, delta);
+
+      return {
+        id: Number(adjustment.id),
+        medicineId: Number(adjustment.medicine_id),
+        medicineName: String(adjustment.medicine_name),
+        batchNumber: String(adjustment.batch_number),
+        batchId: Number(adjustment.batch_id),
+        expiryDate: String(adjustment.expiry_date),
+        adjustmentQty: Number(adjustment.adjustment_qty),
+        adjustmentType: String(adjustment.adjustment_type),
+        reasonCode: String(adjustment.reason_code),
+        notes: adjustment.notes ?? null,
+        createdByUserId: String(adjustment.created_by_user_id),
+        createdByUserName: adjustment.created_by_user_name ?? null,
+        createdAt: adjustment.created_at ? String(adjustment.created_at) : "",
+        availableQtyBase,
+      };
     });
   }
 }

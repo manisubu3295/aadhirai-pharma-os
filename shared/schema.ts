@@ -29,6 +29,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   name: true,
   role: true,
+  roleId: true,
   email: true,
   phone: true,
 });
@@ -170,6 +171,18 @@ export const sales = pgTable("sales", {
   userId: varchar("user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const salePayments = pgTable("sale_payments", {
+  id: serial("id").primaryKey(),
+  saleId: integer("sale_id").notNull(),
+  method: text("method").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  reference: text("reference"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertSalePaymentSchema = createInsertSchema(salePayments).omit({ id: true, createdAt: true });
+export type InsertSalePayment = z.infer<typeof insertSalePaymentSchema>;
+export type SalePayment = typeof salePayments.$inferSelect;
 
 export const saleItems = pgTable("sale_items", {
   id: serial("id").primaryKey(),
@@ -716,6 +729,8 @@ export const stockAdjustments = pgTable("stock_adjustments", {
   medicineId: integer("medicine_id").notNull(),
   medicineName: text("medicine_name").notNull(),
   batchNumber: text("batch_number").notNull(),
+  batchId: integer("batch_id"),
+  expiryDate: text("expiry_date"),
   adjustmentQty: integer("adjustment_qty").notNull(),
   adjustmentType: text("adjustment_type").notNull(),
   reasonCode: text("reason_code").notNull(),

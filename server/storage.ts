@@ -85,7 +85,6 @@ import {
   type ApprovalRequest,
   type InsertApprovalRequest,
   type StockAdjustment,
-  type InsertStockAdjustment,
   users,
   medicines,
   genericNames,
@@ -371,7 +370,16 @@ console.log("Connected DB:", r.rows[0].db);
         user_id VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
-      
+
+      CREATE TABLE IF NOT EXISTS sale_payments (
+        id SERIAL PRIMARY KEY,
+        sale_id INTEGER NOT NULL,
+        method TEXT NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        reference TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS sale_items (
         id SERIAL PRIMARY KEY,
         sale_id INTEGER NOT NULL,
@@ -753,6 +761,8 @@ console.log("Connected DB:", r.rows[0].db);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS gst_number TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS drug_license TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER;
+      ALTER TABLE stock_adjustments ADD COLUMN IF NOT EXISTS batch_id INTEGER;
+      ALTER TABLE stock_adjustments ADD COLUMN IF NOT EXISTS expiry_date TEXT;
 
       CREATE TABLE IF NOT EXISTS inventory_batches (
         id SERIAL PRIMARY KEY,
@@ -1141,10 +1151,11 @@ export interface IStorage {
   approveRequest(id: number, approvedByUserId: string, approvedByUserName: string, notes?: string): Promise<ApprovalRequest | undefined>;
   rejectRequest(id: number, approvedByUserId: string, approvedByUserName: string, notes?: string): Promise<ApprovalRequest | undefined>;
   
-  // Stock Adjustments
+  // Stock Adjustments (reads only — creation goes through
+  // InventoryPostingRepository.createBatchStockAdjustment, which keeps
+  // inventory_batches/inventory_ledger/medicines.quantity in sync)
   getStockAdjustments(filters?: { medicineId?: number; reasonCode?: string; from?: Date; to?: Date }): Promise<StockAdjustment[]>;
   getStockAdjustment(id: number): Promise<StockAdjustment | undefined>;
-  createStockAdjustment(adjustment: InsertStockAdjustment): Promise<StockAdjustment>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3519,34 +3530,6 @@ export class DatabaseStorage implements IStorage {
   async getStockAdjustment(id: number): Promise<StockAdjustment | undefined> {
     const result = await db.select().from(stockAdjustments)
       .where(eq(stockAdjustments.id, id)).limit(1);
-    return result[0];
-  }
-
-  async createStockAdjustment(adjustment: InsertStockAdjustment): Promise<StockAdjustment> {
-    // Calculate the actual quantity change based on adjustment type
-    const qtyChange = adjustment.adjustmentType === 'DECREASE' 
-      ? -Math.abs(adjustment.adjustmentQty) 
-      : Math.abs(adjustment.adjustmentQty);
-    
-    // Check for negative stock on decrease
-    if (adjustment.adjustmentType === 'DECREASE') {
-      const medicine = await db.select().from(medicines)
-        .where(eq(medicines.id, adjustment.medicineId)).limit(1);
-      if (medicine[0] && medicine[0].quantity + qtyChange < 0) {
-        throw new Error(`Insufficient stock. Current: ${medicine[0].quantity}, Adjustment: ${Math.abs(adjustment.adjustmentQty)}`);
-      }
-    }
-    
-    // Create the adjustment record
-    const result = await db.insert(stockAdjustments).values(adjustment).returning();
-    
-    // Update the medicine stock atomically
-    await db.update(medicines)
-      .set({
-        quantity: sql`${medicines.quantity} + ${qtyChange}`
-      })
-      .where(eq(medicines.id, adjustment.medicineId));
-    
     return result[0];
   }
 }

@@ -20,16 +20,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { ImportDialog } from "@/components/ui/import-dialog";
 import { 
   DropdownMenu, 
@@ -44,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Trash2, AlertTriangle, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download, MapPin, Upload } from "lucide-react";
+import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download, MapPin, Upload, Layers } from "lucide-react";
 import { downloadFile, generateCSV, parseCSV } from "@/lib/exportUtils";
 import { useState, memo, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -373,7 +363,6 @@ export default function Inventory() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
@@ -572,24 +561,6 @@ export default function Inventory() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/medicines/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete medicine");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
-      setDeleteDialogOpen(false);
-      setSelectedMedicine(null);
-      toast({ title: "Medicine deleted successfully" });
-    },
-    onError: () => {
-      toast({ title: "Failed to delete medicine", variant: "destructive" });
-    },
-  });
-
   const isNearExpiry = (expiryDate: string) => {
     const expiry = new Date(expiryDate);
     const threeMonths = new Date();
@@ -659,6 +630,21 @@ export default function Inventory() {
       return 0;
     });
   }, [medicines, searchTerm, filterStatus, sortField, sortDirection]);
+
+  // A medicine can have several inventory_batches rows, but /api/medicines/inventory-list
+  // returns one row per batch, all sharing the same medicine id. This list is medicine-level
+  // (one row per id, showing consolidated stock across all its batches) — see
+  // /stock-maintenance's Batch List tab for the per-batch/expiry breakdown.
+  const dedupedMedicines = useMemo(() => {
+    const seen = new Set<number>();
+    const result: typeof filteredMedicines = [];
+    for (const item of filteredMedicines) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      result.push(item);
+    }
+    return result;
+  }, [filteredMedicines]);
 
   const medicineTotals = useMemo(() => {
     const grouped = new Map<string, { name: string; genericName: string; totalQty: number; batchCount: number }>();
@@ -742,11 +728,6 @@ export default function Inventory() {
       `);
       printWindow.document.close();
     }
-  };
-
-  const openDeleteDialog = (medicine: Medicine) => {
-    setSelectedMedicine(medicine);
-    setDeleteDialogOpen(true);
   };
 
   const handleSubmit = (isEdit: boolean) => {
@@ -835,6 +816,17 @@ export default function Inventory() {
               size="sm"
               className="h-9"
               onClick={() => {
+                window.location.href = "/stock-maintenance";
+              }}
+              data-testid="button-view-batches"
+            >
+              <Layers className="mr-2 h-4 w-4" /> View Batches &amp; Expiry
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => {
                 window.location.href = "/generic-stock";
               }}
               data-testid="button-generic-stock-summary"
@@ -902,7 +894,7 @@ export default function Inventory() {
 
           {isLoading ? (
             <div className="text-center py-12 text-muted-foreground">Loading inventory...</div>
-          ) : filteredMedicines.length === 0 ? (
+          ) : dedupedMedicines.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No medicines found. {searchTerm && "Try adjusting your search."}
             </div>
@@ -915,9 +907,7 @@ export default function Inventory() {
                     <SortableHeader field="name">Medicine Name</SortableHeader>
                     <TableHead>Generic Name</TableHead>
                     <SortableHeader field="category">Category</SortableHeader>
-                    <SortableHeader field="batchNumber">Batch No.</SortableHeader>
                     {isPro && <TableHead>Barcode</TableHead>}
-                    <SortableHeader field="expiryDate">Expiry</SortableHeader>
                     <SortableHeader field="quantity" align="right">Stock</SortableHeader>
                     <SortableHeader field="price" align="right">Price</SortableHeader>
                     <TableHead className="text-center">GST</TableHead>
@@ -927,8 +917,10 @@ export default function Inventory() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMedicines.map((item) => (
-                    <TableRow key={`${item.id}-${item.batchNumber}-${item.expiryDate}`} data-testid={`row-medicine-${item.id}-${item.batchNumber}`}>
+                  {dedupedMedicines.map((item) => {
+                    const stockQty = Number((item as any).consolidatedQty ?? item.quantity) || 0;
+                    return (
+                    <TableRow key={item.id} data-testid={`row-medicine-${item.id}`}>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         INV-{String(item.id).padStart(3, '0')}
                       </TableCell>
@@ -940,7 +932,6 @@ export default function Inventory() {
                         {(item as any).genericName || "—"}
                       </TableCell>
                       <TableCell>{item.category}</TableCell>
-                      <TableCell className="font-mono text-xs">{item.batchNumber}</TableCell>
                       {isPro && (
                         <TableCell className="font-mono text-xs">
                           {item.barcode ? (
@@ -953,25 +944,14 @@ export default function Inventory() {
                           )}
                         </TableCell>
                       )}
-                      <TableCell>
-                        <span className={`text-xs ${isExpired(item.expiryDate) ? 'text-red-600 font-medium' : isNearExpiry(item.expiryDate) ? 'text-orange-600 font-medium' : ''}`}>
-                          {item.expiryDate}
-                          {isNearExpiry(item.expiryDate) && !isExpired(item.expiryDate) && (
-                            <AlertTriangle className="h-3 w-3 inline ml-1 text-orange-500" />
-                          )}
-                          {isExpired(item.expiryDate) && (
-                            <AlertTriangle className="h-3 w-3 inline ml-1 text-red-500" />
-                          )}
-                        </span>
-                      </TableCell>
                       <TableCell className="text-right font-medium">
                         {(item.packSize && item.packSize > 1) ? (
                           <div>
-                            <div>{Math.floor(item.quantity / item.packSize)} strips + {item.quantity % item.packSize}</div>
-                            <div className="text-xs text-muted-foreground">({item.quantity} units)</div>
+                            <div>{Math.floor(stockQty / item.packSize)} strips + {stockQty % item.packSize}</div>
+                            <div className="text-xs text-muted-foreground">({stockQty} units)</div>
                           </div>
                         ) : (
-                          item.quantity
+                          stockQty
                         )}
                       </TableCell>
                       <TableCell className="text-right">₹{parseFloat(String(item.price)).toFixed(2)}</TableCell>
@@ -1010,17 +990,12 @@ export default function Inventory() {
                                 <Printer className="h-4 w-4 mr-2" /> Print Label
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => openDeleteDialog(item)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" /> Delete
-                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -1050,7 +1025,7 @@ export default function Inventory() {
             </div>
           )}
           <div className="mt-4 text-sm text-muted-foreground">
-            Showing {filteredMedicines.length} of {medicines.length} items
+            Showing {dedupedMedicines.length} of {new Set(medicines.map((m) => m.id)).size} items
           </div>
         </CardContent>
       </Card>
@@ -1096,27 +1071,6 @@ export default function Inventory() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Medicine</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{selectedMedicine?.name}"? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => selectedMedicine && deleteMutation.mutate(selectedMedicine.id)}
-              data-testid="button-confirm-delete"
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <ImportDialog
         open={importDialogOpen}

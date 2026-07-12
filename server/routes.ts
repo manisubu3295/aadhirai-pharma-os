@@ -18,8 +18,7 @@ import {
   insertSalesReturnSchema,
   insertSalesReturnItemSchema,
   insertPettyCashExpenseSchema,
-  insertApprovalRequestSchema,
-  insertStockAdjustmentSchema
+  insertApprovalRequestSchema
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -253,7 +252,9 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   app.use(hydrateAuthenticatedUser);
-  
+
+  const inventoryRepo = new InventoryPostingRepository();
+
   // Health check endpoint for production verification
   app.get("/api/health", async (req, res) => {
     try {
@@ -547,9 +548,17 @@ export async function registerRoutes(
 
   app.post("/api/users", requireRole("owner"), async (req, res) => {
     try {
-      const data = req.body;
-      const hashedPassword = await bcrypt.hash(data.password, 10);
-      const user = await storage.createUser({ ...data, password: hashedPassword });
+      const { username, password, name, role, roleId, email, phone } = req.body;
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        username,
+        password: hashedPassword,
+        name,
+        role,
+        roleId: roleId ?? null,
+        email,
+        phone,
+      });
       const { password: _, ...userWithoutPassword } = user;
       res.status(201).json(userWithoutPassword);
     } catch (error) {
@@ -696,6 +705,11 @@ export async function registerRoutes(
   app.delete("/api/medicines/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (await inventoryRepo.hasBatches(id)) {
+        return res.status(400).json({
+          error: "Cannot delete a medicine with existing stock batches — reduce its stock via Stock Adjustments first.",
+        });
+      }
       const deleted = await storage.deleteMedicine(id);
       if (!deleted) {
         return res.status(404).json({ error: "Medicine not found" });
@@ -2863,7 +2877,7 @@ export async function registerRoutes(
   });
 
   // ========== STOCK ADJUSTMENTS ==========
-  
+
   // Get stock adjustments with optional filters
   app.get("/api/stock-adjustments", requireAuth, async (req, res) => {
     try {
@@ -2895,31 +2909,37 @@ export async function registerRoutes(
     }
   });
   
-  // Create stock adjustment
+  // Create stock adjustment — increases/decreases an existing batch only.
   app.post("/api/stock-adjustments", requireRole("owner", "admin", "pharmacist"), async (req, res) => {
     try {
       const user = await storage.getUser(req.session.userId!);
-      
-      // Get medicine details
-      const medicine = await storage.getMedicine(req.body.medicineId);
-      if (!medicine) {
-        return res.status(404).json({ error: "Medicine not found" });
-      }
-      
-      const data = insertStockAdjustmentSchema.parse({
-        ...req.body,
-        medicineName: medicine.name,
-        batchNumber: req.body.batchNumber || medicine.batchNumber,
-        createdByUserId: req.session.userId,
-        createdByUserName: user?.name || user?.username
+
+      const stockAdjustmentSchema = z.object({
+        medicineId: z.number().int().positive("Medicine is required"),
+        batchId: z.number().int().positive("Batch is required"),
+        adjustmentQty: z.number().int().positive("Quantity must be greater than zero"),
+        adjustmentType: z.enum(["INCREASE", "DECREASE"]),
+        reasonCode: z.string().trim().min(1, "Reason is required"),
+        notes: z.string().optional().nullable(),
       });
-      
-      const adjustment = await storage.createStockAdjustment(data);
+      const data = stockAdjustmentSchema.parse(req.body);
+
+      const adjustment = await inventoryRepo.createBatchStockAdjustment({
+        ...data,
+        userId: req.session.userId!,
+        userName: user?.name || user?.username,
+      });
       res.status(201).json(adjustment);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
+        });
+      }
       console.error("Error creating stock adjustment:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to create stock adjustment";
-      if (errorMessage.includes("Insufficient stock")) {
+      if (errorMessage.includes("Insufficient stock") || errorMessage.includes("not found")) {
         res.status(400).json({ error: errorMessage });
       } else {
         res.status(500).json({ error: "Failed to create stock adjustment" });
@@ -2928,8 +2948,6 @@ export async function registerRoutes(
   });
 
   // ─── Inventory Batch List & Opening Stock ─────────────────────────────────
-
-  const inventoryRepo = new InventoryPostingRepository();
 
   // GET /api/inventory/batches - list all inventory batches with medicine info
   app.get("/api/inventory/batches", requireAuth, async (req, res) => {
@@ -2983,25 +3001,26 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/inventory/opening-stock - create opening stock entry for a batch
+  const openingStockSchema = z.object({
+    medicineId: z.number().int().positive("Medicine is required"),
+    batchNumber: z.string().trim().min(1, "Batch number is required"),
+    expiryDate: z.string().trim().min(1, "Expiry date is required"),
+    qtyBase: z.number().int().positive("Quantity must be greater than zero"),
+    costPrice: z.string().optional().nullable(),
+    mrp: z.string().optional().nullable(),
+    sellingPrice: z.string().optional().nullable(),
+    packSize: z.number().int().min(1).optional(),
+    locationId: z.number().int().optional().nullable(),
+  });
+
+  // POST /api/inventory/opening-stock - create a brand-new batch. Rejects if
+  // a batch with the same number already exists for this medicine.
   app.post("/api/inventory/opening-stock", requireAuth, async (req, res) => {
     try {
-      const openingStockSchema = z.object({
-        medicineId: z.number().int().positive("Medicine is required"),
-        batchNumber: z.string().trim().min(1, "Batch number is required"),
-        expiryDate: z.string().trim().min(1, "Expiry date is required"),
-        qtyBase: z.number().int().positive("Quantity must be greater than zero"),
-        costPrice: z.string().optional().nullable(),
-        mrp: z.string().optional().nullable(),
-        sellingPrice: z.string().optional().nullable(),
-        packSize: z.number().int().min(1).optional(),
-        locationId: z.number().int().optional().nullable(),
-      });
-
       const data = openingStockSchema.parse(req.body);
       const userId = req.session?.userId ?? null;
 
-      const result = await inventoryRepo.openingStockEntry({
+      const result = await inventoryRepo.createNewBatchOpeningStock({
         ...data,
         userId,
       });
@@ -3017,6 +3036,45 @@ export async function registerRoutes(
       console.error("Error creating opening stock:", error);
       const msg = error instanceof Error ? error.message : "Failed to create opening stock";
       res.status(400).json({ error: msg });
+    }
+  });
+
+  // POST /api/inventory/opening-stock/bulk - create opening stock for many
+  // medicines at once. Each row is processed independently so one bad row
+  // doesn't roll back the rest (same pattern as /api/medicines/import).
+  app.post("/api/inventory/opening-stock/bulk", requireAuth, async (req, res) => {
+    try {
+      const bulkSchema = z.object({
+        entries: z.array(openingStockSchema).min(1).max(500),
+      });
+      const { entries } = bulkSchema.parse(req.body);
+      const userId = req.session?.userId ?? null;
+
+      let success = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (let i = 0; i < entries.length; i++) {
+        try {
+          await inventoryRepo.createNewBatchOpeningStock({ ...entries[i], userId });
+          success++;
+        } catch (rowError) {
+          failed++;
+          const msg = rowError instanceof Error ? rowError.message : "Failed to create opening stock";
+          errors.push(`Row ${i + 1} (medicineId ${entries[i].medicineId}): ${msg}`);
+        }
+      }
+
+      res.status(failed > 0 && success === 0 ? 400 : 201).json({ success, failed, errors });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "),
+        });
+      }
+      console.error("Error creating bulk opening stock:", error);
+      res.status(500).json({ error: "Failed to create bulk opening stock" });
     }
   });
 

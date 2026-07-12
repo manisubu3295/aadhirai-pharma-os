@@ -39,6 +39,7 @@ interface StockAdjustment {
   medicineId: number;
   medicineName: string;
   batchNumber: string;
+  expiryDate: string | null;
   adjustmentQty: number;
   adjustmentType: string;
   reasonCode: string;
@@ -53,6 +54,14 @@ interface Medicine {
   name: string;
   batchNumber: string;
   quantity: number;
+}
+
+interface InventoryBatch {
+  id: number;
+  medicineId: number;
+  batchNumber: string;
+  expiryDate: string;
+  availableQtyBase: number;
 }
 
 const REASON_CODES = [
@@ -74,7 +83,7 @@ export default function StockAdjustments() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     medicineId: "",
-    batchNumber: "",
+    batchId: "",
     adjustmentQty: "",
     adjustmentType: "DECREASE",
     reasonCode: "",
@@ -107,10 +116,19 @@ export default function StockAdjustments() {
     },
   });
 
+  const { data: batches = [] } = useQuery<InventoryBatch[]>({
+    queryKey: ["/api/inventory/batches"],
+    queryFn: async () => {
+      const response = await fetch("/api/inventory/batches");
+      if (!response.ok) throw new Error("Failed to fetch inventory batches");
+      return response.json();
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: {
       medicineId: number;
-      batchNumber: string;
+      batchId: number;
       adjustmentQty: number;
       adjustmentType: string;
       reasonCode: string;
@@ -121,25 +139,30 @@ export default function StockAdjustments() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create stock adjustment");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || payload?.details || "Failed to create stock adjustment");
+      }
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Stock adjustment recorded successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-adjustments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory/batches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory/stock-summary"] });
       setDialogOpen(false);
       resetForm();
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to record stock adjustment", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
 
   const resetForm = () => {
     setFormData({
       medicineId: "",
-      batchNumber: "",
+      batchId: "",
       adjustmentQty: "",
       adjustmentType: "DECREASE",
       reasonCode: "",
@@ -148,27 +171,25 @@ export default function StockAdjustments() {
   };
 
   const handleMedicineSelect = (medicineId: string) => {
-    const medicine = medicines.find(m => m.id === parseInt(medicineId));
     setFormData({
       ...formData,
       medicineId,
-      batchNumber: medicine?.batchNumber || ""
+      batchId: ""
     });
   };
 
   const handleSubmit = () => {
-    if (!formData.medicineId || !formData.adjustmentQty || !formData.reasonCode) {
+    if (!formData.medicineId || !formData.batchId || !formData.adjustmentQty || !formData.reasonCode) {
       toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
 
-    const qty = parseInt(formData.adjustmentQty);
-    const adjustedQty = formData.adjustmentType === "DECREASE" ? -Math.abs(qty) : Math.abs(qty);
+    const qty = Math.abs(parseInt(formData.adjustmentQty));
 
     createMutation.mutate({
       medicineId: parseInt(formData.medicineId),
-      batchNumber: formData.batchNumber,
-      adjustmentQty: adjustedQty,
+      batchId: parseInt(formData.batchId),
+      adjustmentQty: qty,
       adjustmentType: formData.adjustmentType,
       reasonCode: formData.reasonCode,
       notes: formData.notes
@@ -179,12 +200,16 @@ export default function StockAdjustments() {
     return REASON_CODES.find(r => r.value === code)?.label || code;
   };
 
-  const filteredMedicines = medicines.filter(m => 
+  const filteredMedicines = medicines.filter(m =>
     m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.batchNumber.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const selectedMedicine = medicines.find(m => m.id === parseInt(formData.medicineId));
+  const medicineBatches = formData.medicineId
+    ? batches.filter(b => b.medicineId === parseInt(formData.medicineId))
+    : [];
+  const selectedBatch = medicineBatches.find(b => b.id === parseInt(formData.batchId));
 
   return (
     <AppLayout>
@@ -232,6 +257,7 @@ export default function StockAdjustments() {
                     <TableHead>Date</TableHead>
                     <TableHead>Medicine</TableHead>
                     <TableHead>Batch</TableHead>
+                    <TableHead>Expiry</TableHead>
                     <TableHead>Adjustment</TableHead>
                     <TableHead>Reason</TableHead>
                     <TableHead>Notes</TableHead>
@@ -243,18 +269,19 @@ export default function StockAdjustments() {
                     <TableRow key={adjustment.id} data-testid={`row-adjustment-${adjustment.id}`}>
                       <TableCell>{formatAppDateTime(adjustment.createdAt, "dd/MM/yyyy HH:mm")}</TableCell>
                       <TableCell className="font-medium">{adjustment.medicineName}</TableCell>
-                      <TableCell>{adjustment.batchNumber}</TableCell>
+                      <TableCell className="font-mono text-xs">{adjustment.batchNumber}</TableCell>
+                      <TableCell className="text-xs">{adjustment.expiryDate || "—"}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {adjustment.adjustmentQty > 0 ? (
+                          {adjustment.adjustmentType === "INCREASE" ? (
                             <Badge className="bg-green-100 text-green-800">
                               <ArrowUp className="h-3 w-3 mr-1" />
-                              +{adjustment.adjustmentQty}
+                              +{Math.abs(adjustment.adjustmentQty)}
                             </Badge>
                           ) : (
                             <Badge className="bg-red-100 text-red-800">
                               <ArrowDown className="h-3 w-3 mr-1" />
-                              {adjustment.adjustmentQty}
+                              -{Math.abs(adjustment.adjustmentQty)}
                             </Badge>
                           )}
                         </div>
@@ -293,23 +320,50 @@ export default function StockAdjustments() {
                     ) : (
                       medicines.map(medicine => (
                         <SelectItem key={medicine.id} value={String(medicine.id)}>
-                          {medicine.name} - {medicine.batchNumber} (Stock: {medicine.quantity})
+                          {medicine.name} (Total Stock: {medicine.quantity})
                         </SelectItem>
                       ))
                     )}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Choose a medicine to adjust its stock quantity</p>
+                <p className="text-xs text-muted-foreground">Choose a medicine, then pick the specific batch to adjust</p>
               </div>
 
-              {selectedMedicine && (
+              {formData.medicineId && (
+                <div className="space-y-2">
+                  <Label>Select Batch *</Label>
+                  {medicineBatches.length === 0 ? (
+                    <p className="text-xs text-muted-foreground bg-muted p-3 rounded-lg">
+                      No batches yet for this medicine — add opening stock first.
+                    </p>
+                  ) : (
+                    <Select
+                      value={formData.batchId}
+                      onValueChange={(val) => setFormData({ ...formData, batchId: val })}
+                    >
+                      <SelectTrigger data-testid="select-batch">
+                        <SelectValue placeholder="Choose a batch..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        {medicineBatches.map(batch => (
+                          <SelectItem key={batch.id} value={String(batch.id)}>
+                            {batch.batchNumber} — exp {batch.expiryDate} — available {batch.availableQtyBase}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+
+              {selectedMedicine && selectedBatch && (
                 <div className="bg-muted p-3 rounded-lg">
                   <div className="flex items-center gap-2">
                     <Package className="h-4 w-4" />
                     <span className="font-medium">{selectedMedicine.name}</span>
                   </div>
                   <div className="text-sm text-muted-foreground mt-1">
-                    Current Stock: {selectedMedicine.quantity} | Batch: {selectedMedicine.batchNumber}
+                    Batch: {selectedBatch.batchNumber} | Expiry: {selectedBatch.expiryDate} | Available: {selectedBatch.availableQtyBase}
                   </div>
                 </div>
               )}
@@ -373,9 +427,9 @@ export default function StockAdjustments() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button 
-                onClick={handleSubmit} 
-                disabled={createMutation.isPending}
+              <Button
+                onClick={handleSubmit}
+                disabled={createMutation.isPending || !formData.medicineId || medicineBatches.length === 0}
                 data-testid="button-save-adjustment"
               >
                 Record Adjustment
