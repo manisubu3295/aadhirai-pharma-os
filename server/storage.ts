@@ -49,9 +49,7 @@ import {
   type GoodsReceiptItem,
   type InsertGoodsReceiptItem,
   type SalesReturn,
-  type InsertSalesReturn,
   type SalesReturnItem,
-  type InsertSalesReturnItem,
   type AppSetting,
   type Menu,
   type InsertMenu,
@@ -258,6 +256,10 @@ export const pool = new Pool({
 });
 
 export const db = drizzle(pool);
+
+// Thrown when a sales return request fails validation (e.g. over-return) —
+// callers distinguish this from unexpected errors to return a 400 vs 500.
+export class ReturnValidationError extends Error {}
 
 export async function initializeDatabase() {
   try {
@@ -1097,7 +1099,10 @@ export interface IStorage {
   getSalesReturns(): Promise<SalesReturn[]>;
   getSalesReturn(id: number): Promise<SalesReturn | undefined>;
   getSaleWithReturns(saleId: number): Promise<{ sale: Sale & { payments: SalePayment[] }; items: (SaleItem & { returnedQty: number })[]; returns: SalesReturn[] } | undefined>;
-  createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn>;
+  createSalesReturn(
+    returnData: { originalSaleId: number; refundMode: string; reason?: string | null; userId?: string | null },
+    items: { saleItemId: number; quantityReturned: number }[]
+  ): Promise<SalesReturn>;
   restockBatch(medicineId: number, batchNumber: string, expiryDate: string, qtyBaseDelta: number): Promise<boolean>;
   getSalesReturnItems(returnId: number): Promise<SalesReturnItem[]>;
   getTotalReturnsForPeriod(startDate: Date, endDate: Date): Promise<string>;
@@ -2731,8 +2736,11 @@ export class DatabaseStorage implements IStorage {
     const [sale] = await this.attachSalePayments(saleResult);
     const items = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
     const returns = await db.select().from(salesReturns).where(eq(salesReturns.originalSaleId, saleId)).orderBy(desc(salesReturns.createdAt));
-    
-    const returnItemsResult = await db.select().from(salesReturnItems);
+
+    const itemIds = items.map(i => i.id);
+    const returnItemsResult = itemIds.length > 0
+      ? await db.select().from(salesReturnItems).where(inArray(salesReturnItems.saleItemId, itemIds))
+      : [];
     const returnItemsBySaleItem: Record<number, number> = {};
     
     for (const returnItem of returnItemsResult) {
@@ -2771,28 +2779,163 @@ export class DatabaseStorage implements IStorage {
     return (result.rowCount || 0) > 0;
   }
 
-  async createSalesReturn(returnData: InsertSalesReturn, items: Omit<InsertSalesReturnItem, 'salesReturnId'>[]): Promise<SalesReturn> {
-    const returnResult = await db.insert(salesReturns).values(returnData).returning();
-    const createdReturn = returnResult[0];
-
-    if (items.length > 0) {
-      const itemsWithReturnId = items.map(item => ({ ...item, salesReturnId: createdReturn.id }));
-      await db.insert(salesReturnItems).values(itemsWithReturnId);
-
-      for (const item of items) {
-        const restocked = item.expiryDate
-          ? await this.restockBatch(item.medicineId, item.batchNumber, item.expiryDate, item.quantityReturned)
-          : false;
-        if (!restocked) {
-          console.error(
-            `[SALES_RETURN] No matching batch ${item.batchNumber}/${item.expiryDate || "?"} for medicine ${item.medicineId} — only the medicine's aggregate quantity was restocked.`
-          );
-        }
-        await this.updateMedicineStock(item.medicineId, item.quantityReturned);
-      }
+  // Runs the entire read-validate-write sequence inside one transaction with
+  // the sale row locked (FOR UPDATE), so two concurrent return requests for
+  // the same sale can't both read the same stale "already returned" total
+  // and both pass validation — the second one blocks until the first
+  // commits, then re-validates against the now-updated total. Quantity and
+  // refund amount are derived from the locked sale_items row, not trusted
+  // from the caller, closing the over-return/over-refund race.
+  async createSalesReturn(
+    returnData: { originalSaleId: number; refundMode: string; reason?: string | null; userId?: string | null },
+    items: { saleItemId: number; quantityReturned: number }[]
+  ): Promise<SalesReturn> {
+    if (items.length === 0) {
+      throw new ReturnValidationError("No items selected for return");
     }
 
-    return createdReturn;
+    const client = await pool.connect();
+    let createdReturnId: number;
+    try {
+      await client.query("BEGIN");
+
+      const saleResult = await client.query<{ id: number; invoice_no: string | null; customer_id: number | null; customer_name: string }>(
+        `SELECT id, invoice_no, customer_id, customer_name FROM sales WHERE id = $1 FOR UPDATE`,
+        [returnData.originalSaleId],
+      );
+      const saleRow = saleResult.rows[0];
+      if (!saleRow) {
+        throw new ReturnValidationError("Original sale not found");
+      }
+
+      const saleItemIds = items.map(i => i.saleItemId);
+      const saleItemsResult = await client.query<{
+        id: number; medicine_id: number; medicine_name: string; batch_number: string; expiry_date: string; quantity: number; price: string;
+      }>(
+        `SELECT id, medicine_id, medicine_name, batch_number, expiry_date, quantity, price
+         FROM sale_items WHERE id = ANY($1::int[]) AND sale_id = $2`,
+        [saleItemIds, returnData.originalSaleId],
+      );
+      const saleItemsById = new Map(saleItemsResult.rows.map(r => [r.id, r]));
+
+      const returnedResult = await client.query<{ sale_item_id: number; returned_qty: string }>(
+        `SELECT sale_item_id, COALESCE(SUM(quantity_returned), 0) AS returned_qty
+         FROM sales_return_items WHERE sale_item_id = ANY($1::int[])
+         GROUP BY sale_item_id`,
+        [saleItemIds],
+      );
+      const alreadyReturnedById = new Map(returnedResult.rows.map(r => [r.sale_item_id, Number(r.returned_qty)]));
+
+      const preparedItems: {
+        saleItemId: number; medicineId: number; medicineName: string; batchNumber: string; expiryDate: string;
+        quantityReturned: number; pricePerUnit: number; refundAmount: number;
+      }[] = [];
+      let totalRefundAmount = 0;
+
+      for (const item of items) {
+        const saleItem = saleItemsById.get(item.saleItemId);
+        if (!saleItem) {
+          throw new ReturnValidationError(`Sale item ${item.saleItemId} not found`);
+        }
+        const alreadyReturned = alreadyReturnedById.get(item.saleItemId) || 0;
+        const maxReturnable = saleItem.quantity - alreadyReturned;
+        if (item.quantityReturned > maxReturnable) {
+          throw new ReturnValidationError(
+            `Cannot return ${item.quantityReturned} of ${saleItem.medicine_name}. Maximum returnable: ${maxReturnable}`,
+          );
+        }
+        if (item.quantityReturned <= 0) continue;
+
+        const pricePerUnit = parseFloat(saleItem.price);
+        const refundAmount = pricePerUnit * item.quantityReturned;
+        totalRefundAmount += refundAmount;
+        preparedItems.push({
+          saleItemId: item.saleItemId,
+          medicineId: saleItem.medicine_id,
+          medicineName: saleItem.medicine_name,
+          batchNumber: saleItem.batch_number,
+          expiryDate: saleItem.expiry_date,
+          quantityReturned: item.quantityReturned,
+          pricePerUnit,
+          refundAmount,
+        });
+      }
+
+      if (preparedItems.length === 0) {
+        throw new ReturnValidationError("No valid items to return");
+      }
+
+      const returnInsert = await client.query<{ id: number }>(
+        `INSERT INTO sales_returns
+           (original_sale_id, invoice_no, total_refund_amount, refund_mode, reason, customer_id, customer_name, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id`,
+        [
+          returnData.originalSaleId,
+          saleRow.invoice_no,
+          totalRefundAmount.toFixed(2),
+          returnData.refundMode,
+          returnData.reason || null,
+          saleRow.customer_id,
+          saleRow.customer_name,
+          returnData.userId || null,
+        ],
+      );
+      createdReturnId = returnInsert.rows[0].id;
+
+      for (const item of preparedItems) {
+        await client.query(
+          `INSERT INTO sales_return_items
+             (sales_return_id, sale_item_id, medicine_id, medicine_name, batch_number, expiry_date, quantity_returned, price_per_unit, refund_amount)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            createdReturnId, item.saleItemId, item.medicineId, item.medicineName, item.batchNumber,
+            item.expiryDate, item.quantityReturned, item.pricePerUnit, item.refundAmount,
+          ],
+        );
+
+        const restockResult = await client.query(
+          `UPDATE inventory_batches
+           SET available_qty_base = available_qty_base + $4,
+               total_outward_qty_base = GREATEST(total_outward_qty_base - $4, 0),
+               updated_at = NOW()
+           WHERE medicine_id = $1 AND batch_number = $2 AND expiry_date = $3`,
+          [item.medicineId, item.batchNumber, item.expiryDate, item.quantityReturned],
+        );
+        if ((restockResult.rowCount || 0) === 0) {
+          console.error(
+            `[SALES_RETURN] No matching batch ${item.batchNumber}/${item.expiryDate} for medicine ${item.medicineId} — only the medicine's aggregate quantity was restocked.`,
+          );
+        }
+
+        // Single atomic UPDATE (not read-then-write) so this can't lose an
+        // update to a concurrent sale/return touching the same medicine.
+        await client.query(
+          `UPDATE medicines
+           SET quantity = quantity + $1,
+               status = CASE
+                 WHEN quantity + $1 <= 0 THEN 'Out of Stock'
+                 WHEN quantity + $1 < 50 THEN 'Low Stock'
+                 ELSE 'In Stock'
+               END
+           WHERE id = $2`,
+          [item.quantityReturned, item.medicineId],
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const created = await this.getSalesReturn(createdReturnId);
+    if (!created) {
+      throw new Error("Sales return was created but could not be re-fetched");
+    }
+    return created;
   }
 
   async getSalesReturnItems(returnId: number): Promise<SalesReturnItem[]> {

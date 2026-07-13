@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, ReturnValidationError } from "./storage";
 import { runBackup, listBackups } from "./backup";
 import { 
   type User as AppUser,
@@ -15,8 +15,6 @@ import {
   insertSupplierRateSchema,
   insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema,
-  insertSalesReturnSchema,
-  insertSalesReturnItemSchema,
   insertPettyCashExpenseSchema,
   insertApprovalRequestSchema
 } from "@shared/schema";
@@ -2081,65 +2079,49 @@ export async function registerRoutes(
   app.post("/api/sales-returns", async (req, res) => {
     try {
       const { items, ...returnData } = req.body;
-      
+
       if (!returnData.originalSaleId) {
         return res.status(400).json({ error: "Original sale ID is required" });
       }
-      
+
+      // This read is only used for the credit-bill refund-mode check below —
+      // it does NOT decide how much can be returned. Quantity/amount
+      // validation happens atomically inside storage.createSalesReturn,
+      // under a row lock, so it can't race with a concurrent return on the
+      // same sale.
       const saleWithReturns = await storage.getSaleWithReturns(returnData.originalSaleId);
       if (!saleWithReturns) {
         return res.status(404).json({ error: "Original sale not found" });
       }
-      
+
       const originalCreditPortion = getSaleCreditPortion(saleWithReturns.sale, saleWithReturns.sale.payments);
       const requestedRefundMode = returnData.refundMode?.toLowerCase();
 
       if (originalCreditPortion > 0) {
         const allowedCreditRefundModes = ["credit", "adjustment", "credit_adjustment"];
         if (!allowedCreditRefundModes.includes(requestedRefundMode)) {
-          return res.status(400).json({ 
-            error: "Credit bill refunds must be processed as credit adjustments, not cash/card/UPI." 
+          return res.status(400).json({
+            error: "Credit bill refunds must be processed as credit adjustments, not cash/card/UPI."
           });
         }
       }
-      
+
       const returnItems = items || [];
-      let totalRefundAmount = 0;
-      
-      for (const returnItem of returnItems) {
-        const saleItem = saleWithReturns.items.find(item => item.id === returnItem.saleItemId);
-        if (!saleItem) {
-          return res.status(400).json({ error: `Sale item ${returnItem.saleItemId} not found` });
-        }
-        
-        const maxReturnable = saleItem.quantity - saleItem.returnedQty;
-        if (returnItem.quantityReturned > maxReturnable) {
-          return res.status(400).json({ 
-            error: `Cannot return ${returnItem.quantityReturned} of ${saleItem.medicineName}. Maximum returnable: ${maxReturnable}` 
-          });
-        }
-        
-        const pricePerUnit = parseFloat(String(saleItem.price));
-        returnItem.pricePerUnit = pricePerUnit;
-        returnItem.refundAmount = pricePerUnit * returnItem.quantityReturned;
-        returnItem.medicineName = saleItem.medicineName;
-        returnItem.batchNumber = saleItem.batchNumber;
-        returnItem.expiryDate = saleItem.expiryDate;
-        totalRefundAmount += returnItem.refundAmount;
-      }
-      
-      const parsedReturnData = insertSalesReturnSchema.parse({
-        ...returnData,
-        invoiceNo: saleWithReturns.sale.invoiceNo,
-        totalRefundAmount: totalRefundAmount.toFixed(2),
-        customerName: saleWithReturns.sale.customerName,
-        customerId: saleWithReturns.sale.customerId
-      });
-      
-      const createdReturn = await storage.createSalesReturn(parsedReturnData, returnItems);
+      const createdReturn = await storage.createSalesReturn(
+        {
+          originalSaleId: returnData.originalSaleId,
+          refundMode: returnData.refundMode,
+          reason: returnData.reason,
+          userId: returnData.userId,
+        },
+        returnItems,
+      );
       res.status(201).json(createdReturn);
     } catch (error) {
       console.error("Sales return creation error:", error);
+      if (error instanceof ReturnValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }

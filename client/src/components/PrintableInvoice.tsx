@@ -12,7 +12,7 @@ interface InvoiceSettings {
 
 interface PrintableInvoiceProps {
   sale: Sale & { payments?: SalePayment[] };
-  items: SaleItem[];
+  items: (SaleItem & { returnedQty?: number })[];
   storeInfo?: {
     name: string;
     address: string;
@@ -42,7 +42,8 @@ const defaultInvoiceSettings: InvoiceSettings = {
 export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps>(
   ({ sale, items, storeInfo = defaultStoreInfo, invoiceSettings = defaultInvoiceSettings }, ref) => {
     const settings = { ...defaultInvoiceSettings, ...invoiceSettings };
-    
+    const hasReturns = items.some(item => (item.returnedQty || 0) > 0);
+
     const formatDate = (date: Date | string) => {
       const d = new Date(date);
       return d.toLocaleDateString("en-IN", {
@@ -80,6 +81,12 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
         <div className="text-center mb-4">
           <h2 className="text-lg font-bold">{settings.hideTaxDetails ? "INVOICE" : "TAX INVOICE"}</h2>
         </div>
+
+        {hasReturns && (
+          <div className="text-center mb-4 border border-black py-1 font-bold" style={{ fontSize: "11px" }}>
+            THIS BILL HAS ITEMS RETURNED — SEE "RETURNED" QTY BELOW
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
           <div>
@@ -127,7 +134,14 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
                       {item.mrp ? `₹${Number(item.mrp).toFixed(2)}` : "-"}
                     </td>
                   )}
-                  <td className="border border-black p-2 text-center">{item.quantity}</td>
+                  <td className="border border-black p-2 text-center">
+                    {item.quantity}
+                    {(item.returnedQty || 0) > 0 && (
+                      <div style={{ fontSize: "9px" }} className="text-red-600 font-bold">
+                        Returned: {item.returnedQty}
+                      </div>
+                    )}
+                  </td>
                   <td className="border border-black p-2 text-right">₹{Number(item.price).toFixed(2)}</td>
                   {!settings.hideTaxDetails && <td className="border border-black p-2 text-center">{item.gstRate}%</td>}
                   <td className="border border-black p-2 text-right">₹{lineAmountExclTax.toFixed(2)}</td>

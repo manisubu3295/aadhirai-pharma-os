@@ -110,15 +110,15 @@ export default function Collections() {
   const [searchTerm, setSearchTerm] = useState("");
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const [printSale, setPrintSale] = useState<Sale | null>(null);
-  const [printItems, setPrintItems] = useState<SaleItem[]>([]);
+  const [printItems, setPrintItems] = useState<(SaleItem & { returnedQty?: number })[]>([]);
 
   const handleReprint = async (sale: Sale) => {
     try {
-      const res = await fetch(`/api/sales/${sale.id}/items`);
+      const res = await fetch(`/api/sales/${sale.id}/with-returns`);
       if (res.ok) {
-        const items = await res.json();
+        const data = await res.json();
         setPrintSale(sale);
-        setPrintItems(items);
+        setPrintItems(data.items);
         setPrintDialogOpen(true);
       }
     } catch (error) {
