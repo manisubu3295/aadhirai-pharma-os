@@ -152,6 +152,11 @@ export default function RoleMaster() {
       return res.json();
     },
     onSuccess: () => {
+      // Prefix invalidation also covers every ["/api/admin/roles", id,
+      // "menu-groups"] query (this dialog and User Menu Access) — with the
+      // app's staleTime: Infinity they would otherwise show the pre-save
+      // selections forever.
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/roles"] });
       queryClient.invalidateQueries({ queryKey: ["navigation"] });
       setIsGroupsDialogOpen(false);
       setSelectedRole(null);
