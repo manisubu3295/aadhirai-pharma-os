@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Shield, Search, Filter, FileSpreadsheet, DollarSign, Package, UserCog, XCircle, RefreshCw } from "lucide-react";
+import { Shield, Search, Filter, FileSpreadsheet, DollarSign, Package, UserCog, XCircle, RefreshCw, Plus, Pencil, Trash2, LogIn, LogOut, Bot } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
 import { format, subDays } from "date-fns";
 
@@ -28,6 +28,12 @@ interface AuditLogEntry {
 }
 
 const actionColors: Record<string, string> = {
+  CREATE: "bg-emerald-100 text-emerald-800",
+  UPDATE: "bg-sky-100 text-sky-800",
+  DELETE: "bg-red-100 text-red-800",
+  LOGIN: "bg-green-100 text-green-800",
+  LOGOUT: "bg-gray-100 text-gray-800",
+  ASSISTANT_QUERY: "bg-purple-100 text-purple-800",
   price_change: "bg-yellow-100 text-yellow-800",
   stock_adjustment: "bg-blue-100 text-blue-800",
   bill_cancel: "bg-red-100 text-red-800",
@@ -40,6 +46,12 @@ const actionColors: Record<string, string> = {
 };
 
 const actionIcons: Record<string, React.ReactNode> = {
+  CREATE: <Plus className="w-4 h-4" />,
+  UPDATE: <Pencil className="w-4 h-4" />,
+  DELETE: <Trash2 className="w-4 h-4" />,
+  LOGIN: <LogIn className="w-4 h-4" />,
+  LOGOUT: <LogOut className="w-4 h-4" />,
+  ASSISTANT_QUERY: <Bot className="w-4 h-4" />,
   price_change: <DollarSign className="w-4 h-4" />,
   stock_adjustment: <Package className="w-4 h-4" />,
   bill_cancel: <XCircle className="w-4 h-4" />,
@@ -159,12 +171,12 @@ export default function AuditLog() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Actions</SelectItem>
-                    <SelectItem value="price_change">Price Changes</SelectItem>
-                    <SelectItem value="stock_adjustment">Stock Adjustments</SelectItem>
-                    <SelectItem value="bill_cancel">Bill Cancellations</SelectItem>
-                    <SelectItem value="bill_return">Returns</SelectItem>
-                    <SelectItem value="credit_limit_change">Credit Limit Changes</SelectItem>
-                    <SelectItem value="user_role_change">User Role Changes</SelectItem>
+                    <SelectItem value="CREATE">Created</SelectItem>
+                    <SelectItem value="UPDATE">Updated</SelectItem>
+                    <SelectItem value="DELETE">Deleted</SelectItem>
+                    <SelectItem value="LOGIN">Logins</SelectItem>
+                    <SelectItem value="LOGOUT">Logouts</SelectItem>
+                    <SelectItem value="ASSISTANT_QUERY">AI Assistant</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -250,7 +262,14 @@ export default function AuditLog() {
                               <span className="text-green-600">{log.newValue}</span>
                             </div>
                           ) : (
-                            <span className="text-sm text-muted-foreground">{log.details}</span>
+                            <div className="text-sm text-muted-foreground">
+                              <div>{log.details}</div>
+                              {log.newValue && (
+                                <div className="text-xs break-all line-clamp-3" title={log.newValue}>
+                                  {log.newValue}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>

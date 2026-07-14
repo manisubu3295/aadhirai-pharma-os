@@ -24,7 +24,7 @@ interface Role {
   id: number;
   name: string;
   description: string | null;
-  isSuperAdmin: boolean;
+  systemRole: string;
   isActive: boolean;
 }
 
@@ -141,7 +141,10 @@ export default function UserMenuAccess() {
         credentials: "include",
         body: JSON.stringify({ roleId }),
       });
-      if (!res.ok) throw new Error("Failed to update role");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to update role");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -150,8 +153,8 @@ export default function UserMenuAccess() {
       queryClient.invalidateQueries({ queryKey: ["navigation"] });
       toast({ title: "User role updated successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to update user role", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Failed to update user role", description: error.message, variant: "destructive" });
     },
   });
 
@@ -366,10 +369,10 @@ export default function UserMenuAccess() {
 
                 <TabsContent value="role" className="mt-4">
                   <p className="text-sm text-muted-foreground mb-4">
-                    Assign a role to grant this user every menu group linked to that role. Priority:
-                    Individual Menus (highest) → Menu Groups → Role baseline (lowest). Assigning a role
-                    here only sets the baseline — use Individual Menus above to grant or revoke specific
-                    items on top of it.
+                    Assign a role to set this user's login permissions and grant every menu group
+                    linked to that role. Menu priority: Individual Menus (highest) → Menu Groups →
+                    Role baseline (lowest). The role sets the baseline — use Individual Menus above
+                    to grant or revoke specific items on top of it.
                   </p>
                   <div className="w-72 mb-6">
                     <Select

@@ -23,6 +23,8 @@ async function seed() {
 
   const password = await bcrypt.hash("password123", 10);
 
+  // Legacy role text is fine here: syncRoleAssignments() on next server
+  // startup links these users to Role Master roles and syncs users.role.
   await db.insert(users).values([
     { username: "owner", password, name: "Rajesh Kumar", role: "owner", email: "rajesh@aadhirai.com", phone: "9876543210" },
     { username: "pharmacist", password, name: "Dr. Priya Sharma", role: "pharmacist", email: "priya@aadhirai.com", phone: "9876543211" },

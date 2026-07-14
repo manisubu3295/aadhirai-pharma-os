@@ -16,7 +16,8 @@ import {
   insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema,
   insertPettyCashExpenseSchema,
-  insertApprovalRequestSchema
+  insertApprovalRequestSchema,
+  insertRoleSchema
 } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -293,11 +294,88 @@ function requireRole(...roles: string[]) {
   };
 }
 
+const AUDIT_MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+// Skip: audit-log writes themselves, and the assistant (it writes its own
+// richer audit entries in assistant.service.ts).
+const AUDIT_SKIP_PATHS = [/^\/api\/audit-logs/, /^\/api\/assistant/];
+
+// Compact JSON of the request body with anything password-like redacted;
+// null when there is nothing worth recording.
+function summarizeAuditBody(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const json = JSON.stringify(body, (key, value) =>
+    /password/i.test(key) ? "[redacted]" : value
+  );
+  if (!json || json === "{}" || json === "[]") return null;
+  return json.length > 1500 ? json.slice(0, 1500) + "…" : json;
+}
+
+function buildAuditEntry(req: Request, user: AppUser) {
+  const path = (req.originalUrl || req.url).split("?")[0];
+  const segments = path.split("/").filter(s => s && s !== "api" && s !== "admin");
+  const entityId = parseInt(segments.find(s => /^\d+$/.test(s)) || "", 10);
+  const body = req.body as Record<string, unknown> | undefined;
+
+  let action: string;
+  let entityType = segments[0] || "unknown";
+  if (path === "/api/auth/login") {
+    action = "LOGIN";
+    entityType = "session";
+  } else if (path === "/api/auth/logout") {
+    action = "LOGOUT";
+    entityType = "session";
+  } else {
+    action = req.method === "POST" ? "CREATE" : req.method === "DELETE" ? "DELETE" : "UPDATE";
+  }
+
+  const entityName =
+    (typeof body?.name === "string" && body.name) ||
+    (typeof body?.username === "string" && body.username) ||
+    (entityType === "session" ? user.username : "") ||
+    `${entityType}${Number.isFinite(entityId) ? ` #${entityId}` : ""}`;
+
+  return {
+    action,
+    entityType,
+    entityId: Number.isFinite(entityId) ? entityId : 0,
+    entityName,
+    userId: user.id,
+    userName: user.name || user.username,
+    oldValue: null,
+    newValue: entityType === "session" ? null : summarizeAuditBody(body),
+    details: `${req.method} ${path}`,
+  };
+}
+
+// Central audit trail: records every successful mutating API request by an
+// authenticated user, so the Audit Log shows all changes happening in the
+// app without each route having to log explicitly.
+function auditTrail(req: Request, res: Response, next: NextFunction) {
+  res.on("finish", () => {
+    try {
+      if (!AUDIT_MUTATING_METHODS.has(req.method)) return;
+      if (res.statusCode >= 400) return;
+      const user = req.user;
+      if (!user) return;
+      const path = (req.originalUrl || req.url).split("?")[0];
+      if (!path.startsWith("/api/")) return;
+      if (AUDIT_SKIP_PATHS.some(re => re.test(path))) return;
+      storage.createAuditLog(buildAuditEntry(req, user)).catch(err => {
+        console.error("Audit trail write failed:", err);
+      });
+    } catch (err) {
+      console.error("Audit trail error:", err);
+    }
+  });
+  next();
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   app.use(hydrateAuthenticatedUser);
+  app.use(auditTrail);
 
   const inventoryRepo = new InventoryPostingRepository();
 
@@ -568,7 +646,12 @@ export async function registerRoutes(
       if (created.length === 0) {
         return res.json({ message: "All default users already exist." });
       }
-      
+
+      // Link the new users to their Role Master roles (by legacy role text)
+      // and sync users.role from each role's systemRole.
+      await storage.syncRoleAssignments();
+
+
       res.json({ 
         message: `Setup completed. Created users: ${created.join(", ")}`, 
         credentials: {
@@ -594,7 +677,20 @@ export async function registerRoutes(
 
   app.post("/api/users", requireRole("owner"), async (req, res) => {
     try {
-      const { username, password, name, role, roleId, email, phone } = req.body;
+      const { username, password, name, roleId, email, phone } = req.body;
+      if (roleId != null && typeof roleId !== "number") {
+        return res.status(400).json({ error: "roleId must be a number or null" });
+      }
+      // users.role is derived from the assigned role's systemRole, never
+      // taken from client input; no role assigned means staff tier.
+      let role = "staff";
+      if (roleId != null) {
+        const roleRow = await storage.getRole(roleId);
+        if (!roleRow || !roleRow.isActive) {
+          return res.status(400).json({ error: "Role not found or inactive" });
+        }
+        role = roleRow.systemRole;
+      }
       const hashedPassword = await bcrypt.hash(password, 10);
       const user = await storage.createUser({
         username,
@@ -1424,8 +1520,18 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/audit-logs", requireRole("owner"), async (req, res) => {
+  app.get("/api/audit-logs", requireAuth, async (req, res) => {
     try {
+      const user = req.user!;
+      // Owner tier always; otherwise viewing requires the Audit Log menu
+      // (admin.audit) granted via Role Master / user menu access.
+      if (user.role !== "owner" && user.role !== "admin") {
+        const menus = await storage.getUserNavigation(user.id, user.role, user.roleId ?? null);
+        const canViewAudit = menus.some(m => m.key === "admin.audit" && m.canView);
+        if (!canViewAudit) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      }
       const from = req.query.from ? parseDateQueryStart(req.query.from as string) : undefined;
       const to = req.query.to ? parseDateQueryEnd(req.query.to as string) : undefined;
       const logs = await storage.getAuditLogs(from, to);
@@ -2331,7 +2437,11 @@ export async function registerRoutes(
 
   app.post("/api/admin/roles", requireRole("owner", "admin"), async (req, res) => {
     try {
-      const role = await storage.createRole(req.body);
+      const parsed = insertRoleSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid role data" });
+      }
+      const role = await storage.createRole(parsed.data);
       res.status(201).json(role);
     } catch (error) {
       console.error("Error creating role:", error);
@@ -2342,7 +2452,27 @@ export async function registerRoutes(
   app.put("/api/admin/roles/:id", requireRole("owner", "admin"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const role = await storage.updateRole(id, req.body);
+      const parsed = insertRoleSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid role data" });
+      }
+      const existing = await storage.getRole(id);
+      if (!existing) {
+        return res.status(404).json({ error: "Role not found" });
+      }
+      // Lockout guard: demoting or deactivating an owner-tier role that has
+      // active users must leave at least one active owner-tier user elsewhere.
+      const losesOwnerTier = existing.systemRole === "owner" && existing.isActive &&
+        ((parsed.data.systemRole !== undefined && parsed.data.systemRole !== "owner") ||
+          parsed.data.isActive === false);
+      if (losesOwnerTier) {
+        const usersOnRole = await storage.countActiveUsersByRoleId(id);
+        const ownersElsewhere = await storage.countActiveOwnerUsers({ roleId: id });
+        if (usersOnRole > 0 && ownersElsewhere === 0) {
+          return res.status(400).json({ error: "This is the last owner-level role in use. Assign another user an owner-level role first." });
+        }
+      }
+      const role = await storage.updateRole(id, parsed.data);
       if (!role) {
         return res.status(404).json({ error: "Role not found" });
       }
@@ -2356,6 +2486,10 @@ export async function registerRoutes(
   app.delete("/api/admin/roles/:id", requireRole("owner", "admin"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const inUse = await storage.countActiveUsersByRoleId(id);
+      if (inUse > 0) {
+        return res.status(400).json({ error: `${inUse} active user(s) still have this role. Reassign them first.` });
+      }
       const success = await storage.deleteRole(id);
       if (!success) {
         return res.status(404).json({ error: "Role not found" });
@@ -2435,7 +2569,30 @@ export async function registerRoutes(
       if (roleId !== null && typeof roleId !== "number") {
         return res.status(400).json({ error: "roleId must be a number or null" });
       }
-      const user = await storage.updateUser(userId, { roleId });
+      // The single assignment endpoint: sets roleId and syncs the users.role
+      // copy from the role's systemRole (no role assigned = staff tier).
+      let role = "staff";
+      if (roleId != null) {
+        const roleRow = await storage.getRole(roleId);
+        if (!roleRow || !roleRow.isActive) {
+          return res.status(400).json({ error: "Role not found or inactive" });
+        }
+        role = roleRow.systemRole;
+      }
+      if (role !== "owner") {
+        const targetUser = await storage.getUser(userId);
+        if (!targetUser) {
+          return res.status(404).json({ error: "User not found" });
+        }
+        // Lockout guard: don't demote the last active owner-tier user.
+        if (targetUser.isActive && (targetUser.role === "owner" || targetUser.role === "admin")) {
+          const ownersElsewhere = await storage.countActiveOwnerUsers({ userId });
+          if (ownersElsewhere === 0) {
+            return res.status(400).json({ error: "Cannot demote the last owner-level user." });
+          }
+        }
+      }
+      const user = await storage.updateUser(userId, { roleId, role });
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }

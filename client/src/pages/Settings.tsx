@@ -50,6 +50,7 @@ interface User {
   username: string;
   name: string;
   role: string;
+  roleId: number | null;
   email: string | null;
   phone: string | null;
   isActive: boolean;
@@ -59,7 +60,6 @@ interface UserFormData {
   username: string;
   password: string;
   name: string;
-  role: string;
   roleId: number | null;
   email: string;
   phone: string;
@@ -69,7 +69,7 @@ interface Role {
   id: number;
   name: string;
   description: string | null;
-  isSuperAdmin: boolean;
+  systemRole: string;
   isActive: boolean;
 }
 
@@ -115,7 +115,6 @@ const emptyUserForm: UserFormData = {
   username: "",
   password: "",
   name: "",
-  role: "cashier",
   roleId: null,
   email: "",
   phone: "",
@@ -259,7 +258,10 @@ export default function Settings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create user");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to create user");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -268,8 +270,8 @@ export default function Settings() {
       setUserFormData(emptyUserForm);
       toast({ title: "User created successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to create user", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Failed to create user", description: error.message, variant: "destructive" });
     },
   });
 
@@ -350,6 +352,13 @@ export default function Settings() {
     }
   };
 
+  // Show the Role Master role name; fall back to the tier text for users
+  // without an assigned role.
+  const getRoleName = (user: User) => {
+    const assigned = roles.find((r) => r.id === user.roleId);
+    return assigned ? assigned.name : user.role;
+  };
+
   return (
     <AppLayout title="Settings">
       <Tabs defaultValue="users" className="space-y-4">
@@ -417,7 +426,7 @@ export default function Settings() {
                           <TableCell className="font-mono text-sm">{user.username}</TableCell>
                           <TableCell>
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border capitalize ${getRoleBadgeColor(user.role)}`}>
-                              {user.role}
+                              {getRoleName(user)}
                             </span>
                           </TableCell>
                           <TableCell>
@@ -900,26 +909,7 @@ export default function Settings() {
               </div>
             </div>
             <div>
-              <Label htmlFor="userRole">System Role (login permissions)</Label>
-              <Select
-                value={userFormData.role}
-                onValueChange={(v) => setUserFormData({ ...userFormData, role: v })}
-              >
-                <SelectTrigger className="mt-1.5" data-testid="select-user-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="owner">Owner</SelectItem>
-                  <SelectItem value="pharmacist">Pharmacist</SelectItem>
-                  <SelectItem value="cashier">Cashier</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Controls what this user can access at the API level (Owner, Pharmacist, Cashier). Fixed set — not editable in Role Master.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="userRoleId">Menu Access Role (optional)</Label>
+              <Label htmlFor="userRoleId">Role</Label>
               <Select
                 value={userFormData.roleId != null ? String(userFormData.roleId) : "none"}
                 onValueChange={(v) =>
@@ -930,17 +920,17 @@ export default function Settings() {
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="none">None (staff — menu-only access)</SelectItem>
                   {roles.filter((r) => r.isActive).map((r) => (
                     <SelectItem key={r.id} value={String(r.id)}>
                       {r.name}
-                      {r.isSuperAdmin ? " (Super Admin)" : ""}
+                      {r.systemRole === "owner" ? " (full access)" : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
-                Sets which sidebar menus this user sees by default, via Role Master. Does not affect login permissions above.
+                Controls both login permissions and menu visibility — manage roles in Role Master.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">

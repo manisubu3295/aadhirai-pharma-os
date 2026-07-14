@@ -8,8 +8,8 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull().default(""),
-  role: text("role").notNull().default("staff"),
-  roleId: integer("role_id"), // nullable FK to roles.id; additive - `role` text stays authoritative for existing checks
+  role: text("role").notNull().default("staff"), // denormalized copy of the assigned role's systemRole; synced server-side
+  roleId: integer("role_id"), // nullable FK to roles.id — the single source of truth for a user's role
   email: text("email"),
   phone: text("phone"),
   photoUrl: text("photo_url"),
@@ -28,7 +28,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
   name: true,
-  role: true,
+  role: true, // set server-side from the assigned role's systemRole, never from client input
   roleId: true,
   email: true,
   phone: true,
@@ -647,14 +647,18 @@ export const userMenuGroups = pgTable("user_menu_groups", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Role Master: named roles that can be granted menu-group access in bulk,
-// independent of the free-text users.role column (which stays authoritative
-// for existing owner/admin full-access checks throughout the codebase).
+// Role Master: the single role a user is assigned. Carries both the login
+// permission tier (systemRole, one of SYSTEM_ROLES) and menu-group access.
+// users.role is a denormalized copy of the assigned role's systemRole,
+// synced server-side whenever the assignment or the role changes.
+export const SYSTEM_ROLES = ["owner", "pharmacist", "cashier", "staff"] as const;
+
 export const roles = pgTable("roles", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),
-  isSuperAdmin: boolean("is_super_admin").notNull().default(false),
+  systemRole: text("system_role").notNull().default("staff"),
+  isSuperAdmin: boolean("is_super_admin").notNull().default(false), // legacy; superseded by systemRole='owner'
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -673,7 +677,9 @@ export const insertMenuGroupSchema = createInsertSchema(menuGroups).omit({ id: t
 export const insertMenuGroupMenuSchema = createInsertSchema(menuGroupMenus).omit({ id: true });
 export const insertUserMenuSchema = createInsertSchema(userMenus).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertUserMenuGroupSchema = createInsertSchema(userMenuGroups).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertRoleSchema = createInsertSchema(roles).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertRoleSchema = createInsertSchema(roles)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({ systemRole: z.enum(SYSTEM_ROLES).default("staff") });
 export const insertRoleMenuGroupSchema = createInsertSchema(roleMenuGroups).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertMenu = z.infer<typeof insertMenuSchema>;

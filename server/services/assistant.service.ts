@@ -30,7 +30,7 @@ export class AssistantService {
     const requestId = randomUUID();
     const conversationId = request.conversationId || randomUUID();
     const user = await this.requireUser(session.userId);
-    const accessibleMenus = await storage.getUserNavigation(user.id, user.role);
+    const accessibleMenus = await storage.getUserNavigation(user.id, user.role, user.roleId ?? null);
     const history = this.resolveHistory(user.id, conversationId, request.messages);
     const toolHints = await this.toolRegistry.collectHints({
       question: request.message,

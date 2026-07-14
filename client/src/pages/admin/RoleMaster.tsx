@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SYSTEM_ROLES } from "@shared/schema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +20,16 @@ interface Role {
   id: number;
   name: string;
   description: string | null;
-  isSuperAdmin: boolean;
+  systemRole: string;
   isActive: boolean;
 }
+
+const SYSTEM_ROLE_LABELS: Record<string, string> = {
+  owner: "Owner — full access",
+  pharmacist: "Pharmacist",
+  cashier: "Cashier",
+  staff: "Staff — menu-only access",
+};
 
 interface MenuGroup {
   id: number;
@@ -48,7 +57,7 @@ export default function RoleMaster() {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    isSuperAdmin: false,
+    systemRole: "staff",
     isActive: true,
   });
 
@@ -68,7 +77,10 @@ export default function RoleMaster() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create role");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to create role");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -77,8 +89,8 @@ export default function RoleMaster() {
       resetForm();
       toast({ title: "Role created successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to create role", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Failed to create role", description: error.message, variant: "destructive" });
     },
   });
 
@@ -90,7 +102,10 @@ export default function RoleMaster() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update role");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to update role");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -100,8 +115,8 @@ export default function RoleMaster() {
       resetForm();
       toast({ title: "Role updated successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to update role", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Failed to update role", description: error.message, variant: "destructive" });
     },
   });
 
@@ -111,14 +126,17 @@ export default function RoleMaster() {
         method: "DELETE",
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to delete role");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to delete role");
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/roles"] });
       toast({ title: "Role deleted successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to delete role", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "Failed to delete role", description: error.message, variant: "destructive" });
     },
   });
 
@@ -161,7 +179,7 @@ export default function RoleMaster() {
     setFormData({
       name: "",
       description: "",
-      isSuperAdmin: false,
+      systemRole: "staff",
       isActive: true,
     });
   };
@@ -171,7 +189,7 @@ export default function RoleMaster() {
     setFormData({
       name: role.name,
       description: role.description || "",
-      isSuperAdmin: role.isSuperAdmin,
+      systemRole: role.systemRole,
       isActive: role.isActive,
     });
     setIsDialogOpen(true);
@@ -249,7 +267,7 @@ export default function RoleMaster() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="w-28">Super Admin</TableHead>
+                    <TableHead className="w-40">Login Permission</TableHead>
                     <TableHead className="w-20">Status</TableHead>
                     <TableHead className="w-32">Actions</TableHead>
                   </TableRow>
@@ -260,7 +278,9 @@ export default function RoleMaster() {
                       <TableCell className="font-medium">{role.name}</TableCell>
                       <TableCell className="text-muted-foreground">{role.description || "-"}</TableCell>
                       <TableCell>
-                        {role.isSuperAdmin && <Badge>Super Admin</Badge>}
+                        <Badge variant={role.systemRole === "owner" ? "default" : "secondary"} className="capitalize">
+                          {role.systemRole}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant={role.isActive ? "default" : "secondary"}>
@@ -329,13 +349,26 @@ export default function RoleMaster() {
                 data-testid="input-role-description"
               />
             </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={formData.isSuperAdmin}
-                onCheckedChange={(checked) => setFormData({ ...formData, isSuperAdmin: checked })}
-                data-testid="switch-role-super-admin"
-              />
-              <Label>Super Admin (full access to everything)</Label>
+            <div>
+              <Label>Login Permission</Label>
+              <Select
+                value={formData.systemRole}
+                onValueChange={(v) => setFormData({ ...formData, systemRole: v })}
+              >
+                <SelectTrigger className="mt-1.5" data-testid="select-role-system-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SYSTEM_ROLES.map((tier) => (
+                    <SelectItem key={tier} value={tier}>
+                      {SYSTEM_ROLE_LABELS[tier] ?? tier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                API-level access for users with this role. Menu visibility is set separately via Manage Menu Groups.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Switch

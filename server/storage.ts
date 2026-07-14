@@ -684,6 +684,7 @@ console.log("Connected DB:", r.rows[0].db);
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
         description TEXT,
+        system_role TEXT NOT NULL DEFAULT 'staff',
         is_super_admin BOOLEAN NOT NULL DEFAULT false,
         is_active BOOLEAN NOT NULL DEFAULT true,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL,
@@ -794,6 +795,7 @@ console.log("Connected DB:", r.rows[0].db);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS gst_number TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS drug_license TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER;
+      ALTER TABLE roles ADD COLUMN IF NOT EXISTS system_role TEXT NOT NULL DEFAULT 'staff';
       ALTER TABLE stock_adjustments ADD COLUMN IF NOT EXISTS batch_id INTEGER;
       ALTER TABLE stock_adjustments ADD COLUMN IF NOT EXISTS expiry_date TEXT;
 
@@ -979,19 +981,17 @@ async function seedDefaultUsers() {
 
     const bcrypt = await import("bcryptjs");
     const password = await bcrypt.default.hash("password123", 10);
-    // 'admin' user's role is deliberately 'pharmacy_owner', NOT 'admin' or
-    // 'owner' - those two strings already mean "full access" in ~15
-    // hardcoded checks across this codebase (routes.ts, this file,
-    // NavigationContext.tsx, auth.tsx). Using either here would silently
-    // grant this account full access, defeating the point of a limited
-    // default login for the pharmacy owner. Its actual access comes from
-    // the "Pharmacy Owner" role seeded in seedDefaultRoles().
+    // The role text here is the login-permission tier (SYSTEM_ROLES). The
+    // 'admin' user is deliberately 'staff' (no privileged guard matches it);
+    // its actual menu access comes from the "Pharmacy Owner" role linked in
+    // seedDefaultRoles(). syncRoleAssignments() links role_id and keeps the
+    // text in sync with the assigned role's system_role on every boot.
     await pool.query(`
       INSERT INTO users (username, password, name, role, email, phone) VALUES
-        ('owner',       $1, 'Owner',          'owner',          '', ''),
-        ('pharmacist',  $1, 'Pharmacist',     'pharmacist',     '', ''),
-        ('cashier',     $1, 'Cashier',        'cashier',        '', ''),
-        ('admin',       $1, 'Pharmacy Owner', 'pharmacy_owner', '', '')
+        ('owner',       $1, 'Owner',          'owner',      '', ''),
+        ('pharmacist',  $1, 'Pharmacist',     'pharmacist', '', ''),
+        ('cashier',     $1, 'Cashier',        'cashier',    '', ''),
+        ('admin',       $1, 'Pharmacy Owner', 'staff',      '', '')
       ON CONFLICT (username) DO NOTHING
     `, [password]);
     console.log("Default users seeded");
@@ -1135,6 +1135,8 @@ export interface IStorage {
   createRole(role: InsertRole): Promise<Role>;
   updateRole(id: number, role: Partial<InsertRole>): Promise<Role | undefined>;
   deleteRole(id: number): Promise<boolean>;
+  countActiveUsersByRoleId(roleId: number): Promise<number>;
+  countActiveOwnerUsers(exclude?: { roleId?: number; userId?: string }): Promise<number>;
 
   getRoleMenuGroups(roleId: number): Promise<RoleMenuGroup[]>;
   setRoleMenuGroups(roleId: number, groupIds: number[]): Promise<void>;
@@ -1143,7 +1145,9 @@ export interface IStorage {
   seedDefaultMenus(): Promise<void>;
   ensureDoctorReferralsMenu(): Promise<void>;
   seedDefaultRoles(): Promise<void>;
-  
+  ensurePharmacyOwnerAuditMenu(): Promise<void>;
+  syncRoleAssignments(): Promise<void>;
+
   // Supplier Ledger & Payments
   getSupplierLedger(supplierId: number): Promise<SupplierTransaction[]>;
   getSupplierBalance(supplierId: number): Promise<string>;
@@ -3086,12 +3090,45 @@ export class DatabaseStorage implements IStorage {
 
   async updateRole(id: number, role: Partial<InsertRole>): Promise<Role | undefined> {
     const result = await db.update(roles).set({ ...role, updatedAt: new Date() }).where(eq(roles.id, id)).returning();
-    return result[0];
+    const updated = result[0];
+    if (updated && role.systemRole !== undefined) {
+      // keep the denormalized users.role copy in sync with the role's tier
+      await db.update(users).set({ role: updated.systemRole }).where(eq(users.roleId, id));
+    }
+    return updated;
   }
 
   async deleteRole(id: number): Promise<boolean> {
     const result = await db.update(roles).set({ isActive: false, updatedAt: new Date() }).where(eq(roles.id, id)).returning();
     return result.length > 0;
+  }
+
+  async countActiveUsersByRoleId(roleId: number): Promise<number> {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM users WHERE role_id = $1 AND is_active = true`,
+      [roleId]
+    );
+    return result.rows[0].count;
+  }
+
+  // Active users whose active role grants the 'owner' tier, optionally
+  // excluding one role or one user — used by the lockout guards so an admin
+  // can't demote/deactivate the last owner-level role or user.
+  async countActiveOwnerUsers(exclude?: { roleId?: number; userId?: string }): Promise<number> {
+    const params: any[] = [];
+    let query = `SELECT COUNT(*)::int AS count FROM users u
+      JOIN roles r ON r.id = u.role_id
+      WHERE u.is_active = true AND r.is_active = true AND r.system_role = 'owner'`;
+    if (exclude?.roleId != null) {
+      params.push(exclude.roleId);
+      query += ` AND r.id <> $${params.length}`;
+    }
+    if (exclude?.userId != null) {
+      params.push(exclude.userId);
+      query += ` AND u.id <> $${params.length}`;
+    }
+    const result = await pool.query(query, params);
+    return result.rows[0].count;
   }
 
   async getRoleMenuGroups(roleId: number): Promise<RoleMenuGroup[]> {
@@ -3113,17 +3150,10 @@ export class DatabaseStorage implements IStorage {
       return [];
     }
     
-    // If owner or admin, return all menus with full permissions
+    // Owner tier (users.role is synced from the assigned role's systemRole)
+    // gets all menus with full permissions.
     if (role === 'owner' || role === 'admin') {
       return allMenus.map(menu => ({ ...menu, canView: true, canEdit: true }));
-    }
-
-    // Additive: a role marked isSuperAdmin also gets full access, same bypass.
-    if (roleId != null) {
-      const roleRow = await db.select().from(roles).where(eq(roles.id, roleId)).limit(1);
-      if (roleRow[0]?.isSuperAdmin) {
-        return allMenus.map(menu => ({ ...menu, canView: true, canEdit: true }));
-      }
     }
 
     // Get user's direct menu permissions
@@ -3305,13 +3335,15 @@ export class DatabaseStorage implements IStorage {
     }
 
     const superAdmin = await db.insert(roles).values({
-      name: 'Super Admin', description: 'Full access to everything; used by support', isSuperAdmin: true,
+      name: 'Super Admin', description: 'Full access to everything; used by support', systemRole: 'owner', isSuperAdmin: true,
     }).returning();
+    // systemRole 'staff' keeps this role deliberately unprivileged at the API
+    // level; its access comes only from its menu groups (see below).
     const pharmacyOwner = await db.insert(roles).values({
-      name: 'Pharmacy Owner', description: 'Default limited access for the pharmacy business owner',
+      name: 'Pharmacy Owner', description: 'Default limited access for the pharmacy business owner', systemRole: 'staff',
     }).returning();
-    const pharmacistRole = await db.insert(roles).values({ name: 'Pharmacist', description: 'Pharmacist role' }).returning();
-    const cashierRole = await db.insert(roles).values({ name: 'Cashier', description: 'Cashier role' }).returning();
+    const pharmacistRole = await db.insert(roles).values({ name: 'Pharmacist', description: 'Pharmacist role', systemRole: 'pharmacist' }).returning();
+    const cashierRole = await db.insert(roles).values({ name: 'Cashier', description: 'Cashier role', systemRole: 'cashier' }).returning();
 
     // Link the 4 default users to their matching role.
     // owner -> Super Admin: "update the owner to super admin, all access".
@@ -3330,6 +3362,7 @@ export class DatabaseStorage implements IStorage {
     const ownerAccessKeys = [
       'sales.new', 'inventory.medicines', 'inventory.suppliers', 'inventory.rates',
       'inventory.po', 'inventory.grn', 'inventory.returns', 'customers.accounts',
+      'admin.audit',
     ];
     const allMenuRows = await db.select().from(menus);
     const menuByKey = new Map(allMenuRows.map(m => [m.key, m.id]));
@@ -3343,6 +3376,60 @@ export class DatabaseStorage implements IStorage {
     await db.insert(roleMenuGroups).values({ roleId: pharmacyOwner[0].id, menuGroupId: ownerAccessGroup[0].id });
 
     console.log("Default roles seeded");
+  }
+
+  // Idempotent, runs every boot: makes sure the Pharmacy Owner Access menu
+  // group includes the Audit Log menu, so the default limited 'admin' login
+  // can review all activity on already-seeded databases too.
+  async ensurePharmacyOwnerAuditMenu(): Promise<void> {
+    await pool.query(`
+      INSERT INTO menu_group_menus (menu_group_id, menu_id)
+      SELECT mg.id, m.id
+      FROM menu_groups mg
+      JOIN menus m ON m.key = 'admin.audit'
+      WHERE mg.name = 'Pharmacy Owner Access'
+        AND NOT EXISTS (
+          SELECT 1 FROM menu_group_menus existing
+          WHERE existing.menu_group_id = mg.id AND existing.menu_id = m.id
+        )
+    `);
+  }
+
+  // Idempotent, runs every boot (after seedDefaultRoles). Migrates legacy
+  // data into the unified role model and maintains its one invariant:
+  // users.role always equals the assigned role's system_role ('staff' when
+  // no role is assigned).
+  async syncRoleAssignments(): Promise<void> {
+    // 1. Backfill tiers onto roles created before system_role existed.
+    //    Super Admin (is_super_admin) => owner; Pharmacist/Cashier by name.
+    //    'Pharmacy Owner' intentionally stays 'staff' (menu-only access).
+    await pool.query(`UPDATE roles SET system_role = 'owner' WHERE is_super_admin = true AND system_role = 'staff'`);
+    await pool.query(`UPDATE roles SET system_role = 'pharmacist' WHERE name = 'Pharmacist' AND system_role = 'staff'`);
+    await pool.query(`UPDATE roles SET system_role = 'cashier' WHERE name = 'Cashier' AND system_role = 'staff'`);
+
+    // 2. Link legacy users (role text set, no role_id) to the matching role.
+    const legacyMap: Array<[string[], string]> = [
+      [['owner', 'admin'], 'Super Admin'],
+      [['pharmacist'], 'Pharmacist'],
+      [['cashier'], 'Cashier'],
+      [['pharmacy_owner'], 'Pharmacy Owner'],
+    ];
+    for (const [roleTexts, roleName] of legacyMap) {
+      await pool.query(
+        `UPDATE users SET role_id = (SELECT id FROM roles WHERE name = $1)
+         WHERE role_id IS NULL AND role = ANY($2)
+           AND EXISTS (SELECT 1 FROM roles WHERE name = $1)`,
+        [roleName, roleTexts]
+      );
+    }
+
+    // 3. Sync the denormalized copy from the assigned role's tier; users
+    //    still unlinked have no role and are staff-tier (no guard matches).
+    await pool.query(`
+      UPDATE users u SET role = r.system_role FROM roles r
+      WHERE u.role_id = r.id AND u.role <> r.system_role
+    `);
+    await pool.query(`UPDATE users SET role = 'staff' WHERE role_id IS NULL AND role <> 'staff'`);
   }
 
   // Supplier Ledger & Payments Implementation

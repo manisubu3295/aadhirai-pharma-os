@@ -199,6 +199,15 @@ app.use((req, res, next) => {
     // Seed default roles (must run after users + menus/groups exist)
     await storage.seedDefaultRoles();
 
+    // Idempotent, runs every boot: backfills roles.system_role, links legacy
+    // users (role text, no role_id) to their Role Master role, and keeps the
+    // denormalized users.role copy in sync with the assigned role's tier.
+    await storage.syncRoleAssignments();
+
+    // Idempotent: grants the Audit Log menu to the Pharmacy Owner Access
+    // group so the default 'admin' login can review all app activity.
+    await storage.ensurePharmacyOwnerAuditMenu();
+
     startBackupScheduler();
 
     await registerRoutes(httpServer, app);
