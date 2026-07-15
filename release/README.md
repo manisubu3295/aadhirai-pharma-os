@@ -74,7 +74,8 @@ After installation completes:
 
 | Role | Username | Password |
 |------|----------|----------|
-| Owner / Admin | `owner` | `password123` |
+| Support (full access) | `support` | `password123` |
+| Admin (curated default menus) | `admin` | `admin123` |
 | Pharmacist | `pharmacist` | `password123` |
 | Cashier | `cashier` | `password123` |
 
@@ -113,8 +114,10 @@ Go to **Windows Settings → Apps → Aadhirai Pharma → Uninstall**
 |---------|-----------|
 | App won't open | First check `install-status.txt` (see Step 4 above) for the exact error. Then press `Win + R`, type `services.msc`, find **AadhiraiPharma**, click **Start** |
 | "Database connection error" | In `services.msc`, start **postgresql-x64-18** (or whichever version you installed) |
-| Other computers can't connect | Make sure all computers are on the same Wi-Fi/LAN |
-| Forgot your password | Ask the Owner account user to reset it in Settings → User Management |
+| Other computers can't connect | Make sure all computers are on the same Wi-Fi/LAN. The installer doesn't open a firewall port automatically — on the server PC (as Administrator): `netsh advfirewall firewall add rule name="AadhiraiPharma" dir=in action=allow protocol=TCP localport=3000` |
+| Forgot your password | Ask a full-access user (e.g. `support`) to reset it in Settings → User Management |
+
+See `DEPLOYMENT-GUIDE.md` in this folder for the full step-by-step version of this guide, including more detailed troubleshooting.
 
 > When contacting support about an install problem, please copy the full
 > contents of `install-status.txt` — it's the fastest way for support to
