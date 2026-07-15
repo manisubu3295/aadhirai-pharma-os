@@ -32,6 +32,7 @@ import { Search, Plus, Eye, Package, Truck, CheckCircle2, Calendar, Printer, Dow
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
+import { parseServerDate, formatAppDateTime, startOfLocalDay, endOfLocalDay } from "@/lib/dateTime";
 import { exportToCSV } from "@/lib/exportUtils";
 import type { Supplier, PurchaseOrder, PurchaseOrderItem, GoodsReceipt, GoodsReceiptItem } from "@shared/schema";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -448,9 +449,9 @@ export default function GoodsReceipts() {
       grn.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (grn.supplierInvoiceNo && grn.supplierInvoiceNo.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    const grnDate = new Date(grn.receiptDate);
-    const from = fromDate ? startOfDay(parseISO(fromDate)) : null;
-    const to = toDate ? endOfDay(parseISO(toDate)) : null;
+    const grnDate = parseServerDate(grn.receiptDate);
+    const from = fromDate ? startOfLocalDay(fromDate) : null;
+    const to = toDate ? endOfLocalDay(toDate) : null;
     const matchesDateRange = (!from || grnDate >= from) && (!to || grnDate <= to);
     
     const matchesStatus = statusFilter === "all" || grn.status === statusFilter;
@@ -460,8 +461,8 @@ export default function GoodsReceipts() {
   });
 
   const sortedFilteredReceipts = [...filteredReceipts].sort((a, b) => {
-    const first = new Date(a.receiptDate).getTime();
-    const second = new Date(b.receiptDate).getTime();
+    const first = parseServerDate(a.receiptDate).getTime();
+    const second = parseServerDate(b.receiptDate).getTime();
     return receiptDateSortOrder === "asc" ? first - second : second - first;
   });
 
@@ -489,7 +490,7 @@ export default function GoodsReceipts() {
   const handleExportGRNs = () => {
     const exportData = filteredReceipts.map(grn => ({
       "GRN Number": grn.grnNumber,
-      "Receipt Date": format(new Date(grn.receiptDate), "dd/MM/yyyy"),
+      "Receipt Date": formatAppDateTime(grn.receiptDate, "dd/MM/yyyy"),
       "Supplier": grn.supplierName,
       "Supplier Invoice": grn.supplierInvoiceNo || "",
       "Status": grn.status,
@@ -684,7 +685,7 @@ export default function GoodsReceipts() {
                       <TableCell className="font-mono font-medium">{grn.grnNumber}</TableCell>
                       <TableCell>{grn.supplierName}</TableCell>
                       <TableCell>{grn.supplierInvoiceNo || "-"}</TableCell>
-                      <TableCell>{format(new Date(grn.receiptDate), "dd MMM yyyy")}</TableCell>
+                      <TableCell>{formatAppDateTime(grn.receiptDate, "dd MMM yyyy")}</TableCell>
                       <TableCell className="text-right font-mono">₹{grn.totalAmount}</TableCell>
                       <TableCell>
                         <Badge className="bg-green-100 text-green-800">
@@ -1033,7 +1034,7 @@ export default function GoodsReceipts() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Receipt Date:</span>
-                  <p className="font-medium">{format(new Date(selectedGRN.receiptDate), "dd MMM yyyy")}</p>
+                  <p className="font-medium">{formatAppDateTime(selectedGRN.receiptDate, "dd MMM yyyy")}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Status:</span>
@@ -1144,7 +1145,7 @@ export default function GoodsReceipts() {
                     <div class="info-grid">
                       <div>
                         <p><strong>GRN Number:</strong> ${selectedGRN?.grnNumber}</p>
-                        <p><strong>Receipt Date:</strong> ${selectedGRN ? format(new Date(selectedGRN.receiptDate), "dd MMM yyyy") : ""}</p>
+                        <p><strong>Receipt Date:</strong> ${selectedGRN ? formatAppDateTime(selectedGRN.receiptDate, "dd MMM yyyy") : ""}</p>
                         <p><strong>Status:</strong> ${selectedGRN?.status}</p>
                       </div>
                       <div class="text-right">

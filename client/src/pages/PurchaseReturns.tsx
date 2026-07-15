@@ -32,6 +32,7 @@ import { Search, Plus, Eye, RotateCcw, Package, CheckCircle2, Download, FileText
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfDay, endOfDay, parseISO } from "date-fns";
+import { parseServerDate, formatAppDateTime, startOfLocalDay, endOfLocalDay } from "@/lib/dateTime";
 import type { Supplier, GoodsReceipt, GoodsReceiptItem, PurchaseReturn, PurchaseReturnItem } from "@shared/schema";
 import { exportToCSV } from "@/lib/exportUtils";
 import { generatePurchaseReturnPDF, generatePurchaseReturnsListPDF } from "@/lib/pdfUtils";
@@ -244,17 +245,17 @@ export default function PurchaseReturns() {
       pr.returnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       pr.supplierName.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const returnDate = new Date(pr.returnDate);
-    const from = fromDate ? startOfDay(parseISO(fromDate)) : null;
-    const to = toDate ? endOfDay(parseISO(toDate)) : null;
+    const returnDate = parseServerDate(pr.returnDate);
+    const from = fromDate ? startOfLocalDay(fromDate) : null;
+    const to = toDate ? endOfLocalDay(toDate) : null;
     const matchesDateRange = (!from || returnDate >= from) && (!to || returnDate <= to);
     
     return matchesSearch && matchesDateRange;
   });
 
   const sortedFilteredReturns = [...filteredReturns].sort((a, b) => {
-    const first = new Date(a.returnDate).getTime();
-    const second = new Date(b.returnDate).getTime();
+    const first = parseServerDate(a.returnDate).getTime();
+    const second = parseServerDate(b.returnDate).getTime();
     return returnDateSortOrder === "asc" ? first - second : second - first;
   });
 
@@ -286,7 +287,7 @@ export default function PurchaseReturns() {
     const dataToExport = filteredReturns.map(pr => ({
       "Return Number": pr.returnNumber,
       "Supplier": pr.supplierName,
-      "Return Date": format(new Date(pr.returnDate), "dd MMM yyyy"),
+      "Return Date": formatAppDateTime(pr.returnDate, "dd MMM yyyy"),
       "Subtotal": pr.subtotal,
       "Tax Amount": pr.taxAmount,
       "Total Amount": pr.totalAmount,
@@ -301,7 +302,7 @@ export default function PurchaseReturns() {
     const dataToExport = filteredReturns.map(pr => ({
       returnNumber: pr.returnNumber,
       supplierName: pr.supplierName,
-      returnDate: format(new Date(pr.returnDate), "dd MMM yyyy"),
+      returnDate: formatAppDateTime(pr.returnDate, "dd MMM yyyy"),
       totalAmount: pr.totalAmount,
       status: pr.status
     }));
@@ -314,7 +315,7 @@ export default function PurchaseReturns() {
     generatePurchaseReturnPDF({
       returnNumber: selectedReturn.returnNumber,
       supplierName: selectedReturn.supplierName,
-      returnDate: format(new Date(selectedReturn.returnDate), "dd MMM yyyy"),
+      returnDate: formatAppDateTime(selectedReturn.returnDate, "dd MMM yyyy"),
       reason: selectedReturn.reason,
       subtotal: selectedReturn.subtotal,
       taxAmount: selectedReturn.taxAmount,
@@ -485,7 +486,7 @@ export default function PurchaseReturns() {
                     <TableRow key={pr.id} data-testid={`row-return-${pr.id}`}>
                       <TableCell className="font-mono font-medium">{pr.returnNumber}</TableCell>
                       <TableCell>{pr.supplierName}</TableCell>
-                      <TableCell>{format(new Date(pr.returnDate), "dd MMM yyyy")}</TableCell>
+                      <TableCell>{formatAppDateTime(pr.returnDate, "dd MMM yyyy")}</TableCell>
                       <TableCell className="text-right font-mono">₹{pr.totalAmount}</TableCell>
                       <TableCell>
                         <Badge className="bg-green-100 text-green-800">
@@ -646,7 +647,7 @@ export default function PurchaseReturns() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Return Date:</span>
-                  <p className="font-medium">{format(new Date(selectedReturn.returnDate), "dd MMM yyyy")}</p>
+                  <p className="font-medium">{formatAppDateTime(selectedReturn.returnDate, "dd MMM yyyy")}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Reason:</span>

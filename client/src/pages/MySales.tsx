@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
+import { formatAppDateTime } from "@/lib/dateTime";
 import { useAuth } from "@/lib/auth";
 import type { SalePayment } from "@shared/schema";
 import { resolveSalePayments, isSaleCreditBill } from "@shared/salePayments";
@@ -282,7 +283,7 @@ export default function MySales() {
                           {sale.invoiceNo || `INV-${String(sale.id).padStart(4, '0')}`}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {format(new Date(sale.createdAt), "dd/MM/yyyy hh:mm a")}
+                          {formatAppDateTime(sale.createdAt, "dd/MM/yyyy hh:mm a")}
                         </TableCell>
                         <TableCell>
                           <div>

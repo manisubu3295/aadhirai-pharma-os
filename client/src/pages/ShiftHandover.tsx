@@ -43,6 +43,7 @@ import {
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth } from "date-fns";
+import { formatAppDateTime } from "@/lib/dateTime";
 import { useAuth } from "@/lib/auth";
 
 interface DayClosing {
@@ -259,7 +260,7 @@ export default function ShiftHandover() {
                     </div>
                     {todayRecord.openingTime && (
                       <span className="text-sm text-muted-foreground">
-                        Since {format(new Date(todayRecord.openingTime), "HH:mm")}
+                        Since {formatAppDateTime(todayRecord.openingTime, "HH:mm")}
                       </span>
                     )}
                   </div>
@@ -321,7 +322,7 @@ export default function ShiftHandover() {
                     </div>
                     {todayRecord.closingTime && (
                       <span className="text-sm text-muted-foreground">
-                        At {format(new Date(todayRecord.closingTime), "HH:mm")}
+                        At {formatAppDateTime(todayRecord.closingTime, "HH:mm")}
                       </span>
                     )}
                   </div>

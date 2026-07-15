@@ -2832,9 +2832,11 @@ export async function registerRoutes(
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 30;
       const userId = req.query.userId as string | undefined;
-      
-      // Pass userId to storage for database-level filtering
-      const dayClosings = await storage.getDayClosings(limit, userId);
+      const from = req.query.from as string | undefined;
+      const to = req.query.to as string | undefined;
+
+      // Pass userId/from/to to storage for database-level filtering
+      const dayClosings = await storage.getDayClosings(limit, userId, from, to);
       
       // Enrich with user names
       const allUsers = await storage.getUsers();

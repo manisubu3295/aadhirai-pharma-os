@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RotateCcw, Search, Receipt, FileSpreadsheet, FileText, Printer } from "lucide-react";
 import { format } from "date-fns";
+import { parseServerDate, formatAppDate, formatAppDateTime, startOfLocalDay, endOfLocalDay } from "@/lib/dateTime";
 import { SalesReturnDialog } from "@/components/SalesReturnDialog";
 
 interface Sale {
@@ -40,12 +41,16 @@ export default function MedicineRefund() {
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
   const [refundInvoiceNo, setRefundInvoiceNo] = useState("");
 
+  // Always refetch on open: sales are created on other pages/terminals and
+  // the app-wide staleTime is Infinity.
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+    refetchOnMount: "always",
   });
 
   const { data: salesReturns = [] } = useQuery<SalesReturn[]>({
     queryKey: ["/api/sales-returns"],
+    refetchOnMount: "always",
   });
 
   const openReturnDialog = (saleId: number) => {
@@ -60,12 +65,11 @@ export default function MedicineRefund() {
       sale.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       sale.customerPhone?.includes(searchTerm);
 
-    const saleDate = new Date(sale.createdAt);
-    const fromDate = new Date(dateFrom);
-    const toDate = new Date(dateTo);
-    toDate.setHours(23, 59, 59, 999);
-    
-    const matchesDate = saleDate >= fromDate && saleDate <= toDate;
+    // parseServerDate treats the server's naive "…Z" timestamps as local
+    // wall time; raw new Date() shifts evening sales into tomorrow and
+    // drops them from today's default range.
+    const saleDate = parseServerDate(sale.createdAt);
+    const matchesDate = saleDate >= startOfLocalDay(dateFrom) && saleDate <= endOfLocalDay(dateTo);
 
     return matchesSearch && matchesDate;
   });
@@ -75,12 +79,8 @@ export default function MedicineRefund() {
       !searchTerm ||
       ret.invoiceNo?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const returnDate = new Date(ret.createdAt);
-    const fromDate = new Date(dateFrom);
-    const toDate = new Date(dateTo);
-    toDate.setHours(23, 59, 59, 999);
-    
-    const matchesDate = returnDate >= fromDate && returnDate <= toDate;
+    const returnDate = parseServerDate(ret.createdAt);
+    const matchesDate = returnDate >= startOfLocalDay(dateFrom) && returnDate <= endOfLocalDay(dateTo);
 
     return matchesSearch && matchesDate;
   });
@@ -90,7 +90,7 @@ export default function MedicineRefund() {
     const rows = filteredReturns.map(ret => [
       `RET-${ret.id}`,
       ret.invoiceNo,
-      format(new Date(ret.createdAt), "dd/MM/yyyy HH:mm"),
+      formatAppDateTime(ret.createdAt, "dd/MM/yyyy HH:mm"),
       ret.totalRefundAmount,
       ret.refundMode,
       ret.reason || ""
@@ -126,7 +126,7 @@ export default function MedicineRefund() {
       </head>
       <body>
         <h1>Medicine Refunds Report</h1>
-        <p>Period: ${format(new Date(dateFrom), "dd MMM yyyy")} - ${format(new Date(dateTo), "dd MMM yyyy")}</p>
+        <p>Period: ${formatAppDate(dateFrom)} - ${formatAppDate(dateTo)}</p>
         <table>
           <thead>
             <tr>
@@ -142,7 +142,7 @@ export default function MedicineRefund() {
               <tr>
                 <td>RET-${ret.id}</td>
                 <td>${ret.invoiceNo}</td>
-                <td>${format(new Date(ret.createdAt), "dd/MM/yyyy HH:mm")}</td>
+                <td>${formatAppDateTime(ret.createdAt, "dd/MM/yyyy HH:mm")}</td>
                 <td>${ret.refundMode}</td>
                 <td class="text-right">₹${parseFloat(ret.totalRefundAmount).toFixed(2)}</td>
               </tr>
@@ -233,7 +233,7 @@ export default function MedicineRefund() {
             </tr>
             <tr>
               <td>Date:</td>
-              <td>${format(new Date(refund.createdAt), "dd MMM yyyy, hh:mm a")}</td>
+              <td>${formatAppDateTime(refund.createdAt)}</td>
             </tr>
             <tr>
               <td>Refund Mode:</td>
@@ -389,7 +389,7 @@ export default function MedicineRefund() {
                         {sale.invoiceNo || `INV-${sale.id}`}
                       </TableCell>
                       <TableCell>
-                        {format(new Date(sale.createdAt), "dd MMM yyyy, hh:mm a")}
+                        {formatAppDateTime(sale.createdAt)}
                       </TableCell>
                       <TableCell>{sale.customerName}</TableCell>
                       <TableCell>{sale.customerPhone || "-"}</TableCell>
@@ -469,7 +469,7 @@ export default function MedicineRefund() {
                       <TableCell className="font-medium">RET-{ret.id}</TableCell>
                       <TableCell>{ret.invoiceNo}</TableCell>
                       <TableCell>
-                        {format(new Date(ret.createdAt), "dd MMM yyyy, hh:mm a")}
+                        {formatAppDateTime(ret.createdAt)}
                       </TableCell>
                       <TableCell>
                         <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">

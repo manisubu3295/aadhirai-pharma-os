@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { formatAppDateTime } from "@/lib/dateTime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -238,7 +239,7 @@ export default function Approvals() {
                 <TableBody>
                   {requests.map((request) => (
                     <TableRow key={request.id} data-testid={`row-approval-${request.id}`}>
-                      <TableCell>{format(new Date(request.createdAt), "dd/MM/yyyy HH:mm")}</TableCell>
+                      <TableCell>{formatAppDateTime(request.createdAt, "dd/MM/yyyy HH:mm")}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{getTypeLabel(request.type)}</Badge>
                       </TableCell>
@@ -318,7 +319,7 @@ export default function Approvals() {
                   </div>
                   <div>
                     <Label className="text-muted-foreground">Date</Label>
-                    <p className="font-medium">{format(new Date(selectedRequest.createdAt), "dd/MM/yyyy HH:mm")}</p>
+                    <p className="font-medium">{formatAppDateTime(selectedRequest.createdAt, "dd/MM/yyyy HH:mm")}</p>
                   </div>
                 </div>
                 <div>

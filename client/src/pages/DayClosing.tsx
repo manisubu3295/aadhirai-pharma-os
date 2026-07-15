@@ -32,6 +32,7 @@ import {
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
+import { formatAppDateTime } from "@/lib/dateTime";
 
 interface DayClosing {
   id: number;
@@ -182,9 +183,9 @@ export default function DayClosing() {
   const handleExportCSV = () => {
     const dataToExport = dayClosings.map(dc => ({
       "Date": format(parseISO(dc.businessDate), "dd MMM yyyy"),
-      "Opening Time": dc.openingTime ? format(new Date(dc.openingTime), "hh:mm a") : "-",
+      "Opening Time": dc.openingTime ? formatAppDateTime(dc.openingTime, "hh:mm a") : "-",
       "Opening Cash": dc.openingCash,
-      "Closing Time": dc.closingTime ? format(new Date(dc.closingTime), "hh:mm a") : "-",
+      "Closing Time": dc.closingTime ? formatAppDateTime(dc.closingTime, "hh:mm a") : "-",
       "Expected Cash": dc.expectedCash || "-",
       "Actual Cash": dc.actualCash || "-",
       "Difference": dc.difference || "-",
@@ -197,8 +198,8 @@ export default function DayClosing() {
   const handleExportPDF = () => {
     const dataToExport = dayClosings.map(dc => ({
       businessDate: format(parseISO(dc.businessDate), "dd MMM yyyy"),
-      openingTime: dc.openingTime ? format(new Date(dc.openingTime), "hh:mm a") : null,
-      closingTime: dc.closingTime ? format(new Date(dc.closingTime), "hh:mm a") : null,
+      openingTime: dc.openingTime ? formatAppDateTime(dc.openingTime, "hh:mm a") : null,
+      closingTime: dc.closingTime ? formatAppDateTime(dc.closingTime, "hh:mm a") : null,
       openingCash: dc.openingCash,
       expectedCash: dc.expectedCash,
       actualCash: dc.actualCash,
@@ -291,7 +292,7 @@ export default function DayClosing() {
                 <div className="p-4 bg-green-50 rounded-lg">
                   <p className="text-sm text-green-700">
                     <CheckCircle2 className="w-4 h-4 inline mr-2" />
-                    Day opened at {todayRecord.openingTime ? format(new Date(todayRecord.openingTime), "hh:mm a") : "-"}
+                    Day opened at {todayRecord.openingTime ? formatAppDateTime(todayRecord.openingTime, "hh:mm a") : "-"}
                   </p>
                 </div>
                 <Button onClick={() => { fetchExpectedCash(); setCloseDialogOpen(true); }} variant="destructive" className="w-full" data-testid="button-close-day">
@@ -304,7 +305,7 @@ export default function DayClosing() {
               <div className="p-4 bg-gray-50 rounded-lg space-y-2">
                 <p className="text-sm text-gray-700">
                   <CheckCircle2 className="w-4 h-4 inline mr-2" />
-                  Day closed at {todayRecord.closingTime ? format(new Date(todayRecord.closingTime), "hh:mm a") : "-"}
+                  Day closed at {todayRecord.closingTime ? formatAppDateTime(todayRecord.closingTime, "hh:mm a") : "-"}
                 </p>
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   <div>
@@ -437,9 +438,9 @@ export default function DayClosing() {
                   {dayClosings.map((dc) => (
                     <TableRow key={dc.id} data-testid={`row-dayclosing-${dc.id}`}>
                       <TableCell className="font-medium">{format(parseISO(dc.businessDate), "dd MMM yyyy")}</TableCell>
-                      <TableCell>{dc.openingTime ? format(new Date(dc.openingTime), "hh:mm a") : "-"}</TableCell>
+                      <TableCell>{dc.openingTime ? formatAppDateTime(dc.openingTime, "hh:mm a") : "-"}</TableCell>
                       <TableCell className="text-right font-mono">₹{parseFloat(dc.openingCash || "0").toLocaleString()}</TableCell>
-                      <TableCell>{dc.closingTime ? format(new Date(dc.closingTime), "hh:mm a") : "-"}</TableCell>
+                      <TableCell>{dc.closingTime ? formatAppDateTime(dc.closingTime, "hh:mm a") : "-"}</TableCell>
                       <TableCell className="text-right font-mono">{dc.expectedCash ? `₹${parseFloat(dc.expectedCash).toLocaleString()}` : "-"}</TableCell>
                       <TableCell className="text-right font-mono">{dc.actualCash ? `₹${parseFloat(dc.actualCash).toLocaleString()}` : "-"}</TableCell>
                       <TableCell className={`text-right font-mono ${dc.difference && parseFloat(dc.difference) < 0 ? "text-red-600" : "text-green-600"}`}>

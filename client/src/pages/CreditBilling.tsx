@@ -20,6 +20,7 @@ import {
   Plus
 } from "lucide-react";
 import { format } from "date-fns";
+import { parseServerDate, formatAppDateTime } from "@/lib/dateTime";
 import { useToast } from "@/hooks/use-toast";
 import { NumericInput } from "@/components/ui/numeric-input";
 import type { SalePayment } from "@shared/schema";
@@ -144,7 +145,7 @@ export default function CreditBilling() {
   const overdueCustomers = creditCustomers.filter(c => {
     const customerPayments = creditPayments.filter(p => p.customerId === c.id);
     if (customerPayments.length === 0) return true;
-    const lastPayment = new Date(customerPayments[0].createdAt);
+    const lastPayment = parseServerDate(customerPayments[0].createdAt);
     const daysSincePayment = Math.floor((Date.now() - lastPayment.getTime()) / (1000 * 60 * 60 * 24));
     return daysSincePayment > c.creditPeriodDays;
   });
@@ -507,7 +508,7 @@ export default function CreditBilling() {
                         getCustomerCreditSales(selectedCustomer.id).map((sale) => (
                           <TableRow key={sale.id}>
                             <TableCell>{sale.invoiceNo || `INV-${sale.id}`}</TableCell>
-                            <TableCell>{format(new Date(sale.createdAt), "dd/MM/yyyy")}</TableCell>
+                            <TableCell>{formatAppDateTime(sale.createdAt, "dd/MM/yyyy")}</TableCell>
                             <TableCell>₹{parseFloat(sale.total).toLocaleString("en-IN")}</TableCell>
                             <TableCell>
                               <Badge variant={sale.status === "Paid" ? "default" : "outline"}>
@@ -544,7 +545,7 @@ export default function CreditBilling() {
                       ) : (
                         getCustomerPayments(selectedCustomer.id).map((payment) => (
                           <TableRow key={payment.id}>
-                            <TableCell>{format(new Date(payment.createdAt), "dd/MM/yyyy")}</TableCell>
+                            <TableCell>{formatAppDateTime(payment.createdAt, "dd/MM/yyyy")}</TableCell>
                             <TableCell className="text-green-600">
                               +₹{parseFloat(payment.amount).toLocaleString("en-IN")}
                             </TableCell>

@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import type { Sale, SaleItem, SalePayment } from "@shared/schema";
 import { resolveSalePayments } from "@shared/salePayments";
+import { parseServerDate } from "@/lib/dateTime";
 
 interface InvoiceSettings {
   showMrp?: boolean;
@@ -45,7 +46,7 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
     const hasReturns = items.some(item => (item.returnedQty || 0) > 0);
 
     const formatDate = (date: Date | string) => {
-      const d = new Date(date);
+      const d = parseServerDate(date);
       return d.toLocaleDateString("en-IN", {
         day: "2-digit",
         month: "short",
@@ -54,7 +55,7 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
     };
 
     const formatTime = (date: Date | string) => {
-      const d = new Date(date);
+      const d = parseServerDate(date);
       return d.toLocaleTimeString("en-IN", {
         hour: "2-digit",
         minute: "2-digit",

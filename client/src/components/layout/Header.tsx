@@ -11,6 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import type { SalePayment } from "@shared/schema";
 import { isSaleCreditBill } from "@shared/salePayments";
+import { parseServerDate } from "@/lib/dateTime";
+import { isExpired } from "@/lib/expiry";
 interface Medicine {
   id: number;
   name: string;
@@ -80,14 +82,7 @@ export function Header({ title, onToggleSidebar }: { title: string; onToggleSide
     queryKey: ["/api/sales"],
   });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiredMedicines = medicines.filter(m => {
-    if (!m.expiryDate) return false;
-    const expiry = new Date(m.expiryDate);
-    return expiry < today;
-  });
+  const expiredMedicines = medicines.filter(m => isExpired(m.expiryDate));
 
   const lowStockMedicines = medicines.filter(m => {
     const qty = parseInt(m.quantity) || 0;
@@ -96,7 +91,7 @@ export function Header({ title, onToggleSidebar }: { title: string; onToggleSide
 
   const recentCreditBills = sales.filter(s => {
     if (!isSaleCreditBill(s, s.payments)) return false;
-    const saleDate = new Date(s.createdAt);
+    const saleDate = parseServerDate(s.createdAt);
     const threeDaysAgo = new Date();
     threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
     return saleDate >= threeDaysAgo;

@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Shield, Search, Filter, FileSpreadsheet, DollarSign, Package, UserCog, XCircle, RefreshCw, Plus, Pencil, Trash2, LogIn, LogOut, Bot } from "lucide-react";
 import { usePlan } from "@/lib/planContext";
 import { format, subDays } from "date-fns";
+import { parseServerDate, formatAppDateTime, startOfLocalDay, endOfLocalDay } from "@/lib/dateTime";
 
 interface AuditLogEntry {
   id: number;
@@ -100,12 +101,8 @@ export default function AuditLog() {
   }
 
   const filteredLogs = logs.filter((log) => {
-    const logDate = new Date(log.createdAt);
-    const fromDate = new Date(dateFrom);
-    const toDate = new Date(dateTo);
-    toDate.setHours(23, 59, 59, 999);
-    
-    const dateMatch = logDate >= fromDate && logDate <= toDate;
+    const logDate = parseServerDate(log.createdAt);
+    const dateMatch = logDate >= startOfLocalDay(dateFrom) && logDate <= endOfLocalDay(dateTo);
     const actionMatch = actionFilter === "all" || log.action === actionFilter;
     const userMatch = !userFilter || log.userName.toLowerCase().includes(userFilter.toLowerCase());
     
@@ -115,7 +112,7 @@ export default function AuditLog() {
   const exportToCSV = () => {
     const headers = ["Date/Time", "Action", "Entity", "User", "Old Value", "New Value", "Details"];
     const rows = filteredLogs.map(log => [
-      format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss"),
+      formatAppDateTime(log.createdAt, "dd/MM/yyyy HH:mm:ss"),
       log.action,
       `${log.entityType}: ${log.entityName}`,
       log.userName,
@@ -234,10 +231,10 @@ export default function AuditLog() {
                     {filteredLogs.map((log) => (
                       <TableRow key={log.id} data-testid={`row-audit-${log.id}`}>
                         <TableCell className="whitespace-nowrap">
-                          {format(new Date(log.createdAt), "dd MMM yyyy")}
+                          {formatAppDateTime(log.createdAt, "dd MMM yyyy")}
                           <br />
                           <span className="text-xs text-muted-foreground">
-                            {format(new Date(log.createdAt), "hh:mm:ss a")}
+                            {formatAppDateTime(log.createdAt, "hh:mm:ss a")}
                           </span>
                         </TableCell>
                         <TableCell>

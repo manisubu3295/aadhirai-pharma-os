@@ -10,7 +10,7 @@
     "build:exe": "pkg dist/index.cjs -c pkg-config.json --target node20-win-x64 --output release/aadhirai-pharma-server.exe",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "test": "node --import tsx --test server/tests/inventory-posting.service.test.ts server/tests/sale-payments.unit.test.ts server/tests/sale-payments.integration.test.ts server/tests/doctor-commission.unit.test.ts server/tests/doctor-commission.integration.test.ts",
+    "test": "node --import tsx --test server/tests/inventory-posting.service.test.ts server/tests/sale-payments.unit.test.ts server/tests/sale-payments.integration.test.ts server/tests/doctor-commission.unit.test.ts server/tests/doctor-commission.integration.test.ts server/tests/sales-return.unit.test.ts",
     "db:push": "drizzle-kit push",
     "reconcile:batches:dry": "node script/reconcile-grn-batches.cjs",
     "reconcile:batches:apply": "node script/reconcile-grn-batches.cjs --apply",

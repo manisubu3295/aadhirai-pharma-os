@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { isExpired, isNearExpiry, threeMonthsFromNow } from "@/lib/expiry";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -561,17 +562,6 @@ export default function Inventory() {
     },
   });
 
-  const isNearExpiry = (expiryDate: string) => {
-    const expiry = new Date(expiryDate);
-    const threeMonths = new Date();
-    threeMonths.setMonth(threeMonths.getMonth() + 3);
-    return expiry <= threeMonths && expiry > new Date();
-  };
-
-  const isExpired = (expiryDate: string) => {
-    return new Date(expiryDate) <= new Date();
-  };
-
   const filteredMedicines = useMemo(() => {
     const filtered = medicines.filter((item) => {
       const searchLower = searchTerm.toLowerCase();
@@ -585,7 +575,7 @@ export default function Inventory() {
       if (filterStatus === "all") return matchesSearch;
       if (filterStatus === "low") return matchesSearch && item.status === "Low Stock";
       if (filterStatus === "out") return matchesSearch && item.status === "Out of Stock";
-      if (filterStatus === "expiring") return matchesSearch && isNearExpiry(item.expiryDate);
+      if (filterStatus === "expiring") return matchesSearch && isNearExpiry(item.expiryDate, threeMonthsFromNow());
       if (filterStatus === "expired") return matchesSearch && isExpired(item.expiryDate);
       return matchesSearch;
     });

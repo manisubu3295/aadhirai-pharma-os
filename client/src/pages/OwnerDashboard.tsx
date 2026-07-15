@@ -1,4 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { parseServerDate, localDateKey } from "@/lib/dateTime";
+import { isExpired, isNearExpiry, threeMonthsFromNow } from "@/lib/expiry";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { 
@@ -97,13 +99,15 @@ export default function OwnerDashboard() {
   });
 
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = localDateKey(today);
   const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const last30DaysSales = sales.filter(s => new Date(s.createdAt) >= thirtyDaysAgo);
-  const last7DaysSales = sales.filter(s => new Date(s.createdAt) >= sevenDaysAgo);
-  const todaySales = sales.filter(s => new Date(s.createdAt).toISOString().split('T')[0] === todayStr);
+  // parseServerDate treats the server's naive "…Z" timestamps as local wall
+  // time; raw new Date()/toISOString() shifts sales into the wrong day/window.
+  const last30DaysSales = sales.filter(s => parseServerDate(s.createdAt) >= thirtyDaysAgo);
+  const last7DaysSales = sales.filter(s => parseServerDate(s.createdAt) >= sevenDaysAgo);
+  const todaySales = sales.filter(s => localDateKey(s.createdAt) === todayStr);
 
   const totalRevenue30Days = last30DaysSales.reduce((sum, s) => sum + Number(s.total), 0);
   const totalRevenue7Days = last7DaysSales.reduce((sum, s) => sum + Number(s.total), 0);
@@ -111,7 +115,7 @@ export default function OwnerDashboard() {
   const avgDailySales = totalRevenue30Days / 30;
 
   const salesByDay = last7DaysSales.reduce((acc, sale) => {
-    const day = new Date(sale.createdAt).toLocaleDateString('en-IN', { weekday: 'short' });
+    const day = parseServerDate(sale.createdAt).toLocaleDateString('en-IN', { weekday: 'short' });
     acc[day] = (acc[day] || 0) + Number(sale.total);
     return acc;
   }, {} as Record<string, number>);
@@ -137,18 +141,7 @@ export default function OwnerDashboard() {
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5);
 
-  const isNearExpiry = (expiryDate: string) => {
-    const expiry = new Date(expiryDate);
-    const threeMonths = new Date();
-    threeMonths.setMonth(threeMonths.getMonth() + 3);
-    return expiry <= threeMonths && expiry > new Date();
-  };
-
-  const isExpired = (expiryDate: string) => {
-    return new Date(expiryDate) <= new Date();
-  };
-
-  const expiringMedicines = medicines.filter(m => isNearExpiry(m.expiryDate));
+  const expiringMedicines = medicines.filter(m => isNearExpiry(m.expiryDate, threeMonthsFromNow()));
   const expiredMedicines = medicines.filter(m => isExpired(m.expiryDate));
   const lowStockMedicines = medicines.filter(m => m.status === "Low Stock" || m.status === "Out of Stock");
 

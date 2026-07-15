@@ -3,6 +3,7 @@ import pdfFonts from "pdfmake/build/vfs_fonts";
 import type { TDocumentDefinitions, Content, TableCell, StyleDictionary } from "pdfmake/interfaces";
 import type { Sale, SaleItem, SalePayment } from "@shared/schema";
 import { resolveSalePayments } from "@shared/salePayments";
+import { parseServerDate } from "@/lib/dateTime";
 
 pdfMake.vfs = pdfFonts.vfs;
 
@@ -145,8 +146,8 @@ export function generateSaleInvoicePdfBlob(
             width: "*",
             text: [
               `Invoice No: ${sale.invoiceNo || `INV-${sale.id}`}\n`,
-              `Date: ${new Date(sale.createdAt).toLocaleDateString("en-IN")}\n`,
-              `Time: ${new Date(sale.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`,
+              `Date: ${parseServerDate(sale.createdAt).toLocaleDateString("en-IN")}\n`,
+              `Time: ${parseServerDate(sale.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`,
             ],
           },
           {

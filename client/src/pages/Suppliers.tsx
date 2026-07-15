@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { parseServerDate, formatAppDateTime } from "@/lib/dateTime";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -199,15 +200,13 @@ const SupplierFormFields = memo(function SupplierFormFields({ formData, setFormD
 interface SupplierTransaction {
   id: number;
   supplierId: number;
-  transactionDate: string;
-  transactionType: string;
-  referenceType: string;
+  txnDate: string;
+  type: string;
   referenceId: number | null;
   referenceNumber: string | null;
-  description: string | null;
+  remarks: string | null;
   debitAmount: string;
   creditAmount: string;
-  balance: string;
 }
 
 interface SupplierBalance {
@@ -291,6 +290,22 @@ export default function Suppliers() {
       toast({ title: "Failed to update supplier", variant: "destructive" });
     },
   });
+
+  // ledgerTransactions arrives newest-first (server orders desc by txnDate);
+  // running balance must accumulate chronologically, so sort ascending,
+  // accumulate, then restore the original display order.
+  const ledgerRowsWithBalance = (() => {
+    const chronological = [...ledgerTransactions].sort(
+      (a, b) => parseServerDate(a.txnDate).getTime() - parseServerDate(b.txnDate).getTime()
+    );
+    let running = 0;
+    const balanceById = new Map<number, number>();
+    for (const txn of chronological) {
+      running += parseFloat(txn.creditAmount) - parseFloat(txn.debitAmount);
+      balanceById.set(txn.id, running);
+    }
+    return ledgerTransactions.map((txn) => ({ ...txn, runningBalance: balanceById.get(txn.id) ?? 0 }));
+  })();
 
   const filteredSuppliers = suppliers.filter((supplier) =>
     supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -670,23 +685,23 @@ export default function Suppliers() {
                     <TableHead>Date</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Reference</TableHead>
-                    <TableHead>Description</TableHead>
+                    <TableHead>Remarks</TableHead>
                     <TableHead className="text-right">Debit</TableHead>
                     <TableHead className="text-right">Credit</TableHead>
                     <TableHead className="text-right">Balance</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {ledgerTransactions.map((txn) => (
+                  {ledgerRowsWithBalance.map((txn) => (
                     <TableRow key={txn.id} data-testid={`row-ledger-txn-${txn.id}`}>
-                      <TableCell className="whitespace-nowrap" data-testid={`text-txn-date-${txn.id}`}>{new Date(txn.transactionDate).toLocaleDateString()}</TableCell>
+                      <TableCell className="whitespace-nowrap" data-testid={`text-txn-date-${txn.id}`}>{formatAppDateTime(txn.txnDate, "dd/MM/yyyy")}</TableCell>
                       <TableCell>
-                        <Badge variant={txn.transactionType === "Payment" ? "default" : "secondary"}>
-                          {txn.transactionType}
+                        <Badge variant={txn.type === "Payment" ? "default" : "secondary"}>
+                          {txn.type}
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{txn.referenceNumber || "-"}</TableCell>
-                      <TableCell className="text-sm">{txn.description || "-"}</TableCell>
+                      <TableCell className="text-sm">{txn.remarks || "-"}</TableCell>
                       <TableCell className="text-right font-mono text-green-600">
                         {parseFloat(txn.debitAmount) > 0 ? `₹${parseFloat(txn.debitAmount).toLocaleString()}` : "-"}
                       </TableCell>
@@ -694,7 +709,7 @@ export default function Suppliers() {
                         {parseFloat(txn.creditAmount) > 0 ? `₹${parseFloat(txn.creditAmount).toLocaleString()}` : "-"}
                       </TableCell>
                       <TableCell className="text-right font-mono font-medium">
-                        ₹{parseFloat(txn.balance).toLocaleString()}
+                        ₹{txn.runningBalance.toLocaleString()}
                       </TableCell>
                     </TableRow>
                   ))}

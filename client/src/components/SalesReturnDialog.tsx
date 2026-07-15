@@ -13,6 +13,7 @@ import { RotateCcw } from "lucide-react";
 import { format } from "date-fns";
 import type { SalePayment } from "@shared/schema";
 import { getSaleCreditPortion } from "@shared/salePayments";
+import { computeReturnRefund } from "@shared/salesReturns";
 
 interface SaleItem {
   id: number;
@@ -202,7 +203,8 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
         printRefundReceipt(
           data.id,
           saleData.sale.invoiceNo || `INV-${saleData.sale.id}`,
-          totalRefund,
+          // Server-computed figure is authoritative for the printed receipt.
+          parseFloat(data.totalRefundAmount) || totalRefund,
           refundMode,
           reason
         );
@@ -277,9 +279,18 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
     });
   };
 
-  const totalRefund = saleData?.items.reduce((sum, item) => {
-    return sum + getReturnQtyBase(item) * parseFloat(item.price);
-  }, 0) || 0;
+  // Preview of the server's refund math: prorate the customer-paid line
+  // total by base-unit quantity (item.price is per DISPLAY unit — per strip
+  // for pack items — and must not be multiplied by a base-unit qty).
+  const getLineRefund = (item: SaleItem): number =>
+    computeReturnRefund({
+      lineTotal: parseFloat(item.total),
+      quantitySold: item.quantity,
+      alreadyReturned: item.returnedQty,
+      quantityReturned: getReturnQtyBase(item),
+    }).refundAmount;
+
+  const totalRefund = saleData?.items.reduce((sum, item) => sum + getLineRefund(item), 0) || 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -316,7 +327,7 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
                   const unit = returnUnits[item.id] || (hasPack ? "PACK" : "BASE");
                   const unitFactor = getUnitFactor(item);
                   const maxReturnableInUnit = unitFactor > 0 ? Math.floor(maxReturnable / unitFactor) : maxReturnable;
-                  const lineTotal = getReturnQtyBase(item) * parseFloat(item.price);
+                  const lineTotal = getLineRefund(item);
 
                   return (
                     <TableRow key={item.id}>

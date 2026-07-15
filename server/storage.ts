@@ -131,6 +131,7 @@ import pkg from "pg";
 const { Pool } = pkg;
 import { eq, desc, sql, and, gte, lte, or, inArray } from "drizzle-orm";
 import { resolveSalePayments } from "@shared/salePayments";
+import { computeReturnRefund } from "@shared/salesReturns";
 
 console.log("Database URL:" + JSON.stringify(process.env.DATABASE_URL));
 console.log("DATABASE_URL =", process.env.DATABASE_URL);
@@ -1164,7 +1165,7 @@ export interface IStorage {
   
   // Day Closing
   getDayClosing(businessDate: string): Promise<DayClosing | undefined>;
-  getDayClosings(limit?: number, userId?: string): Promise<DayClosing[]>;
+  getDayClosings(limit?: number, userId?: string, from?: string, to?: string): Promise<DayClosing[]>;
   openDay(data: { businessDate: string; openingCash: string; openedByUserId: string }): Promise<DayClosing>;
   closeDay(businessDate: string, data: { actualCash: string; notes?: string; closedByUserId: string }): Promise<DayClosing | undefined>;
   computeExpectedCash(businessDate: string, openingCash: string): Promise<string>;
@@ -2814,9 +2815,9 @@ export class DatabaseStorage implements IStorage {
 
       const saleItemIds = items.map(i => i.saleItemId);
       const saleItemsResult = await client.query<{
-        id: number; medicine_id: number; medicine_name: string; batch_number: string; expiry_date: string; quantity: number; price: string;
+        id: number; medicine_id: number; medicine_name: string; batch_number: string; expiry_date: string; quantity: number; price: string; total: string;
       }>(
-        `SELECT id, medicine_id, medicine_name, batch_number, expiry_date, quantity, price
+        `SELECT id, medicine_id, medicine_name, batch_number, expiry_date, quantity, price, total
          FROM sale_items WHERE id = ANY($1::int[]) AND sale_id = $2`,
         [saleItemIds, returnData.originalSaleId],
       );
@@ -2850,8 +2851,22 @@ export class DatabaseStorage implements IStorage {
         }
         if (item.quantityReturned <= 0) continue;
 
-        const pricePerUnit = parseFloat(saleItem.price);
-        const refundAmount = pricePerUnit * item.quantityReturned;
+        // Refund from the customer-paid line total prorated by base-unit
+        // quantity. saleItem.price is per DISPLAY unit (per strip for pack
+        // items) while quantityReturned is base units — multiplying those
+        // over-refunds by the pack size.
+        const lineTotal = parseFloat(saleItem.total);
+        if (!Number.isFinite(lineTotal) || saleItem.quantity <= 0) {
+          throw new ReturnValidationError(
+            `Sale item ${saleItem.medicine_name} has an invalid total; cannot compute refund`,
+          );
+        }
+        const { refundAmount, pricePerUnit } = computeReturnRefund({
+          lineTotal,
+          quantitySold: saleItem.quantity,
+          alreadyReturned,
+          quantityReturned: item.quantityReturned,
+        });
         totalRefundAmount += refundAmount;
         preparedItems.push({
           saleItemId: item.saleItemId,
@@ -3551,17 +3566,18 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getDayClosings(limit: number = 30, userId?: string): Promise<DayClosing[]> {
+  async getDayClosings(limit: number = 30, userId?: string, from?: string, to?: string): Promise<DayClosing[]> {
+    // businessDate is a plain yyyy-MM-dd string, so lexicographic gte/lte is
+    // a timezone-safe range comparison.
+    const conditions = [];
     if (userId) {
-      return await db.select().from(dayClosings)
-        .where(or(
-          eq(dayClosings.openedByUserId, userId),
-          eq(dayClosings.closedByUserId, userId)
-        ))
-        .orderBy(desc(dayClosings.businessDate))
-        .limit(limit);
+      conditions.push(or(eq(dayClosings.openedByUserId, userId), eq(dayClosings.closedByUserId, userId)));
     }
+    if (from) conditions.push(gte(dayClosings.businessDate, from));
+    if (to) conditions.push(lte(dayClosings.businessDate, to));
+
     return await db.select().from(dayClosings)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(dayClosings.businessDate))
       .limit(limit);
   }

@@ -59,6 +59,8 @@ import {
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { parseServerDate } from "@/lib/dateTime";
+import { isExpired, isNearExpiry, threeMonthsFromNow } from "@/lib/expiry";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { PrintableInvoice } from "@/components/PrintableInvoice";
@@ -634,20 +636,6 @@ export default function NewSale() {
     setItems(items.filter((item) => item.id !== itemId));
   };
 
-  const isNearExpiry = (expiryDate: string) => {
-    const expiry = new Date(expiryDate);
-    const today = new Date();
-    const threeMonths = new Date();
-    threeMonths.setMonth(threeMonths.getMonth() + 3);
-    return expiry <= threeMonths && expiry > today;
-  };
-
-  const isExpired = (expiryDate: string) => {
-    const expiry = new Date(expiryDate);
-    const today = new Date();
-    return expiry <= today;
-  };
-
   const calculations = useMemo(() => {
     let subtotal = 0;
     let totalMRP = 0;
@@ -988,7 +976,7 @@ export default function NewSale() {
 
   const formatHeldBillTime = (createdAt: string | Date | null) => {
     if (!createdAt) return "Unknown";
-    const date = new Date(createdAt);
+    const date = parseServerDate(createdAt);
     return date.toLocaleString("en-IN", {
       day: "2-digit",
       month: "short",
@@ -1313,7 +1301,7 @@ export default function NewSale() {
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2">
                                     <span className="font-medium">{medicine.name}</span>
-                                    {isNearExpiry(medicine.expiryDate) && (
+                                    {isNearExpiry(medicine.expiryDate, threeMonthsFromNow()) && (
                                       <AlertTriangle className="h-3 w-3 text-orange-500" />
                                     )}
                                   </div>
@@ -1383,12 +1371,12 @@ export default function NewSale() {
                                 <span
                                   className={cn(
                                     isExpired(item.expiryDate) && "text-red-600 font-medium",
-                                    isNearExpiry(item.expiryDate) && "text-orange-600 font-medium"
+                                    isNearExpiry(item.expiryDate, threeMonthsFromNow()) && "text-orange-600 font-medium"
                                   )}
                                 >
                                   {item.expiryDate}
                                 </span>
-                                {isNearExpiry(item.expiryDate) && (
+                                {isNearExpiry(item.expiryDate, threeMonthsFromNow()) && (
                                   <AlertTriangle className="h-3 w-3 text-orange-500 inline ml-1" />
                                 )}
                               </TableCell>
@@ -2153,7 +2141,7 @@ export default function NewSale() {
                         >
                           <TableCell className="font-mono text-sm">{sale.invoiceNo}</TableCell>
                           <TableCell>{sale.customerName || "Walk-in"}</TableCell>
-                          <TableCell>{new Date(sale.createdAt).toLocaleDateString()}</TableCell>
+                          <TableCell>{parseServerDate(sale.createdAt).toLocaleDateString()}</TableCell>
                           <TableCell className="text-right font-medium">₹{parseFloat(sale.total).toFixed(2)}</TableCell>
                         </TableRow>
                       ))}

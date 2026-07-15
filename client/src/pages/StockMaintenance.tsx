@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { isExpired, isNearExpiry, threeMonthsFromNow } from "@/lib/expiry";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -104,22 +105,9 @@ const emptyForm: OpeningStockForm = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function isNearExpiry(expiryDate: string): boolean {
-  if (!expiryDate) return false;
-  const expiry = new Date(expiryDate);
-  const threeMonths = new Date();
-  threeMonths.setMonth(threeMonths.getMonth() + 3);
-  return expiry <= threeMonths && expiry > new Date();
-}
-
-function isExpired(expiryDate: string): boolean {
-  if (!expiryDate) return false;
-  return new Date(expiryDate) <= new Date();
-}
-
 function expiryClass(expiryDate: string): string {
   if (isExpired(expiryDate)) return "text-red-600 font-medium";
-  if (isNearExpiry(expiryDate)) return "text-amber-600 font-medium";
+  if (isNearExpiry(expiryDate, threeMonthsFromNow())) return "text-amber-600 font-medium";
   return "";
 }
 
@@ -504,7 +492,7 @@ export default function StockMaintenance() {
                             {isExpired(batch.expiryDate) && (
                               <AlertTriangle className="h-3 w-3 inline ml-1 text-red-500" />
                             )}
-                            {isNearExpiry(batch.expiryDate) && !isExpired(batch.expiryDate) && (
+                            {isNearExpiry(batch.expiryDate, threeMonthsFromNow()) && !isExpired(batch.expiryDate) && (
                               <AlertTriangle className="h-3 w-3 inline ml-1 text-amber-500" />
                             )}
                           </span>
@@ -526,7 +514,7 @@ export default function StockMaintenance() {
                             <Badge variant="destructive" className="text-xs">Out of Stock</Badge>
                           ) : isExpired(batch.expiryDate) ? (
                             <Badge variant="destructive" className="text-xs">Expired</Badge>
-                          ) : isNearExpiry(batch.expiryDate) ? (
+                          ) : isNearExpiry(batch.expiryDate, threeMonthsFromNow()) ? (
                             <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">Near Expiry</Badge>
                           ) : (
                             <Badge className="text-xs bg-emerald-50 text-emerald-700 border-emerald-300">In Stock</Badge>

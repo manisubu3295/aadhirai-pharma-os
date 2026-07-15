@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { formatAppDateTime } from "@/lib/dateTime";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { 
@@ -242,7 +243,7 @@ export default function MyActivity() {
                         <TableCell>
                           <div className="flex items-center gap-1 text-sm">
                             <Clock className="h-3 w-3 text-muted-foreground" />
-                            {format(new Date(log.createdAt), "dd/MM/yyyy HH:mm")}
+                            {formatAppDateTime(log.createdAt, "dd/MM/yyyy HH:mm")}
                           </div>
                         </TableCell>
                         {isOwnerOrAdmin && (

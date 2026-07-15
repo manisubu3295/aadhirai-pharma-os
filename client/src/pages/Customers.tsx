@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { parseServerDate } from "@/lib/dateTime";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -317,13 +318,13 @@ export default function Customers() {
   };
 
   const calculateDueDate = (saleDate: string | Date, creditDays: number) => {
-    const date = new Date(saleDate);
+    const date = new Date(parseServerDate(saleDate));
     date.setDate(date.getDate() + creditDays);
     return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const isOverdue = (saleDate: string | Date, creditDays: number) => {
-    const dueDate = new Date(saleDate);
+    const dueDate = new Date(parseServerDate(saleDate));
     dueDate.setDate(dueDate.getDate() + creditDays);
     return new Date() > dueDate;
   };
@@ -679,7 +680,7 @@ export default function Customers() {
                           <TableRow key={sale.id}>
                             <TableCell className="font-mono text-sm">{sale.invoiceNo || `INV-${sale.id}`}</TableCell>
                             <TableCell className="text-sm">
-                              {new Date(sale.createdAt).toLocaleDateString('en-IN')}
+                              {parseServerDate(sale.createdAt).toLocaleDateString('en-IN')}
                             </TableCell>
                             <TableCell className="text-right font-medium">₹{Number(sale.total).toFixed(2)}</TableCell>
                             <TableCell className="text-sm">
@@ -726,7 +727,7 @@ export default function Customers() {
                         {creditPayments.map((payment) => (
                           <TableRow key={payment.id}>
                             <TableCell className="text-sm">
-                              {new Date(payment.createdAt).toLocaleDateString('en-IN')}
+                              {parseServerDate(payment.createdAt).toLocaleDateString('en-IN')}
                             </TableCell>
                             <TableCell className="text-right font-medium text-green-600">
                               ₹{Number(payment.amount).toFixed(2)}

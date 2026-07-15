@@ -31,6 +31,7 @@ import { useState } from "react";
 import { usePlan } from "@/lib/planContext";
 import { useToast } from "@/hooks/use-toast";
 import { formatAppDate, localDateKey, parseServerDate } from "@/lib/dateTime";
+import { isExpired, isNearExpiry, threeMonthsFromNow } from "@/lib/expiry";
 import type { Sale, Medicine, Customer } from "@shared/schema";
 
 export default function Reports() {
@@ -89,18 +90,7 @@ export default function Reports() {
   const weekTotal = weekSales.reduce((sum, s) => sum + Number(s.total), 0);
   const filteredTotal = filteredSales.reduce((sum, s) => sum + Number(s.total), 0);
 
-  const isNearExpiry = (expiryDate: string) => {
-    const expiry = new Date(expiryDate);
-    const threeMonths = new Date();
-    threeMonths.setMonth(threeMonths.getMonth() + 3);
-    return expiry <= threeMonths && expiry > new Date();
-  };
-
-  const isExpired = (expiryDate: string) => {
-    return new Date(expiryDate) <= new Date();
-  };
-
-  const expiringMedicines = medicines.filter(m => isNearExpiry(m.expiryDate) && !isExpired(m.expiryDate));
+  const expiringMedicines = medicines.filter(m => isNearExpiry(m.expiryDate, threeMonthsFromNow()) && !isExpired(m.expiryDate));
   const expiredMedicines = medicines.filter(m => isExpired(m.expiryDate));
   const lowStockMedicines = medicines.filter(m => m.status === "Low Stock" || m.status === "Out of Stock");
   const customersWithDue = customers.filter(c => Number(c.outstandingBalance || 0) > 0);

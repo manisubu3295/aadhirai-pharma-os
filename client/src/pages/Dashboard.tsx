@@ -5,6 +5,8 @@ import { DollarSign, ShoppingCart, AlertTriangle, Users, TrendingUp, TrendingDow
 import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { isExpired, isNearExpiry } from "@/lib/expiry";
+import { formatAppDate } from "@/lib/dateTime";
 
 const chartData = [
   { name: "Mon", sales: 4000 },
@@ -44,29 +46,14 @@ export default function Dashboard() {
     },
   });
 
-  const today = new Date();
-  const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-  
+  const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
   const lowStockMedicines = medicines.filter((m: any) => m.quantity <= m.reorderLevel && m.quantity > 0);
   const outOfStockMedicines = medicines.filter((m: any) => m.quantity === 0);
-  const expiringMedicines = medicines.filter((m: any) => {
-    if (!m.expiryDate) return false;
-    const expiryDate = new Date(m.expiryDate);
-    return expiryDate <= thirtyDaysFromNow && expiryDate > today;
-  });
-  const expiredMedicines = medicines.filter((m: any) => {
-    if (!m.expiryDate) return false;
-    const expiryDate = new Date(m.expiryDate);
-    return expiryDate <= today;
-  });
+  const expiringMedicines = medicines.filter((m: any) => isNearExpiry(m.expiryDate, thirtyDaysFromNow));
+  const expiredMedicines = medicines.filter((m: any) => isExpired(m.expiryDate));
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-IN', { 
-      day: '2-digit', 
-      month: 'short', 
-      year: 'numeric' 
-    });
-  };
+  const formatDate = (dateStr: string) => formatAppDate(dateStr, "dd MMM yyyy");
 
   const dashboardStats = [
     {

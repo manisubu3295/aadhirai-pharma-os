@@ -349,7 +349,7 @@ export default function Collections() {
       </head>
       <body>
         <h1>${title}</h1>
-        <p>Period: ${format(new Date(dateFrom), "dd MMM yyyy")} - ${format(new Date(dateTo), "dd MMM yyyy")}</p>
+        <p>Period: ${formatAppDate(dateFrom)} - ${formatAppDate(dateTo)}</p>
         <table>
           <thead>
             <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
