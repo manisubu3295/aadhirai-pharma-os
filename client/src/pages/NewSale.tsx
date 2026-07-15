@@ -270,6 +270,14 @@ export default function NewSale() {
   const printRef = useRef<HTMLDivElement>(null);
   const customerSearchRef = useRef<HTMLButtonElement>(null);
 
+  // Card/Credit can be toggled off in Settings after this page already
+  // selected them (or the settings query resolves after mount) — fall back
+  // to cash rather than let a hidden radio stay silently selected.
+  useEffect(() => {
+    if (paymentMethod === "card" && !appSettings.enableCardPayment) setPaymentMethod("cash");
+    if (paymentMethod === "credit" && !appSettings.enableCreditBilling) setPaymentMethod("cash");
+  }, [appSettings.enableCardPayment, appSettings.enableCreditBilling, paymentMethod]);
+
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
     queryFn: async () => {
@@ -459,16 +467,23 @@ export default function NewSale() {
     return Number((medicine as any).consolidatedQty ?? medicine.quantity ?? 0);
   };
 
+  // Near-expiry stock first (FEFO) — expiryDate is "yyyy-MM-dd", safe to
+  // string-compare ascending. Batches without an expiry sort last.
+  const byExpirySoonestFirst = (a: Medicine, b: Medicine) =>
+    (a.expiryDate || "9999-99-99").localeCompare(b.expiryDate || "9999-99-99");
+
   const filteredMedicines = useMemo(() => {
-    if (!medicineSearch) return medicines.filter((m) => getAvailableQty(m) > 0);
+    if (!medicineSearch) return medicines.filter((m) => getAvailableQty(m) > 0).sort(byExpirySoonestFirst);
     const search = medicineSearch.toLowerCase();
-    return medicines.filter(
-      (m) =>
-        getAvailableQty(m) > 0 &&
-        (m.name.toLowerCase().includes(search) ||
-          ((m as any).genericName && String((m as any).genericName).toLowerCase().includes(search)) ||
-          m.batchNumber.toLowerCase().includes(search))
-    );
+    return medicines
+      .filter(
+        (m) =>
+          getAvailableQty(m) > 0 &&
+          (m.name.toLowerCase().includes(search) ||
+            ((m as any).genericName && String((m as any).genericName).toLowerCase().includes(search)) ||
+            m.batchNumber.toLowerCase().includes(search))
+      )
+      .sort(byExpirySoonestFirst);
   }, [medicines, medicineSearch]);
 
   const addMedicine = (medicine: Medicine) => {
@@ -700,12 +715,14 @@ export default function NewSale() {
     if (isSplitMode) {
       if (paymentRows.filter((r) => Number(r.amount) > 0).length === 0) return false;
       if (calculations.paymentError) return false;
+      if (!appSettings.enableCreditBilling && calculations.creditPortion > 0) return false;
       return true;
     }
+    if (paymentMethod === "credit" && !appSettings.enableCreditBilling) return false;
     if (paymentMethod !== "credit" && calculations.received < calculations.netAmount && calculations.netAmount > 0) return false;
     if (paymentMethod === "credit" && !selectedCustomer) return false;
     return true;
-  }, [items, createSaleMutation.isPending, isSplitMode, paymentRows, calculations, paymentMethod, selectedCustomer]);
+  }, [items, createSaleMutation.isPending, isSplitMode, paymentRows, calculations, paymentMethod, selectedCustomer, appSettings.enableCreditBilling]);
 
   const resetForm = () => {
     setItems([]);
@@ -1544,14 +1561,18 @@ export default function NewSale() {
                         <RadioGroupItem value="upi" id="upi" data-testid="radio-upi" className="h-3.5 w-3.5" />
                         <Label htmlFor="upi" className="font-normal cursor-pointer text-xs">UPI</Label>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="card" id="card" data-testid="radio-card" className="h-3.5 w-3.5" />
-                        <Label htmlFor="card" className="font-normal cursor-pointer text-xs">Card</Label>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <RadioGroupItem value="credit" id="credit" data-testid="radio-credit" className="h-3.5 w-3.5" />
-                        <Label htmlFor="credit" className="font-normal cursor-pointer text-xs">Credit</Label>
-                      </div>
+                      {appSettings.enableCardPayment && (
+                        <div className="flex items-center space-x-1">
+                          <RadioGroupItem value="card" id="card" data-testid="radio-card" className="h-3.5 w-3.5" />
+                          <Label htmlFor="card" className="font-normal cursor-pointer text-xs">Card</Label>
+                        </div>
+                      )}
+                      {appSettings.enableCreditBilling && (
+                        <div className="flex items-center space-x-1">
+                          <RadioGroupItem value="credit" id="credit" data-testid="radio-credit" className="h-3.5 w-3.5" />
+                          <Label htmlFor="credit" className="font-normal cursor-pointer text-xs">Credit</Label>
+                        </div>
+                      )}
                     </RadioGroup>
 
                     {(paymentMethod === "upi" || paymentMethod === "card" || paymentMethod === "credit") && (
@@ -1575,7 +1596,7 @@ export default function NewSale() {
                           <SelectContent>
                             <SelectItem value="cash">Cash</SelectItem>
                             <SelectItem value="upi">UPI</SelectItem>
-                            <SelectItem value="card">Card</SelectItem>
+                            {appSettings.enableCardPayment && <SelectItem value="card">Card</SelectItem>}
                           </SelectContent>
                         </Select>
                         <NumericInput
@@ -1678,6 +1699,11 @@ export default function NewSale() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Remaining (Credit)</span>
                       <span className="font-medium text-amber-600">₹{calculations.creditPortion.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {calculations.creditPortion > 0 && !appSettings.enableCreditBilling && (
+                    <div className="text-xs text-red-500 text-right">
+                      Credit billing is disabled — pay the full amount or enable it in Settings.
                     </div>
                   )}
                   {calculations.paymentError && (

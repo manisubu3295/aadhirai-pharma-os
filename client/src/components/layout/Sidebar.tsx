@@ -31,7 +31,8 @@ import {
   Wallet,
   CheckCircle,
   RefreshCw,
-  Clock
+  Clock,
+  BookOpen
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useRef, useEffect, useLayoutEffect, useCallback } from "react";
@@ -67,6 +68,7 @@ const iconMap: { [key: string]: React.ElementType } = {
   CheckCircle,
   RefreshCw,
   Clock,
+  BookOpen,
 };
 
 function getIcon(iconName: string | null): React.ElementType {
@@ -146,6 +148,7 @@ export function Sidebar({ isCollapsed = false, isOpen = false, onClose }: Sideba
         { icon: ShoppingCart, label: "Point of Sale", href: "/pos" },
         { icon: Receipt, label: "Credit Billing", href: "/credit-billing" },
         { icon: RotateCcw, label: "Medicine Refund", href: "/medicine-refund" },
+        { icon: BookOpen, label: "User Guide", href: "/user-guide" },
       ]
     },
     {

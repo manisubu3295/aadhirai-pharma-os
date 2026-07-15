@@ -18,6 +18,8 @@ export interface AppSettings {
   printOnSave: boolean;
   defaultGrnDiscountRate: string;
   defaultGrnGstMode: "item" | "header";
+  enableCardPayment: boolean;
+  enableCreditBilling: boolean;
 }
 
 const defaultSettings: AppSettings = {
@@ -37,6 +39,8 @@ const defaultSettings: AppSettings = {
   printOnSave: false,
   defaultGrnDiscountRate: "5",
   defaultGrnGstMode: "item",
+  enableCardPayment: false,
+  enableCreditBilling: false,
 };
 
 interface SettingsContextType {
@@ -78,6 +82,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         printOnSave: rawSettings.printOnSave === "true",
         defaultGrnDiscountRate: rawSettings.defaultGrnDiscountRate || defaultSettings.defaultGrnDiscountRate,
         defaultGrnGstMode: rawSettings.defaultGrnGstMode === "header" ? "header" : "item",
+        enableCardPayment: rawSettings.enableCardPayment === "true",
+        enableCreditBilling: rawSettings.enableCreditBilling === "true",
       }
     : defaultSettings;
 

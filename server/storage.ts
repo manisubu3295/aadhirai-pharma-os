@@ -219,6 +219,8 @@ async function seedDefaultAppSettings() {
     printOnSave: "false",
     defaultGrnDiscountRate: "5",
     defaultGrnGstMode: "item",
+    enableCardPayment: "false",
+    enableCreditBilling: "false",
   };
 
   const valueColumnResult = await pool.query<{
@@ -982,19 +984,24 @@ async function seedDefaultUsers() {
 
     const bcrypt = await import("bcryptjs");
     const password = await bcrypt.default.hash("password123", 10);
+    // 'admin' gets its own password (admin123), separate from the shared
+    // password123 used by the other seeded accounts.
+    const adminPassword = await bcrypt.default.hash("admin123", 10);
     // The role text here is the login-permission tier (SYSTEM_ROLES). The
     // 'admin' user is deliberately 'staff' (no privileged guard matches it);
     // its actual menu access comes from the "Pharmacy Owner" role linked in
-    // seedDefaultRoles(). syncRoleAssignments() links role_id and keeps the
-    // text in sync with the assigned role's system_role on every boot.
+    // seedDefaultRoles(), curated to a specific default menu set. 'support'
+    // is the full-access account for the support team (was 'owner').
+    // syncRoleAssignments() links role_id and keeps the text in sync with
+    // the assigned role's system_role on every boot.
     await pool.query(`
       INSERT INTO users (username, password, name, role, email, phone) VALUES
-        ('owner',       $1, 'Owner',          'owner',      '', ''),
-        ('pharmacist',  $1, 'Pharmacist',     'pharmacist', '', ''),
-        ('cashier',     $1, 'Cashier',        'cashier',    '', ''),
-        ('admin',       $1, 'Pharmacy Owner', 'staff',      '', '')
+        ('support',    $1, 'Support',    'owner',      '', ''),
+        ('pharmacist', $1, 'Pharmacist', 'pharmacist', '', ''),
+        ('cashier',    $1, 'Cashier',    'cashier',    '', ''),
+        ('admin',      $2, 'Admin',      'staff',      '', '')
       ON CONFLICT (username) DO NOTHING
-    `, [password]);
+    `, [password, adminPassword]);
     console.log("Default users seeded");
   } catch (err) {
     console.error("seedDefaultUsers error:", err);
@@ -1147,6 +1154,7 @@ export interface IStorage {
   ensureDoctorReferralsMenu(): Promise<void>;
   seedDefaultRoles(): Promise<void>;
   ensurePharmacyOwnerAuditMenu(): Promise<void>;
+  ensureUserGuideMenu(): Promise<void>;
   syncRoleAssignments(): Promise<void>;
 
   // Supplier Ledger & Payments
@@ -3159,16 +3167,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserNavigation(userId: string, role: string, roleId: number | null): Promise<MenuWithPermissions[]> {
+    // Owner tier (users.role is synced from the assigned role's systemRole)
+    // sees every menu that exists, regardless of isActive — a globally
+    // deactivated menu should never lock the owner out of re-enabling it
+    // via Menu Management, and this is what makes a full-access account
+    // (e.g. 'support') truly have "all possible menus" no matter what a
+    // given install has turned off for everyone else.
+    if (role === 'owner' || role === 'admin') {
+      const everyMenu = await db.select().from(menus).orderBy(menus.displayOrder);
+      return everyMenu.map(menu => ({ ...menu, canView: true, canEdit: true }));
+    }
+
     const allMenus = await db.select().from(menus).where(eq(menus.isActive, true)).orderBy(menus.displayOrder);
-    
+
     if (allMenus.length === 0) {
       return [];
-    }
-    
-    // Owner tier (users.role is synced from the assigned role's systemRole)
-    // gets all menus with full permissions.
-    if (role === 'owner' || role === 'admin') {
-      return allMenus.map(menu => ({ ...menu, canView: true, canEdit: true }));
     }
 
     // Get user's direct menu permissions
@@ -3255,6 +3268,7 @@ export class DatabaseStorage implements IStorage {
       { key: 'sales.pos', label: 'Point of Sale', routePath: '/pos', icon: 'ShoppingCart', displayOrder: 3 },
       { key: 'sales.credit', label: 'Credit Billing', routePath: '/credit-billing', icon: 'Receipt', displayOrder: 4 },
       { key: 'sales.refund', label: 'Medicine Refund', routePath: '/medicine-refund', icon: 'RotateCcw', displayOrder: 5 },
+      { key: 'help.guide', label: 'User Guide', routePath: '/user-guide', icon: 'BookOpen', displayOrder: 6 },
       { key: 'inventory.medicines', label: 'Medicines / Products', routePath: '/inventory', icon: 'Package', displayOrder: 10 },
       { key: 'inventory.suppliers', label: 'Suppliers', routePath: '/suppliers', icon: 'Truck', displayOrder: 11 },
       { key: 'inventory.rates', label: 'Rate Master', routePath: '/supplier-rates', icon: 'Tags', displayOrder: 12 },
@@ -3303,7 +3317,7 @@ export class DatabaseStorage implements IStorage {
 
     // Link menus to groups
     const groupLinks = [
-      { group: operations[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit', 'sales.refund', 'operations.expenses', 'operations.approvals', 'operations.stock-adjustments', 'operations.shift-handover', 'operations.my-sales', 'operations.my-activity'] },
+      { group: operations[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit', 'sales.refund', 'help.guide', 'operations.expenses', 'operations.approvals', 'operations.stock-adjustments', 'operations.shift-handover', 'operations.my-sales', 'operations.my-activity'] },
       { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn', 'inventory.returns'] },
       { group: customersGroup[0].id, keys: ['customers.accounts', 'customers.doctors', 'customers.collections'] },
       { group: reports[0].id, keys: ['reports.sales', 'reports.analytics', 'reports.doctor-referrals'] },
@@ -3361,23 +3375,27 @@ export class DatabaseStorage implements IStorage {
     const cashierRole = await db.insert(roles).values({ name: 'Cashier', description: 'Cashier role', systemRole: 'cashier' }).returning();
 
     // Link the 4 default users to their matching role.
-    // owner -> Super Admin: "update the owner to super admin, all access".
-    await db.update(users).set({ roleId: superAdmin[0].id }).where(eq(users.username, 'owner'));
+    // support -> Super Admin: full access, for the support team.
+    await db.update(users).set({ roleId: superAdmin[0].id }).where(eq(users.username, 'support'));
     await db.update(users).set({ roleId: pharmacyOwner[0].id }).where(eq(users.username, 'admin'));
     await db.update(users).set({ roleId: pharmacistRole[0].id }).where(eq(users.username, 'pharmacist'));
     await db.update(users).set({ roleId: cashierRole[0].id }).where(eq(users.username, 'cashier'));
 
     // Dedicated menu group for the Pharmacy Owner role's default access -
-    // kept separate from the existing "Inventory & Purchase" group (which
-    // shares 6 of these 8 keys) so the access boundary stays precise
-    // rather than over-granting from a broader existing group.
+    // kept separate from the existing "Inventory & Purchase" group so the
+    // access boundary stays precise rather than over-granting from a
+    // broader existing group. Internal role/group names are kept as
+    // "Pharmacy Owner" for backward compatibility with
+    // ensurePharmacyOwnerAuditMenu() (looks the group up by this name on
+    // already-seeded DBs) even though the linked account is now 'admin'.
     const ownerAccessGroup = await db.insert(menuGroups).values({
-      name: 'Pharmacy Owner Access', description: 'Default menus for the pharmacy owner login',
+      name: 'Pharmacy Owner Access', description: 'Default menus for the admin login',
     }).returning();
     const ownerAccessKeys = [
-      'sales.new', 'inventory.medicines', 'inventory.suppliers', 'inventory.rates',
-      'inventory.po', 'inventory.grn', 'inventory.returns', 'customers.accounts',
-      'admin.audit',
+      'dashboard', 'sales.refund', 'inventory.medicines', 'inventory.returns',
+      'customers.accounts', 'customers.doctors', 'customers.collections',
+      'reports.sales', 'reports.doctor-referrals', 'admin.audit',
+      'operations.stock-adjustments', 'admin.locations', 'help.guide',
     ];
     const allMenuRows = await db.select().from(menus);
     const menuByKey = new Map(allMenuRows.map(m => [m.key, m.id]));
@@ -3403,6 +3421,29 @@ export class DatabaseStorage implements IStorage {
       FROM menu_groups mg
       JOIN menus m ON m.key = 'admin.audit'
       WHERE mg.name = 'Pharmacy Owner Access'
+        AND NOT EXISTS (
+          SELECT 1 FROM menu_group_menus existing
+          WHERE existing.menu_group_id = mg.id AND existing.menu_id = m.id
+        )
+    `);
+  }
+
+  // Idempotent, runs every boot: adds the User Guide menu (if missing) and
+  // grants it to the same default groups a fresh install would, so it shows
+  // up on already-seeded databases too.
+  async ensureUserGuideMenu(): Promise<void> {
+    await pool.query(`
+      INSERT INTO menus (key, label, route_path, icon, display_order, is_active)
+      SELECT 'help.guide', 'User Guide', '/user-guide', 'BookOpen', 6, true
+      WHERE NOT EXISTS (SELECT 1 FROM menus WHERE key = 'help.guide')
+    `);
+
+    await pool.query(`
+      INSERT INTO menu_group_menus (menu_group_id, menu_id)
+      SELECT mg.id, m.id
+      FROM menu_groups mg
+      JOIN menus m ON m.key = 'help.guide'
+      WHERE mg.name IN ('Operations', 'Pharmacy Owner Access')
         AND NOT EXISTS (
           SELECT 1 FROM menu_group_menus existing
           WHERE existing.menu_group_id = mg.id AND existing.menu_id = m.id

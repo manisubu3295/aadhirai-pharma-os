@@ -99,7 +99,8 @@ Use these default credentials (change them after first login):
 
 | Role | Username | Password |
 |------|----------|----------|
-| Owner / Admin | `owner` | `password123` |
+| Support (full access) | `support` | `password123` |
+| Admin (limited default menus) | `admin` | `admin123` |
 | Pharmacist | `pharmacist` | `password123` |
 | Cashier | `cashier` | `password123` |
 
@@ -115,6 +116,10 @@ that isn't the main server PC):
 2. Go to `http://[SERVER-IP]:3000`
    *(Replace `[SERVER-IP]` with the IP address of the server PC — find it by
    running `ipconfig` on the server PC and looking for **IPv4 Address**)*
+
+> If it doesn't connect, the installer doesn't open a firewall port
+> automatically — on the **server PC**, run (as Administrator):
+> `netsh advfirewall firewall add rule name="AadhiraiPharma" dir=in action=allow protocol=TCP localport=3000`
 
 ---
 
@@ -213,7 +218,8 @@ Options:
 
 | Role | Username | Password | Access |
 |------|----------|----------|--------|
-| Owner / Admin | `owner` | `password123` | Full access |
+| Support | `support` | `password123` | Full access — for the support team |
+| Admin | `admin` | `admin123` | A curated default menu set (edit in Role Master) |
 | Pharmacist | `pharmacist` | `password123` | Inventory + dispensing |
 | Cashier | `cashier` | `password123` | Billing only |
 
@@ -267,7 +273,10 @@ npm run db:push
 
 **Source install:** Right-click `uninstall.bat` → Run as administrator.
 
-Either way, this removes the Windows Service and firewall rule.
+Either way, this removes the Windows Service. `uninstall.bat` (source
+installs) also removes the firewall rule it added; the installer-based
+path never added one automatically, so there's nothing to remove there
+unless you added one manually.
 **The database and application files are NOT deleted** — remove them manually if needed.
 
 ---
@@ -279,7 +288,7 @@ Either way, this removes the Windows Service and firewall rule.
 | App won't open in browser | Check `install-status.txt` in the install folder first (see below). Then confirm the **AadhiraiPharma** Windows service is running (`services.msc`) |
 | "Cannot connect to database" | Open `services.msc` → start **postgresql-x64-\<version\>** (e.g. `postgresql-x64-18`). Verify credentials: `psql -U postgres -h localhost -p 5432` |
 | Login "succeeds" but immediately looks logged out | Only happens if accessing over something other than `localhost` (e.g. a LAN IP) with an older install — confirm `.env` has `SESSION_COOKIE_SECURE=false`. Reinstalling with the current installer sets this automatically |
-| Other computers can't access | Confirm the firewall rule: `netsh advfirewall firewall show rule name="AadhiraiPharma"`. Re-add if missing: `netsh advfirewall firewall add rule name="AadhiraiPharma" dir=in action=allow protocol=TCP localport=3000`. Make sure all devices are on the same local network |
+| Other computers can't access | The installer-based install does **not** add a firewall rule automatically (only `install.bat` source installs do). Add one: `netsh advfirewall firewall add rule name="AadhiraiPharma" dir=in action=allow protocol=TCP localport=3000`. Make sure all devices are on the same local network |
 | Forgot login password | Contact your system administrator to reset via User Management |
 | Port already in use | Change `PORT=3000` in `.env` to another number and restart the service |
 | Re-seed wiped database | `seed-db.bat` → choose option 3 |

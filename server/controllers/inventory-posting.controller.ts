@@ -66,6 +66,23 @@ export class InventoryPostingController {
         return res.status(400).json({ error: plan.error });
       }
 
+      // Card/Credit are opt-in via Settings (off by default) — enforced
+      // here regardless of what the client sent, since paymentMethod is an
+      // unrestricted string at the schema level (validation.schemas.ts).
+      const [cardSetting, creditSetting] = await Promise.all([
+        storage.getSetting("enableCardPayment"),
+        storage.getSetting("enableCreditBilling"),
+      ]);
+      const cardEnabled = cardSetting?.value === "true";
+      const creditEnabled = creditSetting?.value === "true";
+
+      if (!creditEnabled && (plan.paymentMethod === "credit" || plan.creditPortion > 0)) {
+        return res.status(400).json({ error: "Credit billing is currently disabled in Settings." });
+      }
+      if (!cardEnabled && plan.rows.some((r) => r.method.toLowerCase() === "card")) {
+        return res.status(400).json({ error: "Card payment is currently disabled in Settings." });
+      }
+
       const userId = req.session?.userId || payload.userId || null;
 
       let lastError: unknown;

@@ -90,6 +90,8 @@ interface SettingsData {
   printOnSave: string;
   defaultGrnDiscountRate: string;
   defaultGrnGstMode: "item" | "header";
+  enableCardPayment: string;
+  enableCreditBilling: string;
 }
 
 const defaultSettings: SettingsData = {
@@ -109,6 +111,8 @@ const defaultSettings: SettingsData = {
   printOnSave: "false",
   defaultGrnDiscountRate: "5",
   defaultGrnGstMode: "item",
+  enableCardPayment: "false",
+  enableCreditBilling: "false",
 };
 
 const emptyUserForm: UserFormData = {
@@ -178,6 +182,8 @@ export default function Settings() {
         printOnSave: savedSettings.printOnSave || defaultSettings.printOnSave,
         defaultGrnDiscountRate: savedSettings.defaultGrnDiscountRate || defaultSettings.defaultGrnDiscountRate,
         defaultGrnGstMode: savedSettings.defaultGrnGstMode === "header" ? "header" : "item",
+        enableCardPayment: savedSettings.enableCardPayment || defaultSettings.enableCardPayment,
+        enableCreditBilling: savedSettings.enableCreditBilling || defaultSettings.enableCreditBilling,
       });
     }
   }, [savedSettings]);
@@ -340,6 +346,8 @@ export default function Settings() {
       printOnSave: settings.printOnSave,
       defaultGrnDiscountRate: settings.defaultGrnDiscountRate,
       defaultGrnGstMode: settings.defaultGrnGstMode,
+      enableCardPayment: settings.enableCardPayment,
+      enableCreditBilling: settings.enableCreditBilling,
     });
   };
 
@@ -745,17 +753,43 @@ export default function Settings() {
                         <Label htmlFor="showDoctor">Show doctor name on invoice</Label>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <Switch 
-                          id="printOnSave" 
+                        <Switch
+                          id="printOnSave"
                           checked={settings.printOnSave === "true"}
                           onCheckedChange={(checked) => setSettings({ ...settings, printOnSave: checked ? "true" : "false" })}
-                          data-testid="switch-print-on-save" 
+                          data-testid="switch-print-on-save"
                         />
                         <Label htmlFor="printOnSave">Auto-print invoice on save</Label>
                       </div>
                     </div>
                   </div>
-                  <Button 
+                  <div className="space-y-4">
+                    <h4 className="font-medium">Payment Methods at Checkout</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Cash and UPI are always available. Card and Credit are off by default — turn them on here to offer them at New Sale checkout.
+                    </p>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="enableCardPayment"
+                          checked={settings.enableCardPayment === "true"}
+                          onCheckedChange={(checked) => setSettings({ ...settings, enableCardPayment: checked ? "true" : "false" })}
+                          data-testid="switch-enable-card-payment"
+                        />
+                        <Label htmlFor="enableCardPayment">Enable Card payment</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="enableCreditBilling"
+                          checked={settings.enableCreditBilling === "true"}
+                          onCheckedChange={(checked) => setSettings({ ...settings, enableCreditBilling: checked ? "true" : "false" })}
+                          data-testid="switch-enable-credit-billing"
+                        />
+                        <Label htmlFor="enableCreditBilling">Enable Credit billing</Label>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
                     onClick={handleSaveInvoiceSettings}
                     disabled={saveSettingsMutation.isPending}
                     data-testid="button-save-invoice"

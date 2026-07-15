@@ -21,6 +21,7 @@ import Collections from "@/pages/Collections";
 import DoctorReferrals from "@/pages/DoctorReferrals";
 import LocationMaster from "@/pages/LocationMaster";
 import AuditLog from "@/pages/AuditLog";
+import UserGuide from "@/pages/UserGuide";
 import TallyExport from "@/pages/TallyExport";
 import Doctors from "@/pages/Doctors";
 import OwnerDashboard from "@/pages/OwnerDashboard";
@@ -107,6 +108,11 @@ function Router() {
       <Route path="/audit-log">
         <ProtectedRoute>
           <AuditLog />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/user-guide">
+        <ProtectedRoute>
+          <UserGuide />
         </ProtectedRoute>
       </Route>
       <Route path="/tally-export">

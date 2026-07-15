@@ -368,7 +368,8 @@ export default function Inventory() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
   const [formData, setFormData] = useState<MedicineFormData>(emptyForm);
-  const [sortField, setSortField] = useState<SortField>('name');
+  // Near-expiry stock first by default (FEFO), still fully sortable by any column.
+  const [sortField, setSortField] = useState<SortField>('expiryDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof MedicineFormData, string>>>({});
 
@@ -902,6 +903,7 @@ export default function Inventory() {
                     <SortableHeader field="price" align="right">Price</SortableHeader>
                     <TableHead className="text-center">GST</TableHead>
                     <TableHead>Location</TableHead>
+                    <SortableHeader field="expiryDate">Expiry</SortableHeader>
                     <SortableHeader field="status">Status</SortableHeader>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -951,6 +953,9 @@ export default function Inventory() {
                           <MapPin className="h-3 w-3 text-muted-foreground" />
                           {getLocationDisplay((item as any).locationId)}
                         </div>
+                      </TableCell>
+                      <TableCell className={`text-xs ${isExpired(item.expiryDate) ? "text-red-600 font-medium" : isNearExpiry(item.expiryDate, threeMonthsFromNow()) ? "text-amber-600 font-medium" : ""}`}>
+                        {item.expiryDate || "—"}
                       </TableCell>
                       <TableCell className="text-center">
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${

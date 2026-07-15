@@ -208,6 +208,11 @@ app.use((req, res, next) => {
     // group so the default 'admin' login can review all app activity.
     await storage.ensurePharmacyOwnerAuditMenu();
 
+    // Idempotent: adds the User Guide menu (if missing) and grants it to
+    // the default Operations/Pharmacy Owner Access groups, so it shows up
+    // on already-seeded databases too.
+    await storage.ensureUserGuideMenu();
+
     startBackupScheduler();
 
     await registerRoutes(httpServer, app);

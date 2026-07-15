@@ -606,18 +606,27 @@ export async function registerRoutes(
     try {
       const password = await bcrypt.hash("password123", 10);
       const created: string[] = [];
-      
-      const ownerExists = await storage.getUserByUsername("owner");
-      if (!ownerExists) {
+
+      // The full-access account's tier/role comes from whichever Role
+      // Master role is marked Super Admin (isSuperAdmin=true) - not a
+      // hardcoded 'owner' string - so it stays correct if that role is
+      // ever renamed. Falls back to the 'owner' tier if seedDefaultRoles()
+      // hasn't run yet (roleId null; syncRoleAssignments() links it below).
+      const allRoles = await storage.getRoles();
+      const superAdminRole = allRoles.find((r) => r.isSuperAdmin);
+
+      const supportExists = await storage.getUserByUsername("support");
+      if (!supportExists) {
         await storage.createUser({
-          username: "owner",
+          username: "support",
           password,
-          name: "Admin User",
-          role: "owner",
-          email: "admin@pharmacy.com",
+          name: "Support",
+          role: superAdminRole?.systemRole || "owner",
+          roleId: superAdminRole?.id ?? null,
+          email: "support@pharmacy.com",
           phone: "9876543210",
         });
-        created.push("owner");
+        created.push("support");
       }
       
       const pharmacistExists = await storage.getUserByUsername("pharmacist");
@@ -655,10 +664,10 @@ export async function registerRoutes(
       await storage.syncRoleAssignments();
 
 
-      res.json({ 
-        message: `Setup completed. Created users: ${created.join(", ")}`, 
+      res.json({
+        message: `Setup completed. Created users: ${created.join(", ")}`,
         credentials: {
-          username: "owner",
+          username: "support",
           password: "password123"
         }
       });

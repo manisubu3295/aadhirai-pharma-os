@@ -100,6 +100,7 @@ export function groupMenusBySection(menus: MenuWithPermissions[]): { section: st
     "CUSTOMERS & CREDIT": [],
     "REPORTS & ANALYTICS": [],
     ADMINISTRATION: [],
+    HELP: [],
   };
 
   for (const menu of menus) {
@@ -114,6 +115,8 @@ export function groupMenusBySection(menus: MenuWithPermissions[]): { section: st
       sections["REPORTS & ANALYTICS"].push(menu);
     } else if (key.startsWith("admin.")) {
       sections.ADMINISTRATION.push(menu);
+    } else if (key.startsWith("help.")) {
+      sections.HELP.push(menu);
     }
   }
 
