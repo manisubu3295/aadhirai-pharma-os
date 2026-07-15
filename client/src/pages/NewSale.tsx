@@ -380,7 +380,11 @@ export default function NewSale() {
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales/recent"] });
-      
+      // A doctor-referred sale earns commission server-side; refresh the
+      // doctor balances and commission ledger (staleTime is Infinity).
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor-commissions/transactions"] });
+
       const invoiceNo = saleResult.sale?.invoiceNo || "Generated";
       setLastSavedInvoiceNo(invoiceNo);
       toast({ 

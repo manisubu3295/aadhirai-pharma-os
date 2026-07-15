@@ -112,9 +112,12 @@ async function buildDoctorReferralReport(year: number | null, periodKeyFn: (date
     commissionPaid: number;
   }>();
 
+  // Naive DB timestamps are parsed as UTC, so the Date's UTC fields hold the
+  // true local wall time — bucket with UTC getters or evening transactions
+  // near period boundaries land in the wrong month/quarter/year.
   for (const txn of transactions) {
     const date = new Date(txn.createdAt);
-    if (year !== null && date.getFullYear() !== year) continue;
+    if (year !== null && date.getUTCFullYear() !== year) continue;
 
     const period = periodKeyFn(date);
     const key = `${period}|${txn.doctorId}`;
@@ -1404,7 +1407,7 @@ export async function registerRoutes(
     try {
       const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
       const result = await buildDoctorReferralReport(year, (date) =>
-        `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`
+        `${date.getUTCFullYear()}-${(date.getUTCMonth() + 1).toString().padStart(2, '0')}`
       );
       res.json(result);
     } catch (error) {
@@ -1417,8 +1420,8 @@ export async function registerRoutes(
     try {
       const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
       const result = await buildDoctorReferralReport(year, (date) => {
-        const quarter = Math.floor(date.getMonth() / 3) + 1;
-        return `${date.getFullYear()}-Q${quarter}`;
+        const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
+        return `${date.getUTCFullYear()}-Q${quarter}`;
       });
       res.json(result);
     } catch (error) {
@@ -1429,7 +1432,7 @@ export async function registerRoutes(
 
   app.get("/api/reports/doctor-referrals/yearly", async (req, res) => {
     try {
-      const result = await buildDoctorReferralReport(null, (date) => `${date.getFullYear()}`);
+      const result = await buildDoctorReferralReport(null, (date) => `${date.getUTCFullYear()}`);
       res.json(result);
     } catch (error) {
       console.error("Yearly doctor referrals error:", error);

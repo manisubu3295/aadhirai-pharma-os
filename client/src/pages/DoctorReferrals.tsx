@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileSpreadsheet, FileText, Stethoscope, Calendar, CalendarRange, Receipt } from "lucide-react";
 import { format } from "date-fns";
-import { formatAppDateTime } from "@/lib/dateTime";
+import { formatAppDateTime, parseServerDate, startOfLocalDay, endOfLocalDay } from "@/lib/dateTime";
 
 interface Sale {
   id: number;
@@ -60,16 +60,22 @@ export default function DoctorReferrals() {
   const [doctorFilter, setDoctorFilter] = useState<string>("all");
   const [selectedYear, setSelectedYear] = useState(currentYear.toString());
 
+  // Report page: always refetch on open. The app-wide staleTime is Infinity,
+  // and sales can be made elsewhere (POS, another terminal) without this
+  // client seeing an invalidation — a stale cache here shows zero earned.
   const { data: sales = [] } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+    refetchOnMount: "always",
   });
 
   const { data: doctors = [] } = useQuery<Doctor[]>({
     queryKey: ["/api/doctors"],
+    refetchOnMount: "always",
   });
 
   const { data: transactions = [] } = useQuery<CommissionTransaction[]>({
     queryKey: ["/api/doctor-commissions/transactions"],
+    refetchOnMount: "always",
   });
 
   const { data: monthlyData = [] } = useQuery<PeriodRow[]>({
@@ -80,6 +86,7 @@ export default function DoctorReferrals() {
       return res.json();
     },
     enabled: activeTab === "monthly",
+    staleTime: 0,
   });
 
   const { data: quarterlyData = [] } = useQuery<PeriodRow[]>({
@@ -90,6 +97,7 @@ export default function DoctorReferrals() {
       return res.json();
     },
     enabled: activeTab === "quarterly",
+    staleTime: 0,
   });
 
   const { data: yearlyData = [] } = useQuery<PeriodRow[]>({
@@ -100,15 +108,17 @@ export default function DoctorReferrals() {
       return res.json();
     },
     enabled: activeTab === "yearly",
+    staleTime: 0,
   });
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
+  // parseServerDate treats the server's naive "…Z" timestamps as local wall
+  // time; raw new Date() would shift evening sales into tomorrow and drop
+  // them from today's range (earned would wrongly show zero).
   const inRange = (dateStr: string) => {
-    const d = new Date(dateStr);
-    const from = new Date(`${dateFrom}T00:00:00`);
-    const to = new Date(`${dateTo}T23:59:59.999`);
-    return d >= from && d <= to;
+    const d = parseServerDate(dateStr);
+    return d >= startOfLocalDay(dateFrom) && d <= endOfLocalDay(dateTo);
   };
 
   const salesInRange = sales.filter((s) => s.doctorId && inRange(s.createdAt));
