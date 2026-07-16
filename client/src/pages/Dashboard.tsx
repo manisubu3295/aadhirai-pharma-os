@@ -5,18 +5,8 @@ import { DollarSign, ShoppingCart, AlertTriangle, Users, TrendingUp, TrendingDow
 import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { isExpired, isNearExpiry } from "@/lib/expiry";
+import { isExpired, isNearExpiry, threeMonthsFromNow } from "@/lib/expiry";
 import { formatAppDate } from "@/lib/dateTime";
-
-const chartData = [
-  { name: "Mon", sales: 4000 },
-  { name: "Tue", sales: 3000 },
-  { name: "Wed", sales: 2000 },
-  { name: "Thu", sales: 2780 },
-  { name: "Fri", sales: 1890 },
-  { name: "Sat", sales: 2390 },
-  { name: "Sun", sales: 3490 },
-];
 
 export default function Dashboard() {
   const { data: stats } = useQuery({
@@ -46,20 +36,25 @@ export default function Dashboard() {
     },
   });
 
-  const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
   const lowStockMedicines = medicines.filter((m: any) => m.quantity <= m.reorderLevel && m.quantity > 0);
   const outOfStockMedicines = medicines.filter((m: any) => m.quantity === 0);
-  const expiringMedicines = medicines.filter((m: any) => isNearExpiry(m.expiryDate, thirtyDaysFromNow));
+  const expiringMedicines = medicines.filter((m: any) => isNearExpiry(m.expiryDate, threeMonthsFromNow()));
   const expiredMedicines = medicines.filter((m: any) => isExpired(m.expiryDate));
 
   const formatDate = (dateStr: string) => formatAppDate(dateStr, "dd MMM yyyy");
+
+  const customersToday = stats?.customersToday ?? 0;
+  const customersYesterday = stats?.customersYesterday ?? 0;
+  const customersDelta = customersToday - customersYesterday;
+  const customersChange = stats
+    ? (customersDelta === 0 ? "No change" : `${customersDelta > 0 ? "+" : ""}${customersDelta} vs yesterday`)
+    : "";
 
   const dashboardStats = [
     {
       title: "Net Revenue",
       value: stats?.netRevenue ? `₹${parseFloat(stats.netRevenue).toFixed(2)}` : (stats ? `₹${parseFloat(stats.totalRevenue).toFixed(2)}` : "₹0.00"),
-      change: "+15%",
+      change: "",
       trend: "up",
       icon: DollarSign,
       color: "from-emerald-500 to-teal-600",
@@ -79,7 +74,7 @@ export default function Dashboard() {
     {
       title: "Low Stock Items",
       value: stats ? stats.lowStockItems.toString() : "0",
-      change: "-2",
+      change: "",
       trend: "down",
       icon: AlertTriangle,
       color: "from-amber-500 to-orange-600",
@@ -88,9 +83,9 @@ export default function Dashboard() {
     },
     {
       title: "Customers Today",
-      value: stats ? stats.customersToday.toString() : "0",
-      change: "+12%",
-      trend: "up",
+      value: customersToday.toString(),
+      change: customersChange,
+      trend: customersDelta >= 0 ? "up" : "down",
       icon: Users,
       color: "from-indigo-500 to-blue-600",
       bgColor: "bg-indigo-50",
@@ -122,7 +117,6 @@ export default function Dashboard() {
                         <span className={stat.trend === "up" ? "text-emerald-600" : "text-rose-600"}>
                           {stat.change}
                         </span>
-                        <span className="text-slate-400 ml-1">from last month</span>
                       </div>
                     )}
                   </div>
@@ -275,20 +269,20 @@ export default function Dashboard() {
           <CardContent className="pl-2 pt-6">
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <AreaChart data={stats?.weeklySales || []} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
                       <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#fff', borderColor: '#e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     itemStyle={{ color: '#1e293b' }}
                   />
-                  <Area type="monotone" dataKey="sales" stroke="#6366f1" fillOpacity={1} fill="url(#colorSales)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="total" stroke="#6366f1" fillOpacity={1} fill="url(#colorSales)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -304,7 +298,7 @@ export default function Dashboard() {
               </Link>
             </div>
             <CardDescription>
-              Latest sales from today
+              Latest sales
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-6">

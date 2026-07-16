@@ -74,7 +74,10 @@ export default function OwnerDashboard() {
   const { data: sales = [] } = useQuery<(Sale & { payments?: SalePayment[] })[]>({
     queryKey: ["/api/sales"],
     queryFn: async () => {
-      const res = await fetch("/api/sales");
+      // storage.getSales() defaults to the 100 most-recent rows; without an
+      // explicit high limit, 30-day metrics below silently drop older sales
+      // once the pharmacy does more than 100 sales in a rolling 30 days.
+      const res = await fetch("/api/sales?limit=5000");
       if (!res.ok) throw new Error("Failed to fetch sales");
       return res.json();
     },
@@ -114,16 +117,24 @@ export default function OwnerDashboard() {
   const revenueToday = todaySales.reduce((sum, s) => sum + Number(s.total), 0);
   const avgDailySales = totalRevenue30Days / 30;
 
-  const salesByDay = last7DaysSales.reduce((acc, sale) => {
-    const day = parseServerDate(sale.createdAt).toLocaleDateString('en-IN', { weekday: 'short' });
-    acc[day] = (acc[day] || 0) + Number(sale.total);
+  // Bucket by calendar date (not weekday name) so two different dates that
+  // share a weekday (e.g. this Monday and last Monday) never get summed
+  // together, and render in true chronological order for the trailing
+  // 7 days ending today.
+  const salesByDate = last7DaysSales.reduce((acc, sale) => {
+    const dateKey = localDateKey(sale.createdAt);
+    acc[dateKey] = (acc[dateKey] || 0) + Number(sale.total);
     return acc;
   }, {} as Record<string, number>);
 
-  const chartData = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => ({
-    name: day,
-    sales: salesByDay[day] || 0
-  }));
+  const chartData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today.getTime() - (6 - i) * 24 * 60 * 60 * 1000);
+    const dateKey = localDateKey(d);
+    return {
+      name: d.toLocaleDateString('en-IN', { weekday: 'short' }),
+      sales: salesByDate[dateKey] || 0,
+    };
+  });
 
   const paymentMethodBreakdown = last30DaysSales.reduce((acc, sale) => {
     for (const p of resolveSalePayments(sale, sale.payments)) {
@@ -137,7 +148,7 @@ export default function OwnerDashboard() {
     value: Number(value.toFixed(2))
   }));
 
-  const topSellingMedicines = medicines
+  const topSellingMedicines = [...medicines]
     .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5);
 

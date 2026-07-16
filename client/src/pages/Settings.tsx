@@ -43,6 +43,7 @@ import {
   UserCog
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -126,6 +127,8 @@ const emptyUserForm: UserFormData = {
 };
 
 export default function Settings() {
+  const [location] = useLocation();
+  const isUserManagementRoute = location === "/admin/users";
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
   const [userFormData, setUserFormData] = useState<UserFormData>(emptyUserForm);
   const [settings, setSettings] = useState<SettingsData>(defaultSettings);
@@ -412,8 +415,8 @@ export default function Settings() {
   };
 
   return (
-    <AppLayout title="Settings">
-      <Tabs defaultValue="users" className="space-y-4">
+    <AppLayout title={isUserManagementRoute ? "User Management" : "Settings"}>
+      <Tabs key={location} defaultValue={isUserManagementRoute ? "users" : "store"} className="space-y-4">
         <TabsList>
           <TabsTrigger value="users" data-testid="tab-users">
             <Users className="h-4 w-4 mr-2" /> Users

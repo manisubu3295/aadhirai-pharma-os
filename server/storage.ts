@@ -1970,11 +1970,12 @@ export class DatabaseStorage implements IStorage {
     if (!medicine) return undefined;
     
     const newQuantity = parseInt(medicine.quantity.toString()) + quantityChange;
+    const lowStockThreshold = Math.max(Number(medicine.reorderLevel) || 50, 1);
     let status = "In Stock";
-    
+
     if (newQuantity === 0) {
       status = "Out of Stock";
-    } else if (newQuantity < 50) {
+    } else if (newQuantity < lowStockThreshold) {
       status = "Low Stock";
     }
     
@@ -2292,43 +2293,70 @@ export class DatabaseStorage implements IStorage {
     activeOrders: number;
     lowStockItems: number;
     customersToday: number;
+    customersYesterday: number;
     totalReturns?: string;
     netRevenue?: string;
+    weeklySales: { date: string; day: string; total: number }[];
   }> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
     const revenueResult = await db.select({
       total: sql<string>`COALESCE(SUM(${sales.total}), 0)`
     }).from(sales);
-    
+
     const returnsResult = await db.select({
       total: sql<string>`COALESCE(SUM(${salesReturns.totalRefundAmount}), 0)`
     }).from(salesReturns);
-    
+
     const pendingOrders = await db.select({ count: sql<number>`count(*)` })
       .from(sales)
       .where(eq(sales.status, 'Pending'));
-    
+
     const lowStock = await db.select({ count: sql<number>`count(*)` })
       .from(medicines)
       .where(eq(medicines.status, 'Low Stock'));
-    
+
+    // CURRENT_DATE is the DB server's local date; this app is deployed
+    // single-machine on-prem, so DB-local time is pharmacy-local time.
+    // A JS-computed ISO string here previously shifted the boundary by
+    // the server's UTC offset (see DEPLOYMENT-GUIDE.md).
     const todayCustomers = await db.select({ count: sql<number>`count(*)` })
       .from(sales)
-      .where(sql`${sales.createdAt} >= ${today.toISOString()}`);
-    
+      .where(sql`${sales.createdAt}::date = CURRENT_DATE`);
+
+    const yesterdayCustomers = await db.select({ count: sql<number>`count(*)` })
+      .from(sales)
+      .where(sql`${sales.createdAt}::date = CURRENT_DATE - 1`);
+
+    // generate_series + to_char keep the whole trailing-7-day window and its
+    // weekday labels computed in the DB's own local calendar, so it can't
+    // drift from CURRENT_DATE the way a JS Date/toISOString computation would.
+    const weeklyRowsResult = await db.execute<{ date: string; day: string; total: string }>(sql`
+      SELECT gs.d::date::text AS date,
+             to_char(gs.d, 'Dy') AS day,
+             COALESCE(SUM(s.total), 0) AS total
+      FROM generate_series(CURRENT_DATE - 6, CURRENT_DATE, interval '1 day') AS gs(d)
+      LEFT JOIN sales s ON s.created_at::date = gs.d::date
+      GROUP BY gs.d
+      ORDER BY gs.d
+    `);
+    const weeklySales = weeklyRowsResult.rows.map(r => ({
+      date: r.date,
+      day: r.day,
+      total: parseFloat(r.total),
+    }));
+
     const totalRevenue = parseFloat(revenueResult[0]?.total || "0");
     const totalReturns = parseFloat(returnsResult[0]?.total || "0");
     const netRevenue = totalRevenue - totalReturns;
-    
+
     return {
       totalRevenue: totalRevenue.toFixed(2),
       activeOrders: Number(pendingOrders[0]?.count || 0),
       lowStockItems: Number(lowStock[0]?.count || 0),
       customersToday: Number(todayCustomers[0]?.count || 0),
+      customersYesterday: Number(yesterdayCustomers[0]?.count || 0),
       totalReturns: totalReturns.toFixed(2),
       netRevenue: netRevenue.toFixed(2),
+      weeklySales,
     };
   }
 
@@ -2942,7 +2970,7 @@ export class DatabaseStorage implements IStorage {
            SET quantity = quantity + $1,
                status = CASE
                  WHEN quantity + $1 <= 0 THEN 'Out of Stock'
-                 WHEN quantity + $1 < 50 THEN 'Low Stock'
+                 WHEN quantity + $1 < GREATEST(COALESCE(reorder_level, 50), 1) THEN 'Low Stock'
                  ELSE 'In Stock'
                END
            WHERE id = $2`,
