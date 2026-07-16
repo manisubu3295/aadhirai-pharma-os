@@ -54,6 +54,7 @@ interface Medicine {
   name: string;
   batchNumber: string;
   quantity: number;
+  consolidatedQty?: number;
 }
 
 interface InventoryBatch {
@@ -320,7 +321,7 @@ export default function StockAdjustments() {
                     ) : (
                       medicines.map(medicine => (
                         <SelectItem key={medicine.id} value={String(medicine.id)}>
-                          {medicine.name} (Total Stock: {medicine.quantity})
+                          {medicine.name} (Total Stock: {Number(medicine.consolidatedQty ?? medicine.quantity ?? 0)})
                         </SelectItem>
                       ))
                     )}
