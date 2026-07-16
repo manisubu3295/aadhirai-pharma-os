@@ -989,7 +989,7 @@ async function seedDefaultUsers() {
     const adminPassword = await bcrypt.default.hash("admin123", 10);
     // The role text here is the login-permission tier (SYSTEM_ROLES). The
     // 'admin' user is deliberately 'staff' (no privileged guard matches it);
-    // its actual menu access comes from the "Pharmacy Owner" role linked in
+    // its actual menu access comes from the "Admin" role linked in
     // seedDefaultRoles(), curated to a specific default menu set. 'support'
     // is the full-access account for the support team (was 'owner').
     // syncRoleAssignments() links role_id and keeps the text in sync with
@@ -3368,8 +3368,8 @@ export class DatabaseStorage implements IStorage {
     }).returning();
     // systemRole 'staff' keeps this role deliberately unprivileged at the API
     // level; its access comes only from its menu groups (see below).
-    const pharmacyOwner = await db.insert(roles).values({
-      name: 'Pharmacy Owner', description: 'Default limited access for the pharmacy business owner', systemRole: 'staff',
+    const adminRole = await db.insert(roles).values({
+      name: 'Admin', description: 'Default limited access for the admin login', systemRole: 'staff',
     }).returning();
     const pharmacistRole = await db.insert(roles).values({ name: 'Pharmacist', description: 'Pharmacist role', systemRole: 'pharmacist' }).returning();
     const cashierRole = await db.insert(roles).values({ name: 'Cashier', description: 'Cashier role', systemRole: 'cashier' }).returning();
@@ -3377,17 +3377,17 @@ export class DatabaseStorage implements IStorage {
     // Link the 4 default users to their matching role.
     // support -> Super Admin: full access, for the support team.
     await db.update(users).set({ roleId: superAdmin[0].id }).where(eq(users.username, 'support'));
-    await db.update(users).set({ roleId: pharmacyOwner[0].id }).where(eq(users.username, 'admin'));
+    await db.update(users).set({ roleId: adminRole[0].id }).where(eq(users.username, 'admin'));
     await db.update(users).set({ roleId: pharmacistRole[0].id }).where(eq(users.username, 'pharmacist'));
     await db.update(users).set({ roleId: cashierRole[0].id }).where(eq(users.username, 'cashier'));
 
-    // Dedicated menu group for the Pharmacy Owner role's default access -
-    // kept separate from the existing "Inventory & Purchase" group so the
-    // access boundary stays precise rather than over-granting from a
-    // broader existing group. Internal role/group names are kept as
-    // "Pharmacy Owner" for backward compatibility with
-    // ensurePharmacyOwnerAuditMenu() (looks the group up by this name on
-    // already-seeded DBs) even though the linked account is now 'admin'.
+    // Dedicated menu group for the Admin role's default access - kept
+    // separate from the existing "Inventory & Purchase" group so the access
+    // boundary stays precise rather than over-granting from a broader
+    // existing group. The GROUP's internal name stays "Pharmacy Owner
+    // Access" for backward compatibility with ensurePharmacyOwnerAuditMenu()
+    // (looks the group up by this exact name on already-seeded DBs) even
+    // though the ROLE it's linked to is now named "Admin" in Role Master.
     const ownerAccessGroup = await db.insert(menuGroups).values({
       name: 'Pharmacy Owner Access', description: 'Default menus for the admin login',
     }).returning();
@@ -3406,7 +3406,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    await db.insert(roleMenuGroups).values({ roleId: pharmacyOwner[0].id, menuGroupId: ownerAccessGroup[0].id });
+    await db.insert(roleMenuGroups).values({ roleId: adminRole[0].id, menuGroupId: ownerAccessGroup[0].id });
 
     console.log("Default roles seeded");
   }
