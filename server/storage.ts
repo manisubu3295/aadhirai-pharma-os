@@ -3392,7 +3392,7 @@ export class DatabaseStorage implements IStorage {
       name: 'Pharmacy Owner Access', description: 'Default menus for the admin login',
     }).returning();
     const ownerAccessKeys = [
-      'dashboard', 'sales.refund', 'inventory.medicines', 'inventory.returns',
+      'dashboard', 'sales.new', 'sales.refund', 'inventory.medicines', 'inventory.returns',
       'customers.accounts', 'customers.doctors', 'customers.collections',
       'reports.sales', 'reports.doctor-referrals', 'admin.audit',
       'operations.stock-adjustments', 'admin.locations', 'help.guide',

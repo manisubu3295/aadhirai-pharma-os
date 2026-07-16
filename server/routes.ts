@@ -2574,10 +2574,13 @@ export async function registerRoutes(
     }
   });
 
+  // Also the general "Edit User" endpoint (Settings > User Management):
+  // name/email/phone are optional passthrough fields alongside the
+  // required role change, so the client can send one request instead of two.
   app.put("/api/admin/users/:id/role", requireRole("owner", "admin"), async (req, res) => {
     try {
       const userId = req.params.id;
-      const { roleId } = req.body;
+      const { roleId, name, email, phone } = req.body;
       if (roleId !== null && typeof roleId !== "number") {
         return res.status(400).json({ error: "roleId must be a number or null" });
       }
@@ -2604,7 +2607,11 @@ export async function registerRoutes(
           }
         }
       }
-      const user = await storage.updateUser(userId, { roleId, role });
+      const updates: Record<string, unknown> = { roleId, role };
+      if (typeof name === "string") updates.name = name;
+      if (typeof email === "string") updates.email = email;
+      if (typeof phone === "string") updates.phone = phone;
+      const user = await storage.updateUser(userId, updates);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }

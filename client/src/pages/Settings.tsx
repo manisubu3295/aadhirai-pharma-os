@@ -39,7 +39,8 @@ import {
   XCircle,
   Loader2,
   Key,
-  DatabaseBackup
+  DatabaseBackup,
+  UserCog
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
@@ -131,6 +132,9 @@ export default function Settings() {
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
+  const [editUserTarget, setEditUserTarget] = useState<User | null>(null);
+  const [editUserForm, setEditUserForm] = useState({ name: "", email: "", phone: "", roleId: null as number | null });
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -302,6 +306,31 @@ export default function Settings() {
     },
   });
 
+  const editUserMutation = useMutation({
+    mutationFn: async ({ userId, data }: { userId: string; data: typeof editUserForm }) => {
+      const res = await fetch(`/api/admin/users/${userId}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Failed to update user");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setEditUserDialogOpen(false);
+      setEditUserTarget(null);
+      toast({ title: "User updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update user", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleCreateUser = () => {
     if (!userFormData.username || !userFormData.password || !userFormData.name) {
       toast({ title: "Please fill all required fields", variant: "destructive" });
@@ -316,6 +345,21 @@ export default function Settings() {
       return;
     }
     resetPasswordMutation.mutate({ userId: resetPasswordUser.id, newPassword });
+  };
+
+  const openEditUserDialog = (user: User) => {
+    setEditUserTarget(user);
+    setEditUserForm({ name: user.name, email: user.email || "", phone: user.phone || "", roleId: user.roleId });
+    setEditUserDialogOpen(true);
+  };
+
+  const handleEditUser = () => {
+    if (!editUserTarget) return;
+    if (!editUserForm.name.trim()) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    editUserMutation.mutate({ userId: editUserTarget.id, data: editUserForm });
   };
 
   const handleSaveStoreSettings = () => {
@@ -449,6 +493,17 @@ export default function Settings() {
                             )}
                           </TableCell>
                           <TableCell className="text-center">
+                            {(currentUser?.role === "owner" || currentUser?.role === "admin") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEditUserDialog(user)}
+                                data-testid={`button-edit-user-${user.id}`}
+                              >
+                                <UserCog className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                            )}
                             {(currentUser?.role === "owner" || currentUser?.role === "admin") && user.role !== "owner" && (
                               <Button
                                 variant="ghost"
@@ -1039,6 +1094,90 @@ export default function Settings() {
               data-testid="button-confirm-reset-password"
             >
               {resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="h-5 w-5" />
+              Edit User
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Editing <span className="font-medium">{editUserTarget?.username}</span> (username can't be changed)
+            </p>
+            <div>
+              <Label htmlFor="editUserName">Name</Label>
+              <Input
+                id="editUserName"
+                value={editUserForm.name}
+                onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
+                className="mt-1.5"
+                data-testid="input-edit-user-name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="editUserPhone">Phone</Label>
+                <Input
+                  id="editUserPhone"
+                  value={editUserForm.phone}
+                  onChange={(e) => setEditUserForm({ ...editUserForm, phone: e.target.value })}
+                  className="mt-1.5"
+                  data-testid="input-edit-user-phone"
+                />
+              </div>
+              <div>
+                <Label htmlFor="editUserEmail">Email</Label>
+                <Input
+                  id="editUserEmail"
+                  type="email"
+                  value={editUserForm.email}
+                  onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                  className="mt-1.5"
+                  data-testid="input-edit-user-email"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="editUserRoleId">Role</Label>
+              <Select
+                value={editUserForm.roleId != null ? String(editUserForm.roleId) : "none"}
+                onValueChange={(v) =>
+                  setEditUserForm({ ...editUserForm, roleId: v === "none" ? null : parseInt(v) })
+                }
+              >
+                <SelectTrigger className="mt-1.5" data-testid="select-edit-user-role-id">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (staff — menu-only access)</SelectItem>
+                  {roles.filter((r) => r.isActive).map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)}>
+                      {r.name}
+                      {r.systemRole === "owner" ? " (full access)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Controls both login permissions and menu visibility — manage roles in Role Master.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditUserDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleEditUser}
+              disabled={editUserMutation.isPending}
+              data-testid="button-save-edit-user"
+            >
+              {editUserMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
