@@ -84,10 +84,10 @@ export function Header({ title, onToggleSidebar }: { title: string; onToggleSide
 
   const expiredMedicines = medicines.filter(m => isExpired(m.expiryDate));
 
-  const lowStockMedicines = medicines.filter(m => {
-    const qty = parseInt(m.quantity) || 0;
-    return qty > 0 && qty < 50;
-  });
+  // status reflects total stock across all of a medicine's batches
+  // (against its own reorder level), not any single batch or a hardcoded
+  // threshold.
+  const lowStockMedicines = medicines.filter(m => m.status === "Low Stock");
 
   const recentCreditBills = sales.filter(s => {
     if (!isSaleCreditBill(s, s.payments)) return false;

@@ -36,8 +36,11 @@ export default function Dashboard() {
     },
   });
 
-  const lowStockMedicines = medicines.filter((m: any) => m.quantity <= m.reorderLevel && m.quantity > 0);
-  const outOfStockMedicines = medicines.filter((m: any) => m.quantity === 0);
+  // status reflects total stock across all of a medicine's batches, not
+  // any single batch — a medicine with plenty of stock overall shouldn't
+  // alert here just because one particular batch is running low.
+  const lowStockMedicines = medicines.filter((m: any) => m.status === "Low Stock");
+  const outOfStockMedicines = medicines.filter((m: any) => m.status === "Out of Stock");
   const expiringMedicines = medicines.filter((m: any) => isNearExpiry(m.expiryDate, threeMonthsFromNow()));
   const expiredMedicines = medicines.filter((m: any) => isExpired(m.expiryDate));
 

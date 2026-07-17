@@ -1461,7 +1461,14 @@ export class DatabaseStorage implements IStorage {
           CASE
             WHEN has_batches.enabled THEN COALESCE(batch_stock_total.available_qty_base, 0)
             ELSE m.quantity
-          END::int AS consolidated_quantity
+          END::int AS consolidated_quantity,
+          CASE
+            WHEN (CASE WHEN has_batches.enabled THEN COALESCE(batch_stock_total.available_qty_base, 0) ELSE m.quantity END) <= 0
+              THEN 'Out of Stock'
+            WHEN (CASE WHEN has_batches.enabled THEN COALESCE(batch_stock_total.available_qty_base, 0) ELSE m.quantity END) < GREATEST(COALESCE(m.reorder_level, 50), 1)
+              THEN 'Low Stock'
+            ELSE 'In Stock'
+          END AS status
         FROM medicines m
         CROSS JOIN has_batches
         LEFT JOIN batch_stock
@@ -2368,9 +2375,32 @@ export class DatabaseStorage implements IStorage {
       .from(sales)
       .where(eq(sales.status, 'Pending'));
 
-    const lowStock = await db.select({ count: sql<number>`count(*)` })
-      .from(medicines)
-      .where(eq(medicines.status, 'Low Stock'));
+    // Raw SQL rather than the medicines.status column: that column is a
+    // manually-maintained shadow value that can drift, and even when
+    // fresh it's keyed off whichever single batch a medicine's legacy
+    // batch_number/expiry_date columns happen to match — not the total
+    // across all of that medicine's batches. A pharmacy owner only cares
+    // about total stock, so this sums per medicine across every batch.
+    const lowStockRawResult = await pool.query(`
+      WITH has_batches AS (
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'inventory_batches'
+        ) AS enabled
+      ),
+      batch_totals AS (
+        SELECT medicine_id, COALESCE(SUM(available_qty_base), 0)::int AS total_qty
+        FROM inventory_batches
+        GROUP BY medicine_id
+      )
+      SELECT COUNT(*)::int AS count
+      FROM medicines m
+      CROSS JOIN has_batches
+      LEFT JOIN batch_totals bt ON bt.medicine_id = m.id
+      WHERE (CASE WHEN has_batches.enabled THEN COALESCE(bt.total_qty, 0) ELSE COALESCE(m.quantity, 0) END) > 0
+        AND (CASE WHEN has_batches.enabled THEN COALESCE(bt.total_qty, 0) ELSE COALESCE(m.quantity, 0) END) < GREATEST(COALESCE(m.reorder_level, 50), 1)
+    `);
+    const lowStock = [{ count: Number(lowStockRawResult.rows[0]?.count || 0) }];
 
     // CURRENT_DATE is the DB server's local date; this app is deployed
     // single-machine on-prem, so DB-local time is pharmacy-local time.
