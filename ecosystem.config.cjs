@@ -5,7 +5,7 @@
 module.exports = {
   apps: [
     {
-      name: "aadhirai-pharma",
+      name: "shanthi-pharma",
       script: "dist/index.cjs",
       cwd: __dirname,
       env: {
