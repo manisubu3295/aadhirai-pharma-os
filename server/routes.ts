@@ -297,6 +297,76 @@ function requireRole(...roles: string[]) {
   };
 }
 
+// Checks the same canView permission Menu Management/User Access already
+// compute for a menu key, instead of a hardcoded role-tier string — so a
+// specific Role Master role (e.g. "Admin", systemRole 'staff') that's been
+// explicitly granted a screen stays in sync with the backend automatically,
+// with no separate literal to fall out of date. 'owner' tier sees every
+// menu (see getUserNavigation's own bypass), so this alone covers "owner or
+// whoever has been explicitly granted this screen". Use requireRoleOrMenu
+// instead when a specific tier (e.g. cashier) must stay unconditionally
+// excluded regardless of what the no-explicit-assignment default menu
+// fallback would otherwise grant it.
+function requireMenuAccess(menuKey: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const user = req.user || await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const menus = await storage.getUserNavigation(user.id, user.role, user.roleId ?? null);
+    const menu = menus.find(m => m.key === menuKey);
+    if (!menu?.canView) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    req.user = user;
+    return next();
+  };
+}
+
+// allowedTiers pass unconditionally (their existing, already-correct
+// behavior). deniedTiers are unconditionally blocked even if the
+// no-explicit-assignment default menu fallback would otherwise grant them
+// the key (e.g. cashier must stay excluded from stock adjustments
+// regardless). Everyone else — typically systemRole 'staff', i.e. a
+// specific Role Master role like Admin — is checked against their actual
+// menu grant, so a role explicitly given this screen via Menu Management
+// works without loosening access for a tier deliberately excluded above.
+function requireRoleOrMenu(allowedTiers: string[], deniedTiers: string[], menuKey: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const user = req.user || await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    if (allowedTiers.includes(user.role)) {
+      req.user = user;
+      return next();
+    }
+    if (deniedTiers.includes(user.role)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const menus = await storage.getUserNavigation(user.id, user.role, user.roleId ?? null);
+    const menu = menus.find(m => m.key === menuKey);
+    if (!menu?.canView) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    req.user = user;
+    return next();
+  };
+}
+
 const AUDIT_MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // Skip: audit-log writes themselves, and the assistant (it writes its own
 // richer audit entries in assistant.service.ts).
@@ -677,7 +747,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/users", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/users", requireMenuAccess("admin.users"), async (req, res) => {
     try {
       const users = await storage.getUsers();
       const usersWithoutPasswords = users.map(({ password: _, ...u }) => u);
@@ -720,7 +790,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/users/:id/reset-password", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/users/:id/reset-password", requireMenuAccess("admin.users"), async (req, res) => {
     try {
       const userId = req.params.id;
       const { newPassword } = req.body;
@@ -2287,7 +2357,7 @@ export async function registerRoutes(
   // /api/settings endpoints above (keys: backup_frequency, backup_last_run,
   // backup_last_status) - these two are for the actions that endpoint can't
   // do: listing files on disk and triggering an immediate backup.
-  app.get("/api/admin/backup/status", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/admin/backup/status", requireMenuAccess("admin.settings"), async (req, res) => {
     try {
       const backups = listBackups();
       res.json({ backups });
@@ -2297,7 +2367,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/backup/run", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/admin/backup/run", requireMenuAccess("admin.settings"), async (req, res) => {
     try {
       const result = await runBackup();
       await storage.upsertSetting("backup_last_run", new Date().toISOString());
@@ -2344,7 +2414,7 @@ export async function registerRoutes(
   });
 
   // Menu Management Admin APIs
-  app.get("/api/admin/menus", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/admin/menus", requireMenuAccess("admin.menus"), async (req, res) => {
     try {
       const menus = await storage.getMenus();
       res.json(menus);
@@ -2354,7 +2424,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/menus", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/admin/menus", requireMenuAccess("admin.menus"), async (req, res) => {
     try {
       const menu = await storage.createMenu(req.body);
       res.status(201).json(menu);
@@ -2364,7 +2434,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/admin/menus/:id", requireRole("owner", "admin"), async (req, res) => {
+  app.put("/api/admin/menus/:id", requireMenuAccess("admin.menus"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const menu = await storage.updateMenu(id, req.body);
@@ -2378,7 +2448,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/menus/:id", requireRole("owner", "admin"), async (req, res) => {
+  app.delete("/api/admin/menus/:id", requireMenuAccess("admin.menus"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteMenu(id);
@@ -2393,7 +2463,7 @@ export async function registerRoutes(
   });
 
   // Menu Groups Admin APIs
-  app.get("/api/admin/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/admin/menu-groups", requireMenuAccess("admin.groups"), async (req, res) => {
     try {
       const groups = await storage.getMenuGroups();
       res.json(groups);
@@ -2403,7 +2473,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/admin/menu-groups", requireMenuAccess("admin.groups"), async (req, res) => {
     try {
       const group = await storage.createMenuGroup(req.body);
       res.status(201).json(group);
@@ -2413,7 +2483,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/admin/menu-groups/:id", requireRole("owner", "admin"), async (req, res) => {
+  app.put("/api/admin/menu-groups/:id", requireMenuAccess("admin.groups"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const group = await storage.updateMenuGroup(id, req.body);
@@ -2427,7 +2497,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/menu-groups/:id", requireRole("owner", "admin"), async (req, res) => {
+  app.delete("/api/admin/menu-groups/:id", requireMenuAccess("admin.groups"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteMenuGroup(id);
@@ -2441,7 +2511,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/menu-groups/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/admin/menu-groups/:id/menus", requireMenuAccess("admin.groups"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const menuLinks = await storage.getMenuGroupMenus(id);
@@ -2452,7 +2522,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/admin/menu-groups/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+  app.put("/api/admin/menu-groups/:id/menus", requireMenuAccess("admin.groups"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { menuIds } = req.body;
@@ -2468,7 +2538,7 @@ export async function registerRoutes(
   });
 
   // Role Master APIs
-  app.get("/api/admin/roles", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/admin/roles", requireMenuAccess("admin.roles"), async (req, res) => {
     try {
       const roles = await storage.getRoles();
       res.json(roles);
@@ -2478,7 +2548,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/roles", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/admin/roles", requireMenuAccess("admin.roles"), async (req, res) => {
     try {
       const parsed = insertRoleSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -2492,7 +2562,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/admin/roles/:id", requireRole("owner", "admin"), async (req, res) => {
+  app.put("/api/admin/roles/:id", requireMenuAccess("admin.roles"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const parsed = insertRoleSchema.partial().safeParse(req.body);
@@ -2526,7 +2596,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/roles/:id", requireRole("owner", "admin"), async (req, res) => {
+  app.delete("/api/admin/roles/:id", requireMenuAccess("admin.roles"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const inUse = await storage.countActiveUsersByRoleId(id);
@@ -2544,7 +2614,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/roles/:id/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/admin/roles/:id/menu-groups", requireMenuAccess("admin.roles"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const groupLinks = await storage.getRoleMenuGroups(id);
@@ -2555,7 +2625,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/admin/roles/:id/menu-groups", requireRole("owner", "admin"), async (req, res) => {
+  app.put("/api/admin/roles/:id/menu-groups", requireMenuAccess("admin.roles"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { groupIds } = req.body;
@@ -2571,7 +2641,7 @@ export async function registerRoutes(
   });
 
   // User Menu Access Admin APIs
-  app.get("/api/admin/users/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+  app.get("/api/admin/users/:id/menus", requireMenuAccess("admin.user-access"), async (req, res) => {
     try {
       const userId = req.params.id;
       const [directMenus, userGroups] = await Promise.all([
@@ -2585,7 +2655,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/admin/users/:id/menus", requireRole("owner", "admin"), async (req, res) => {
+  app.put("/api/admin/users/:id/menus", requireMenuAccess("admin.user-access"), async (req, res) => {
     try {
       const userId = req.params.id;
       const { permissions, groupIds } = req.body;
@@ -2608,7 +2678,7 @@ export async function registerRoutes(
   // Also the general "Edit User" endpoint (Settings > User Management):
   // name/email/phone are optional passthrough fields alongside the
   // required role change, so the client can send one request instead of two.
-  app.put("/api/admin/users/:id/role", requireRole("owner", "admin"), async (req, res) => {
+  app.put("/api/admin/users/:id/role", requireMenuAccess("admin.users"), async (req, res) => {
     try {
       const userId = req.params.id;
       const { roleId, name, email, phone } = req.body;
@@ -2670,7 +2740,7 @@ export async function registerRoutes(
   });
 
   // Seed menus endpoint (for initial setup)
-  app.post("/api/admin/seed-menus", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/admin/seed-menus", requireMenuAccess("admin.menus"), async (req, res) => {
     try {
       await storage.seedDefaultMenus();
       res.json({ message: "Default menus seeded successfully" });
@@ -3169,7 +3239,7 @@ export async function registerRoutes(
   });
   
   // Approve request (owner/admin only)
-  app.post("/api/approvals/:id/approve", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/approvals/:id/approve", requireRoleOrMenu(["owner"], ["pharmacist", "cashier"], "operations.approvals"), async (req, res) => {
     try {
       const user = await storage.getUser(req.session.userId!);
       const request = await storage.approveRequest(
@@ -3190,7 +3260,7 @@ export async function registerRoutes(
   });
   
   // Reject request (owner/admin only)
-  app.post("/api/approvals/:id/reject", requireRole("owner", "admin"), async (req, res) => {
+  app.post("/api/approvals/:id/reject", requireRoleOrMenu(["owner"], ["pharmacist", "cashier"], "operations.approvals"), async (req, res) => {
     try {
       const user = await storage.getUser(req.session.userId!);
       const request = await storage.rejectRequest(
@@ -3244,7 +3314,7 @@ export async function registerRoutes(
   });
   
   // Create stock adjustment — increases/decreases an existing batch only.
-  app.post("/api/stock-adjustments", requireRole("owner", "admin", "pharmacist"), async (req, res) => {
+  app.post("/api/stock-adjustments", requireRoleOrMenu(["owner", "pharmacist"], ["cashier"], "operations.stock-adjustments"), async (req, res) => {
     try {
       const user = await storage.getUser(req.session.userId!);
 

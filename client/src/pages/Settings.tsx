@@ -176,25 +176,31 @@ export default function Settings() {
 
   useEffect(() => {
     if (savedSettings) {
+      // A key is only absent (undefined) if it has never been saved — once
+      // saved, even as "", that's a deliberate value and must not be
+      // clobbered back to the placeholder default (savedSettings.x || y
+      // would do exactly that, since "" is falsy).
+      const withDefault = (value: string | undefined, fallback: string) =>
+        value !== undefined ? value : fallback;
       setSettings({
-        storeName: savedSettings.storeName || defaultSettings.storeName,
-        storePhone: savedSettings.storePhone || defaultSettings.storePhone,
-        storeAddress: savedSettings.storeAddress || defaultSettings.storeAddress,
-        storeEmail: savedSettings.storeEmail || defaultSettings.storeEmail,
-        dlNo: savedSettings.dlNo || defaultSettings.dlNo,
-        gstin: savedSettings.gstin || defaultSettings.gstin,
-        stateCode: savedSettings.stateCode || defaultSettings.stateCode,
-        autoGst: savedSettings.autoGst || defaultSettings.autoGst,
-        invoicePrefix: savedSettings.invoicePrefix || defaultSettings.invoicePrefix,
-        startNumber: savedSettings.startNumber || defaultSettings.startNumber,
-        showMrp: savedSettings.showMrp || defaultSettings.showMrp,
-        showGstBreakup: savedSettings.showGstBreakup || defaultSettings.showGstBreakup,
-        showDoctor: savedSettings.showDoctor || defaultSettings.showDoctor,
-        printOnSave: savedSettings.printOnSave || defaultSettings.printOnSave,
-        defaultGrnDiscountRate: savedSettings.defaultGrnDiscountRate || defaultSettings.defaultGrnDiscountRate,
+        storeName: withDefault(savedSettings.storeName, defaultSettings.storeName),
+        storePhone: withDefault(savedSettings.storePhone, defaultSettings.storePhone),
+        storeAddress: withDefault(savedSettings.storeAddress, defaultSettings.storeAddress),
+        storeEmail: withDefault(savedSettings.storeEmail, defaultSettings.storeEmail),
+        dlNo: withDefault(savedSettings.dlNo, defaultSettings.dlNo),
+        gstin: withDefault(savedSettings.gstin, defaultSettings.gstin),
+        stateCode: withDefault(savedSettings.stateCode, defaultSettings.stateCode),
+        autoGst: withDefault(savedSettings.autoGst, defaultSettings.autoGst),
+        invoicePrefix: withDefault(savedSettings.invoicePrefix, defaultSettings.invoicePrefix),
+        startNumber: withDefault(savedSettings.startNumber, defaultSettings.startNumber),
+        showMrp: withDefault(savedSettings.showMrp, defaultSettings.showMrp),
+        showGstBreakup: withDefault(savedSettings.showGstBreakup, defaultSettings.showGstBreakup),
+        showDoctor: withDefault(savedSettings.showDoctor, defaultSettings.showDoctor),
+        printOnSave: withDefault(savedSettings.printOnSave, defaultSettings.printOnSave),
+        defaultGrnDiscountRate: withDefault(savedSettings.defaultGrnDiscountRate, defaultSettings.defaultGrnDiscountRate),
         defaultGrnGstMode: savedSettings.defaultGrnGstMode === "header" ? "header" : "item",
-        enableCardPayment: savedSettings.enableCardPayment || defaultSettings.enableCardPayment,
-        enableCreditBilling: savedSettings.enableCreditBilling || defaultSettings.enableCreditBilling,
+        enableCardPayment: withDefault(savedSettings.enableCardPayment, defaultSettings.enableCardPayment),
+        enableCreditBilling: withDefault(savedSettings.enableCreditBilling, defaultSettings.enableCreditBilling),
       });
     }
   }, [savedSettings]);
