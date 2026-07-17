@@ -13,18 +13,24 @@ function ensureBackupDir() {
   fs.mkdirSync(backupDir, { recursive: true });
 }
 
-// The installer writes PG_BIN_PATH to .env after detecting the client's
-// PostgreSQL install location (same 15-18 search it already does for
-// psql.exe). Falls back to searching directly in case PG_BIN_PATH isn't
-// set (e.g. an install from before this feature existed).
+const PG_DUMP_BIN = process.platform === "win32" ? "pg_dump.exe" : "pg_dump";
+
+// The Windows installer writes PG_BIN_PATH to .env after detecting the
+// client's PostgreSQL install location (same search it already does for
+// psql.exe). On Linux, pg_dump is normally already on PATH (installed via
+// apt/yum's postgresql-client package), so no directory search is needed —
+// an empty string tells spawn() to resolve it from PATH directly.
 function findPgBinPath(): string | null {
   const configured = process.env.PG_BIN_PATH;
-  if (configured && fs.existsSync(path.join(configured, "pg_dump.exe"))) {
+  if (configured && fs.existsSync(path.join(configured, PG_DUMP_BIN))) {
     return configured;
+  }
+  if (process.platform !== "win32") {
+    return "";
   }
   for (const version of [18, 17, 16, 15]) {
     const dir = `C:\\Program Files\\PostgreSQL\\${version}\\bin`;
-    if (fs.existsSync(path.join(dir, "pg_dump.exe"))) {
+    if (fs.existsSync(path.join(dir, PG_DUMP_BIN))) {
       return dir;
     }
   }
@@ -55,10 +61,10 @@ export async function runBackup(): Promise<BackupResult> {
   }
 
   const binPath = findPgBinPath();
-  if (!binPath) {
+  if (binPath === null) {
     return {
       success: false,
-      error: "pg_dump.exe not found. Set PG_BIN_PATH in .env to your PostgreSQL bin folder.",
+      error: `${PG_DUMP_BIN} not found. Set PG_BIN_PATH in .env to your PostgreSQL bin folder.`,
     };
   }
 
@@ -67,9 +73,11 @@ export async function runBackup(): Promise<BackupResult> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outFile = path.join(backupDir, `${database}-${timestamp}.sql`);
 
+  const pgDumpCmd = binPath ? path.join(binPath, PG_DUMP_BIN) : PG_DUMP_BIN;
+
   return new Promise((resolve) => {
     const proc = spawn(
-      path.join(binPath, "pg_dump.exe"),
+      pgDumpCmd,
       ["-h", host, "-p", port, "-U", user, "-F", "p", "-f", outFile, database],
       { env: { ...process.env, PGPASSWORD: password }, windowsHide: true },
     );
