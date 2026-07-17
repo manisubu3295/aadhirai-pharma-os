@@ -1152,6 +1152,7 @@ export interface IStorage {
   getUserNavigation(userId: string, role: string, roleId: number | null): Promise<MenuWithPermissions[]>;
   seedDefaultMenus(): Promise<void>;
   ensureDoctorReferralsMenu(): Promise<void>;
+  ensureStockMaintenanceMenu(): Promise<void>;
   seedDefaultRoles(): Promise<void>;
   ensurePharmacyOwnerAuditMenu(): Promise<void>;
   ensureUserGuideMenu(): Promise<void>;
@@ -1680,7 +1681,6 @@ export class DatabaseStorage implements IStorage {
             ,m.gst_rate
             ,m.hsn_code
             ,m.category
-            ,m.status
             ,m.reorder_level
             ,m.barcode
             ,m.min_stock
@@ -1708,7 +1708,11 @@ export class DatabaseStorage implements IStorage {
           b.gst_rate,
           b.hsn_code,
           b.category,
-          b.status,
+          CASE
+            WHEN b.consolidated_quantity <= 0 THEN 'Out of Stock'
+            WHEN b.consolidated_quantity < GREATEST(COALESCE(b.reorder_level, 50), 1) THEN 'Low Stock'
+            ELSE 'In Stock'
+          END AS status,
           b.reorder_level,
           b.barcode,
           b.min_stock,
@@ -1737,7 +1741,11 @@ export class DatabaseStorage implements IStorage {
           m.gst_rate,
           m.hsn_code,
           m.category,
-          m.status,
+          CASE
+            WHEN COALESCE(m.quantity, 0) <= 0 THEN 'Out of Stock'
+            WHEN COALESCE(m.quantity, 0) < GREATEST(COALESCE(m.reorder_level, 50), 1) THEN 'Low Stock'
+            ELSE 'In Stock'
+          END AS status,
           m.reorder_level,
           m.barcode,
           m.min_stock,
@@ -3353,6 +3361,7 @@ export class DatabaseStorage implements IStorage {
       { key: 'inventory.po', label: 'Purchase Orders', routePath: '/purchase-orders', icon: 'ClipboardList', displayOrder: 13 },
       { key: 'inventory.grn', label: 'Goods Receipt (GRN)', routePath: '/goods-receipts', icon: 'PackageCheck', displayOrder: 14 },
       { key: 'inventory.returns', label: 'Purchase Returns', routePath: '/purchase-returns', icon: 'Undo2', displayOrder: 15 },
+      { key: 'inventory.stock-maintenance', label: 'Stock Maintenance', routePath: '/stock-maintenance', icon: 'Layers', displayOrder: 16 },
       { key: 'customers.accounts', label: 'Customer Accounts', routePath: '/customers', icon: 'Users', displayOrder: 20 },
       { key: 'customers.doctors', label: 'Doctors', routePath: '/doctors', icon: 'Stethoscope', displayOrder: 21 },
       { key: 'customers.collections', label: 'Collections', routePath: '/collections', icon: 'CreditCard', displayOrder: 22 },
@@ -3396,7 +3405,7 @@ export class DatabaseStorage implements IStorage {
     // Link menus to groups
     const groupLinks = [
       { group: operations[0].id, keys: ['dashboard', 'sales.new', 'sales.pos', 'sales.credit', 'sales.refund', 'help.guide', 'operations.expenses', 'operations.approvals', 'operations.stock-adjustments', 'operations.shift-handover', 'operations.my-sales', 'operations.my-activity'] },
-      { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn', 'inventory.returns'] },
+      { group: inventory[0].id, keys: ['inventory.medicines', 'inventory.suppliers', 'inventory.rates', 'inventory.po', 'inventory.grn', 'inventory.returns', 'inventory.stock-maintenance'] },
       { group: customersGroup[0].id, keys: ['customers.accounts', 'customers.doctors', 'customers.collections'] },
       { group: reports[0].id, keys: ['reports.sales', 'reports.analytics', 'reports.doctor-referrals'] },
       { group: admin[0].id, keys: ['admin.audit', 'admin.tally', 'admin.day-closing', 'admin.locations', 'admin.settings', 'admin.users', 'admin.menus', 'admin.groups', 'admin.user-access', 'admin.roles'] },
@@ -3431,6 +3440,33 @@ export class DatabaseStorage implements IStorage {
         AND NOT EXISTS (
           SELECT 1 FROM menu_group_menus existing
           WHERE existing.menu_group_id = mgm.menu_group_id AND existing.menu_id = dr.id
+        )
+    `);
+  }
+
+  // Idempotent, runs every boot: adds the Stock Maintenance menu (if
+  // missing) and grants it to whichever groups already see other
+  // inventory.* menus, so it shows up — and becomes independently
+  // grantable via Menu Management — on already-seeded databases too, not
+  // just fresh installs.
+  async ensureStockMaintenanceMenu(): Promise<void> {
+    await pool.query(`
+      INSERT INTO menus (key, label, route_path, icon, display_order, is_active)
+      SELECT 'inventory.stock-maintenance', 'Stock Maintenance', '/stock-maintenance', 'Layers',
+             (SELECT COALESCE(MAX(display_order), 0) + 1 FROM menus WHERE key LIKE 'inventory.%'), true
+      WHERE NOT EXISTS (SELECT 1 FROM menus WHERE key = 'inventory.stock-maintenance')
+    `);
+
+    await pool.query(`
+      INSERT INTO menu_group_menus (menu_group_id, menu_id)
+      SELECT DISTINCT mgm.menu_group_id, sm.id
+      FROM menu_group_menus mgm
+      JOIN menus m ON m.id = mgm.menu_id
+      JOIN menus sm ON sm.key = 'inventory.stock-maintenance'
+      WHERE m.key LIKE 'inventory.%' AND m.key != 'inventory.stock-maintenance'
+        AND NOT EXISTS (
+          SELECT 1 FROM menu_group_menus existing
+          WHERE existing.menu_group_id = mgm.menu_group_id AND existing.menu_id = sm.id
         )
     `);
   }
