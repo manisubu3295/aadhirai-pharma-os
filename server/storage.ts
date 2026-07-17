@@ -1157,6 +1157,10 @@ export interface IStorage {
   ensureUserGuideMenu(): Promise<void>;
   syncRoleAssignments(): Promise<void>;
 
+  // Client-onboarding reset tool (support-only)
+  getInvoiceResetPreview(): Promise<{ sales: number; returns: number }>;
+  resetInvoices(): Promise<{ salesDeleted: number; returnsDeleted: number }>;
+
   // Supplier Ledger & Payments
   getSupplierLedger(supplierId: number): Promise<SupplierTransaction[]>;
   getSupplierBalance(supplierId: number): Promise<string>;
@@ -2287,6 +2291,52 @@ export class DatabaseStorage implements IStorage {
       client.release();
     }
   }
+
+  async getInvoiceResetPreview(): Promise<{ sales: number; returns: number }> {
+    const [salesResult, returnsResult] = await Promise.all([
+      pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM sales`),
+      pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM sales_returns`),
+    ]);
+    return {
+      sales: Number(salesResult.rows[0]?.count || 0),
+      returns: Number(returnsResult.rows[0]?.count || 0),
+    };
+  }
+
+  // Wipes the sales/invoice cluster only (customers, medicines, stock,
+  // doctors, and their commission accruals are deliberately left alone) so
+  // a client's demo invoices can be cleared before going live, with the
+  // next invoice starting back at #1.
+  async resetInvoices(): Promise<{ salesDeleted: number; returnsDeleted: number }> {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const preview = await client.query<{ sales: string; returns: string }>(`
+        SELECT
+          (SELECT COUNT(*) FROM sales)::text AS sales,
+          (SELECT COUNT(*) FROM sales_returns)::text AS returns
+      `);
+      await client.query(`
+        TRUNCATE sale_items, sale_payments, sale_batch_allocations, credit_payments,
+                 sales_return_items, sales_returns, sales
+        RESTART IDENTITY
+      `);
+      await client.query(`
+        UPDATE sequences SET current_value = 0, updated_at = NOW() WHERE name = 'invoice'
+      `);
+      await client.query("COMMIT");
+      return {
+        salesDeleted: Number(preview.rows[0]?.sales || 0),
+        returnsDeleted: Number(preview.rows[0]?.returns || 0),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
 
   async getDashboardStats(): Promise<{
     totalRevenue: string;

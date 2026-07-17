@@ -40,7 +40,9 @@ import {
   Loader2,
   Key,
   DatabaseBackup,
-  UserCog
+  UserCog,
+  AlertTriangle,
+  RotateCcw
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
@@ -138,6 +140,8 @@ export default function Settings() {
   const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
   const [editUserTarget, setEditUserTarget] = useState<User | null>(null);
   const [editUserForm, setEditUserForm] = useState({ name: "", email: "", phone: "", roleId: null as number | null });
+  const [resetInvoicesDialogOpen, setResetInvoicesDialogOpen] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState("");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -261,6 +265,40 @@ export default function Settings() {
     },
     onError: (error: Error) => {
       toast({ title: "Backup failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const { data: resetPreview, isLoading: resetPreviewLoading } = useQuery<{ sales: number; returns: number }>({
+    queryKey: ["/api/admin/reset-invoices/preview"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/reset-invoices/preview", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load reset preview");
+      return res.json();
+    },
+    enabled: resetInvoicesDialogOpen,
+  });
+
+  const resetInvoicesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/reset-invoices", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to reset invoices");
+      return data as { salesDeleted: number; returnsDeleted: number; backupFile: string };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries();
+      toast({
+        title: "Invoices reset",
+        description: `Deleted ${data.salesDeleted} invoice(s) and ${data.returnsDeleted} return(s). Next invoice starts at #1. A backup was saved first (${data.backupFile}).`,
+      });
+      setResetInvoicesDialogOpen(false);
+      setResetConfirmText("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Reset failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -432,6 +470,9 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="backup" data-testid="tab-backup">
             <DatabaseBackup className="h-4 w-4 mr-2" /> Backup
+          </TabsTrigger>
+          <TabsTrigger value="reset" data-testid="tab-reset">
+            <AlertTriangle className="h-4 w-4 mr-2" /> Reset
           </TabsTrigger>
         </TabsList>
 
@@ -956,7 +997,88 @@ export default function Settings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="reset">
+          <Card className="border-amber-200 dark:border-amber-900">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-500">
+                <AlertTriangle className="h-5 w-5" />
+                Reset Invoices
+              </CardTitle>
+              <CardDescription>
+                For onboarding a new client: once they're comfortable with the demo medicines and sales you walked them
+                through, use this to permanently delete every invoice and return so real billing starts fresh at invoice #1.
+                Medicines, stock, customers, doctors, locations, and all other settings are not affected. A full database
+                backup is taken automatically before anything is deleted.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="destructive"
+                onClick={() => setResetInvoicesDialogOpen(true)}
+                data-testid="button-reset-invoices"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset Invoices
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      <Dialog open={resetInvoicesDialogOpen} onOpenChange={(open) => { setResetInvoicesDialogOpen(open); if (!open) setResetConfirmText(""); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-500">
+              <AlertTriangle className="h-5 w-5" />
+              Reset Invoices
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {resetPreviewLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : (
+              <p className="text-sm">
+                This will permanently delete{" "}
+                <span className="font-semibold">{resetPreview?.sales ?? 0} invoice(s)</span> and{" "}
+                <span className="font-semibold">{resetPreview?.returns ?? 0} return(s)</span>. The next sale will be
+                invoiced as <span className="font-mono">#1</span>. Medicines, stock, customers, doctors, and all other
+                data are not affected. This cannot be undone from within the app — a database backup is taken first.
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="reset-confirm">Type RESET to confirm</Label>
+              <Input
+                id="reset-confirm"
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                placeholder="RESET"
+                data-testid="input-reset-confirm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetInvoicesDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={resetConfirmText !== "RESET" || resetInvoicesMutation.isPending}
+              onClick={() => resetInvoicesMutation.mutate()}
+              data-testid="button-confirm-reset-invoices"
+            >
+              {resetInvoicesMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RotateCcw className="h-4 w-4 mr-2" />
+              )}
+              Permanently Reset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
         <DialogContent className="max-w-lg">

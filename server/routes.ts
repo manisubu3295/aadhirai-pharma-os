@@ -2312,6 +2312,37 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/admin/reset-invoices/preview - counts shown in the confirmation
+  // dialog before the destructive reset below fires.
+  app.get("/api/admin/reset-invoices/preview", requireRole("owner"), async (req, res) => {
+    try {
+      const preview = await storage.getInvoiceResetPreview();
+      res.json(preview);
+    } catch (error) {
+      console.error("Error building invoice reset preview:", error);
+      res.status(500).json({ error: "Failed to load reset preview" });
+    }
+  });
+
+  // POST /api/admin/reset-invoices - clears the sales/invoice cluster only
+  // (medicines, stock, customers, doctors, and their commission accruals
+  // are deliberately left untouched) so a client's demo invoices can be
+  // wiped before going live, with the next invoice starting back at #1.
+  // A full backup is taken first so this is always recoverable.
+  app.post("/api/admin/reset-invoices", requireRole("owner"), async (req, res) => {
+    try {
+      const backupResult = await runBackup();
+      if (!backupResult.success) {
+        return res.status(500).json({ error: `Backup failed, reset aborted: ${backupResult.error}` });
+      }
+      const result = await storage.resetInvoices();
+      res.json({ ...result, backupFile: backupResult.file });
+    } catch (error) {
+      console.error("Error resetting invoices:", error);
+      res.status(500).json({ error: "Failed to reset invoices" });
+    }
+  });
+
   // Menu Management Admin APIs
   app.get("/api/admin/menus", requireRole("owner", "admin"), async (req, res) => {
     try {
