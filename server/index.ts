@@ -196,6 +196,12 @@ app.use((req, res, next) => {
     // shows up on already-seeded databases too, not just fresh installs.
     await storage.ensureDoctorReferralsMenu();
 
+    // Idempotent: adds the Stock Maintenance menu (and grants it to
+    // whichever groups already see other inventory.* menus) on every
+    // startup, so it becomes independently configurable via Menu
+    // Management on already-seeded databases too, not just fresh installs.
+    await storage.ensureStockMaintenanceMenu();
+
     // Seed default roles (must run after users + menus/groups exist)
     await storage.seedDefaultRoles();
 
