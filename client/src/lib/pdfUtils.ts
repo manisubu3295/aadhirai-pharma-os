@@ -67,7 +67,9 @@ export function generateSaleInvoicePdfBlob(
   items: SaleItem[],
   storeInfo: StoreInfo,
   invoiceSettings?: InvoiceSettings,
+  returns?: { totalRefundAmount: string }[],
 ): Promise<Blob> {
+  const totalRefunded = (returns || []).reduce((sum, r) => sum + Number(r.totalRefundAmount || 0), 0);
   const settings: Required<InvoiceSettings> = {
     showMrp: invoiceSettings?.showMrp ?? true,
     showGstBreakup: invoiceSettings?.showGstBreakup ?? true,
@@ -129,6 +131,12 @@ export function generateSaleInvoicePdfBlob(
       ? [[{ text: "Round Off:", style: "tableCell" }, { text: `₹${Number(sale.roundOff || 0).toFixed(2)}`, style: "tableCell", alignment: "right" as const }]]
       : []),
     [{ text: "TOTAL:", style: "total" }, { text: `₹${Number(sale.total || 0).toFixed(2)}`, style: "total", alignment: "right" }],
+    ...(totalRefunded > 0
+      ? [
+          [{ text: "Refunded:", style: "tableCell" }, { text: `-₹${totalRefunded.toFixed(2)}`, style: "tableCell", alignment: "right" as const }],
+          [{ text: "NET PAYABLE:", style: "total" }, { text: `₹${(Number(sale.total || 0) - totalRefunded).toFixed(2)}`, style: "total", alignment: "right" as const }],
+        ]
+      : []),
   ];
 
   const docDefinition: TDocumentDefinitions = {
