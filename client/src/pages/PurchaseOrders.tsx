@@ -143,7 +143,7 @@ const statusIcons: Record<string, React.ReactNode> = {
 };
 
 export default function PurchaseOrders() {
-  const { settings: appSettings } = useSettings();
+  const { settings: appSettings, isLoading: settingsLoading } = useSettings();
   const [searchTerm, setSearchTerm] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -1136,9 +1136,15 @@ export default function PurchaseOrders() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>Close</Button>
             <Button onClick={() => {
+              // Store name/address default to blank until Settings has
+              // loaded; printing before then would bake a blank header in.
+              if (settingsLoading) {
+                toast({ title: "Still loading store settings, try again in a moment" });
+                return;
+              }
               const printWindow = window.open("", "_blank");
               if (!printWindow) return;
-              
+
               printWindow.document.write(`
                 <!DOCTYPE html>
                 <html>

@@ -163,7 +163,7 @@ export default function GoodsReceipts() {
   const [receiptDateSortOrder, setReceiptDateSortOrder] = useState<"asc" | "desc">("desc");
 
   const { toast } = useToast();
-  const { settings: appSettings } = useSettings();
+  const { settings: appSettings, isLoading: settingsLoading } = useSettings();
   const queryClient = useQueryClient();
 
   const { data: suppliers = [] } = useQuery<Supplier[]>({
@@ -1110,9 +1110,15 @@ export default function GoodsReceipts() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>Close</Button>
             <Button onClick={() => {
+              // Store name/address default to blank until Settings has
+              // loaded; printing before then would bake a blank header in.
+              if (settingsLoading) {
+                toast({ title: "Still loading store settings, try again in a moment" });
+                return;
+              }
               const printWindow = window.open("", "_blank");
               if (!printWindow) return;
-              
+
               printWindow.document.write(`
                 <!DOCTYPE html>
                 <html>
