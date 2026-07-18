@@ -19,6 +19,7 @@ import { generateSaleInvoicePdfBlob } from "@/lib/pdfUtils";
 import { endOfLocalDay, formatAppDate, formatAppDateTime, parseServerDate, startOfLocalDay } from "@/lib/dateTime";
 import type { Sale as SaleType, SaleItem, SalePayment } from "@shared/schema";
 import { resolveSalePayments } from "@shared/salePayments";
+import { refundModeToBucket } from "@shared/salesReturns";
 
 interface Sale {
   id: number;
@@ -277,7 +278,15 @@ export default function Collections() {
     return acc;
   }, {} as Record<string, number>);
 
-  const grandTotal = Object.values(paymentTotals).reduce((a, b) => a + b, 0);
+  // Refunds are netted by refund mode (using return date, same window as
+  // "Net Collection" below) so each payment-method card reflects money
+  // actually retained, not gross sales before returns.
+  filteredReturns.forEach((ret) => {
+    const bucket = refundModeToBucket(ret.refundMode);
+    paymentTotals[bucket] = (paymentTotals[bucket] || 0) - safeParseFloat(ret.totalRefund);
+  });
+
+  const grandTotal = filteredSales.reduce((sum, sale) => sum + resolveSalePayments(sale, sale.payments).reduce((s, p) => s + p.amount, 0), 0);
 
   const staffCollections = filteredSales.reduce((acc, sale) => {
     const staffId = sale.userId || 0;
@@ -300,6 +309,24 @@ export default function Collections() {
 
     return acc;
   }, {} as Record<string, { name: string; cash: number; card: number; upi: number; credit: number; total: number; count: number }>);
+
+  // Attribute each refund back to the staff member who made the original
+  // sale (the sale may fall outside the current date filter even though the
+  // return date is inside it), so per-staff totals aren't left overstated.
+  filteredReturns.forEach((ret) => {
+    const originalSale = sales.find(s => s.id === ret.saleId);
+    const staff = originalSale ? users.find(u => u.id === (originalSale.userId || 0)) : undefined;
+    const staffName = staff?.name || staff?.username || "Unknown";
+
+    if (!staffCollections[staffName]) {
+      staffCollections[staffName] = { name: staffName, cash: 0, card: 0, upi: 0, credit: 0, total: 0, count: 0 };
+    }
+
+    const bucket = refundModeToBucket(ret.refundMode);
+    const amount = safeParseFloat(ret.totalRefund);
+    staffCollections[staffName].total -= amount;
+    staffCollections[staffName][bucket] -= amount;
+  });
 
   const staffCollectionsList = Object.values(staffCollections).filter(s => 
     !searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase())

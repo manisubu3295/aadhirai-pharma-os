@@ -197,6 +197,15 @@ export function SalesReturnDialog({ saleId, open, onOpenChange }: SalesReturnDia
       queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales-returns"] });
       queryClient.invalidateQueries({ queryKey: [`/api/sales/${saleId}/with-returns`] });
+      // Revenue/collection figures that read refunds from their own endpoints
+      // (rather than deriving from /api/sales-returns above) — without these,
+      // a refund wouldn't show up here until an unrelated refetch happened.
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/collections/monthly"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/collections/quarterly"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/collections/yearly"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/collections/by-item"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-sales"] });
       toast({ title: "Return saved, stock updated" });
       
       if (autoPrint && data?.id && saleData?.sale?.invoiceNo) {

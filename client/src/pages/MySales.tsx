@@ -32,7 +32,7 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { formatAppDateTime } from "@/lib/dateTime";
 import { useAuth } from "@/lib/auth";
-import type { SalePayment } from "@shared/schema";
+import type { SalePayment, SalesReturn } from "@shared/schema";
 import { resolveSalePayments, isSaleCreditBill } from "@shared/salePayments";
 
 interface Sale {
@@ -97,8 +97,24 @@ export default function MySales() {
     },
   });
 
+  const { data: salesReturns = [] } = useQuery<SalesReturn[]>({
+    queryKey: ["/api/sales-returns"],
+    queryFn: async () => {
+      const res = await fetch("/api/sales-returns");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const totalSales = sales.length;
-  const totalAmount = sales.reduce((sum, s) => sum + parseFloat(s.total || "0"), 0);
+  // Net against refunds issued against exactly these sales (regardless of
+  // when the refund happened) so this figure isn't left overstated after a
+  // return.
+  const saleIds = new Set(sales.map(s => s.id));
+  const totalRefunds = salesReturns
+    .filter(r => saleIds.has(r.originalSaleId))
+    .reduce((sum, r) => sum + Number(r.totalRefundAmount), 0);
+  const totalAmount = sales.reduce((sum, s) => sum + parseFloat(s.total || "0"), 0) - totalRefunds;
   const cashSales = sales.filter(s => resolveSalePayments(s, s.payments).some(p => p.method.toLowerCase() === "cash")).length;
   const creditSales = sales.filter(s => isSaleCreditBill(s, s.payments)).length;
 

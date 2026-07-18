@@ -31,3 +31,16 @@ export function computeReturnRefund(input: {
   const pricePerUnit = round2(refundAmount / quantityReturned);
   return { refundAmount, pricePerUnit };
 }
+
+/**
+ * sales_returns.refund_mode is cash/upi/card/adjustment (SalesReturnDialog.tsx);
+ * "adjustment" is used for refunds against credit bills, so it nets against
+ * the "credit" payment bucket the same way a credit sale would.
+ */
+export function refundModeToBucket(refundMode: string): "cash" | "card" | "upi" | "credit" {
+  const mode = refundMode.toLowerCase();
+  if (mode === "card") return "card";
+  if (mode === "upi") return "upi";
+  if (mode === "adjustment" || mode === "credit") return "credit";
+  return "cash";
+}

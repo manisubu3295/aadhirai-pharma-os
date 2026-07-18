@@ -2417,14 +2417,30 @@ export class DatabaseStorage implements IStorage {
     // generate_series + to_char keep the whole trailing-7-day window and its
     // weekday labels computed in the DB's own local calendar, so it can't
     // drift from CURRENT_DATE the way a JS Date/toISOString computation would.
+    // Refunds are netted per day (by return_date, same convention as the
+    // all-time netRevenue below) so a returned sale doesn't keep inflating
+    // that day's chart bar after the refund.
     const weeklyRowsResult = await db.execute<{ date: string; day: string; total: string }>(sql`
-      SELECT gs.d::date::text AS date,
-             to_char(gs.d, 'Dy') AS day,
-             COALESCE(SUM(s.total), 0) AS total
-      FROM generate_series(CURRENT_DATE - 6, CURRENT_DATE, interval '1 day') AS gs(d)
-      LEFT JOIN sales s ON s.created_at::date = gs.d::date
-      GROUP BY gs.d
-      ORDER BY gs.d
+      WITH days AS (
+        SELECT gs.d::date AS d, to_char(gs.d, 'Dy') AS day
+        FROM generate_series(CURRENT_DATE - 6, CURRENT_DATE, interval '1 day') AS gs(d)
+      ),
+      sales_by_day AS (
+        SELECT ${sales.createdAt}::date AS d, SUM(${sales.total}) AS total
+        FROM ${sales}
+        GROUP BY ${sales.createdAt}::date
+      ),
+      returns_by_day AS (
+        SELECT ${salesReturns.returnDate}::date AS d, SUM(${salesReturns.totalRefundAmount}) AS total
+        FROM ${salesReturns}
+        GROUP BY ${salesReturns.returnDate}::date
+      )
+      SELECT days.d::text AS date, days.day,
+             COALESCE(sales_by_day.total, 0) - COALESCE(returns_by_day.total, 0) AS total
+      FROM days
+      LEFT JOIN sales_by_day ON sales_by_day.d = days.d
+      LEFT JOIN returns_by_day ON returns_by_day.d = days.d
+      ORDER BY days.d
     `);
     const weeklySales = weeklyRowsResult.rows.map(r => ({
       date: r.date,
@@ -3323,12 +3339,16 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    // Default: staff gets view access to common menus. Used both when the
+    // user has no explicit assignments at all, and as a safety net below if
+    // whatever they ARE assigned resolves to zero viewable menus.
+    const buildDefaultMenus = () => allMenus
+      .filter(m => !m.key.startsWith('admin.') && !m.key.includes('settings') && !m.key.includes('audit'))
+      .map(menu => ({ ...menu, canView: true, canEdit: false }));
+
     // If user has no explicit assignments (direct, group, or role-group), use defaults based on role
     if (directMenus.length === 0 && userGroups.length === 0 && roleGroupMenuIds.length === 0) {
-      // Default: staff gets view access to common menus
-      return allMenus
-        .filter(m => !m.key.startsWith('admin.') && !m.key.includes('settings') && !m.key.includes('audit'))
-        .map(menu => ({ ...menu, canView: true, canEdit: false }));
+      return buildDefaultMenus();
     }
 
     // Build permissions map
@@ -3368,7 +3388,17 @@ export class DatabaseStorage implements IStorage {
         result.push({ ...menu, canView: perms.canView, canEdit: perms.canEdit });
       }
     }
-    
+
+    // The user IS assigned something (direct/group/role-group), but every
+    // menu it points to has since gone inactive (deactivated in Menu
+    // Management) or was explicitly revoked by a direct override, and
+    // nothing else fills in — resolving to a hard, unrecoverable lockout
+    // with no menus and no way to reach Menu Management to fix it. Fall
+    // back to the same safe default as the no-assignments case instead.
+    if (result.length === 0) {
+      return buildDefaultMenus();
+    }
+
     return result;
   }
 
