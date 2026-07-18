@@ -1138,7 +1138,7 @@ export default function Collections() {
                   showMrp: appSettings.showMrp,
                   showGstBreakup: appSettings.showGstBreakup,
                   showDoctor: appSettings.showDoctor,
-                  hideTaxDetails: Number(printSale.cgst) === 0 && Number(printSale.sgst) === 0,
+                  hideTaxDetails: !appSettings.autoGst,
                 }}
               />
             </div>
@@ -1169,7 +1169,7 @@ export default function Collections() {
                         showGstBreakup: appSettings.showGstBreakup,
                         showDoctor: appSettings.showDoctor,
                         hideStoreGstin: true,
-                        hideTaxDetails: Number(printSale.cgst) === 0 && Number(printSale.sgst) === 0,
+                        hideTaxDetails: !appSettings.autoGst,
                       },
                       printReturns,
                     );
