@@ -37,6 +37,12 @@ interface MenuGroupMenu {
   menuId: number;
 }
 
+// Stable reference so the fallback doesn't recreate a new array every render
+// while the query has no data yet — a fresh `[]` literal there would change
+// identity each render, and since the hydration effect below depends on
+// this value, that would re-fire it every render and infinite-loop.
+const EMPTY_GROUP_MENUS: MenuGroupMenu[] = [];
+
 export default function MenuGroups() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -143,7 +149,7 @@ export default function MenuGroups() {
     },
   });
 
-  const { data: groupMenus = [] } = useQuery<MenuGroupMenu[]>({
+  const { data: groupMenus = EMPTY_GROUP_MENUS } = useQuery<MenuGroupMenu[]>({
     queryKey: ["/api/admin/menu-groups", selectedGroup?.id, "menus"],
     queryFn: async () => {
       if (!selectedGroup) return [];
