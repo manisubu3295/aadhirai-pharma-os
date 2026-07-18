@@ -23,6 +23,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { inventoryPostingController } from "./controllers/inventory-posting.controller";
 import { getSaleCreditPortion, resolveSalePayments } from "@shared/salePayments";
+import { refundModeToBucket } from "@shared/salesReturns";
 import { assistantController } from "./controllers/assistant.controller";
 import { InventoryPostingRepository } from "./repositories/inventory-posting.repository";
 
@@ -1320,14 +1321,15 @@ export async function registerRoutes(
     try {
       const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
       const allSales = await storage.getSales(10000);
-      
+      const allReturns = await storage.getSalesReturns();
+
       const monthlyData: Record<string, { cash: number; card: number; upi: number; credit: number; total: number }> = {};
-      
+
       for (let month = 1; month <= 12; month++) {
         const monthKey = `${year}-${month.toString().padStart(2, '0')}`;
         monthlyData[monthKey] = { cash: 0, card: 0, upi: 0, credit: 0, total: 0 };
       }
-      
+
       allSales.forEach((sale) => {
         const saleDate = new Date(sale.createdAt);
         if (saleDate.getFullYear() === year) {
@@ -1345,14 +1347,26 @@ export async function registerRoutes(
           }
         }
       });
-      
+
+      allReturns.forEach((ret) => {
+        const returnDate = new Date(ret.returnDate);
+        if (returnDate.getFullYear() === year) {
+          const monthKey = `${year}-${(returnDate.getMonth() + 1).toString().padStart(2, '0')}`;
+          if (!monthlyData[monthKey]) return;
+          const bucket = refundModeToBucket(ret.refundMode);
+          const amount = parseFloat(ret.totalRefundAmount);
+          monthlyData[monthKey].total -= amount;
+          monthlyData[monthKey][bucket] -= amount;
+        }
+      });
+
       const result = Object.entries(monthlyData).map(([month, data]) => ({
         month,
         year,
         monthName: new Date(`${month}-01`).toLocaleString('default', { month: 'long' }),
         ...data
       }));
-      
+
       res.json(result);
     } catch (error) {
       console.error("Monthly collections error:", error);
@@ -1364,14 +1378,15 @@ export async function registerRoutes(
     try {
       const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
       const allSales = await storage.getSales(10000);
-      
+      const allReturns = await storage.getSalesReturns();
+
       const quarterlyData: Record<string, { cash: number; card: number; upi: number; credit: number; total: number }> = {
         'Q1': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 },
         'Q2': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 },
         'Q3': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 },
         'Q4': { cash: 0, card: 0, upi: 0, credit: 0, total: 0 }
       };
-      
+
       allSales.forEach((sale) => {
         const saleDate = new Date(sale.createdAt);
         if (saleDate.getFullYear() === year) {
@@ -1389,7 +1404,19 @@ export async function registerRoutes(
           }
         }
       });
-      
+
+      allReturns.forEach((ret) => {
+        const returnDate = new Date(ret.returnDate);
+        if (returnDate.getFullYear() === year) {
+          const month = returnDate.getMonth();
+          const quarter = month < 3 ? 'Q1' : month < 6 ? 'Q2' : month < 9 ? 'Q3' : 'Q4';
+          const bucket = refundModeToBucket(ret.refundMode);
+          const amount = parseFloat(ret.totalRefundAmount);
+          quarterlyData[quarter].total -= amount;
+          quarterlyData[quarter][bucket] -= amount;
+        }
+      });
+
       const result = Object.entries(quarterlyData).map(([quarter, data]) => ({
         quarter,
         year,
@@ -1406,13 +1433,14 @@ export async function registerRoutes(
   app.get("/api/reports/collections/yearly", async (req, res) => {
     try {
       const allSales = await storage.getSales(10000);
-      
+      const allReturns = await storage.getSalesReturns();
+
       const yearlyData: Record<number, { cash: number; card: number; upi: number; credit: number; total: number }> = {};
-      
+
       allSales.forEach((sale) => {
         const saleDate = new Date(sale.createdAt);
         const year = saleDate.getFullYear();
-        
+
         if (!yearlyData[year]) {
           yearlyData[year] = { cash: 0, card: 0, upi: 0, credit: 0, total: 0 };
         }
@@ -1427,7 +1455,19 @@ export async function registerRoutes(
           else yearlyData[year].cash += p.amount;
         }
       });
-      
+
+      allReturns.forEach((ret) => {
+        const returnDate = new Date(ret.returnDate);
+        const year = returnDate.getFullYear();
+        if (!yearlyData[year]) {
+          yearlyData[year] = { cash: 0, card: 0, upi: 0, credit: 0, total: 0 };
+        }
+        const bucket = refundModeToBucket(ret.refundMode);
+        const amount = parseFloat(ret.totalRefundAmount);
+        yearlyData[year].total -= amount;
+        yearlyData[year][bucket] -= amount;
+      });
+
       const result = Object.entries(yearlyData).map(([year, data]) => ({
         year: parseInt(year),
         ...data
@@ -1461,7 +1501,7 @@ export async function registerRoutes(
       });
       
       const itemData: Record<string, { name: string; qty: number; total: number }> = {};
-      
+
       for (const sale of filteredSales) {
         const items = await storage.getSaleItems(sale.id);
         items.forEach((item: any) => {
@@ -1473,7 +1513,24 @@ export async function registerRoutes(
           itemData[key].total += parseFloat(String(item.total || "0"));
         });
       }
-      
+
+      const allReturns = await storage.getSalesReturns();
+      const filteredReturns = allReturns.filter(ret => {
+        const returnDate = new Date(ret.returnDate);
+        return returnDate >= fromDate && returnDate <= toDate;
+      });
+      for (const ret of filteredReturns) {
+        const returnItems = await storage.getSalesReturnItems(ret.id);
+        returnItems.forEach((item) => {
+          const key = item.medicineName || `Item-${item.medicineId}`;
+          if (!itemData[key]) {
+            itemData[key] = { name: key, qty: 0, total: 0 };
+          }
+          itemData[key].qty -= item.quantityReturned || 0;
+          itemData[key].total -= parseFloat(String(item.refundAmount || "0"));
+        });
+      }
+
       const result = Object.values(itemData).sort((a, b) => b.total - a.total);
       res.json(result);
     } catch (error) {

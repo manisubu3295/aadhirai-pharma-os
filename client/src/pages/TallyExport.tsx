@@ -11,7 +11,7 @@ import { FileSpreadsheet, Download, Settings, ShoppingCart, Package, CreditCard,
 import { usePlan } from "@/lib/planContext";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { endOfLocalDay, formatAppDate, parseServerDate, startOfLocalDay } from "@/lib/dateTime";
-import type { SalePayment } from "@shared/schema";
+import type { SalePayment, SalesReturn } from "@shared/schema";
 import { resolveSalePayments } from "@shared/salePayments";
 
 interface Sale {
@@ -52,6 +52,11 @@ export default function TallyExport() {
     enabled: isPro,
   });
 
+  const { data: salesReturns = [] } = useQuery<SalesReturn[]>({
+    queryKey: ["/api/sales-returns"],
+    enabled: isPro,
+  });
+
   if (!isPro) {
     return (
       <AppLayout title="Tally Export">
@@ -77,6 +82,18 @@ export default function TallyExport() {
     const fromDate = startOfLocalDay(dateFrom);
     const toDate = endOfLocalDay(dateTo);
     return saleDate >= fromDate && saleDate <= toDate;
+  });
+
+  // Refunds are exported as their own Credit Note vouchers (standard GST
+  // practice) rather than netted into the sales vouchers above — the
+  // original invoice's taxable value was already declared to GST as filed,
+  // and a return is properly accounted for as a separate credit note
+  // against it, not a silent reduction of the original sale.
+  const filteredReturns = salesReturns.filter((ret) => {
+    const returnDate = parseServerDate(ret.returnDate);
+    const fromDate = startOfLocalDay(dateFrom);
+    const toDate = endOfLocalDay(dateTo);
+    return returnDate >= fromDate && returnDate <= toDate;
   });
 
   const generateSalesVoucherCSV = () => {
@@ -127,6 +144,27 @@ export default function TallyExport() {
     downloadCSV(csvContent, "tally_receipt_vouchers");
   };
 
+  const generateCreditNoteVoucherCSV = () => {
+    const headers = [
+      "Voucher Type", "Voucher Date", "Voucher Number", "Original Invoice", "Party Ledger Name",
+      "Sales Ledger", "Amount", "Refund Mode"
+    ];
+
+    const rows = filteredReturns.map(ret => [
+      "Credit Note",
+      formatAppDate(ret.returnDate, "dd-MM-yyyy"),
+      `RET-${ret.id}`,
+      ret.invoiceNo || `SALE-${ret.originalSaleId}`,
+      ret.customerName || "",
+      ledgerConfig.salesLedger,
+      ret.totalRefundAmount,
+      ret.refundMode
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    downloadCSV(csvContent, "tally_credit_note_vouchers");
+  };
+
   const generateGSTSummaryCSV = () => {
     const headers = [
       "Invoice No", "Invoice Date", "Party Name", "GSTIN", "Taxable Value", "CGST", "SGST", "Total"
@@ -159,6 +197,7 @@ export default function TallyExport() {
   const totalSales = filteredSales.reduce((acc, s) => acc + parseFloat(s.total), 0);
   const totalCGST = filteredSales.reduce((acc, s) => acc + parseFloat(s.cgst || "0"), 0);
   const totalSGST = filteredSales.reduce((acc, s) => acc + parseFloat(s.sgst || "0"), 0);
+  const totalRefunds = filteredReturns.reduce((acc, r) => acc + parseFloat(r.totalRefundAmount), 0);
 
   return (
     <AppLayout title="Tally Export">
@@ -192,6 +231,9 @@ export default function TallyExport() {
                 <div className="text-sm">
                   <p className="text-muted-foreground">Selected Period</p>
                   <p className="font-semibold">{filteredSales.length} invoices | ₹{totalSales.toFixed(2)}</p>
+                  {filteredReturns.length > 0 && (
+                    <p className="text-red-600">{filteredReturns.length} returns | -₹{totalRefunds.toFixed(2)}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -211,7 +253,7 @@ export default function TallyExport() {
           </TabsList>
 
           <TabsContent value="export" className="space-y-4 mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-lg">
@@ -226,6 +268,26 @@ export default function TallyExport() {
                   <div className="text-2xl font-bold mb-2">{filteredSales.length}</div>
                   <p className="text-sm text-muted-foreground mb-4">Total: ₹{totalSales.toFixed(2)}</p>
                   <Button onClick={generateSalesVoucherCSV} className="w-full" data-testid="button-export-sales-vouchers">
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Export CSV
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <ShoppingCart className="w-5 h-5 text-red-600" />
+                    Credit Note Vouchers
+                  </CardTitle>
+                  <CardDescription>
+                    Export refunds as Tally credit notes against the original invoice
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold mb-2">{filteredReturns.length}</div>
+                  <p className="text-sm text-muted-foreground mb-4">Total: ₹{totalRefunds.toFixed(2)}</p>
+                  <Button onClick={generateCreditNoteVoucherCSV} className="w-full" variant="outline" data-testid="button-export-credit-note-vouchers">
                     <FileSpreadsheet className="w-4 h-4 mr-2" />
                     Export CSV
                   </Button>

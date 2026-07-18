@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Shield, FolderOpen, Save, UserCog } from "lucide-react";
+import { Users, Shield, FolderOpen, Save, UserCog, X } from "lucide-react";
 
 interface User {
   id: string;
@@ -52,6 +52,12 @@ interface UserMenuPermission {
 interface UserAccess {
   menus: { id: number; menuId: number; canView: boolean; canEdit: boolean }[];
   groups: { id: number; menuGroupId: number }[];
+}
+
+interface MenuGroupMenuLink {
+  id: number;
+  menuGroupId: number;
+  menuId: number;
 }
 
 export default function UserMenuAccess() {
@@ -176,16 +182,72 @@ export default function UserMenuAccess() {
   const selectedUser = users.find(u => u.id === selectedUserId);
   const isOwnerOrAdmin = selectedUser?.role === "owner" || selectedUser?.role === "admin";
 
+  // Menu-group membership for every group (not just active ones — a user or
+  // role can still reference a group that's since been deactivated), so
+  // baseline access can be computed the same way the server resolves it.
+  const groupMenuQueries = useQueries({
+    queries: allGroups.map(group => ({
+      queryKey: ["/api/admin/menu-groups", group.id, "menus"],
+      queryFn: async () => {
+        const res = await fetch(`/api/admin/menu-groups/${group.id}/menus`, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch menu group menus");
+        return res.json() as Promise<MenuGroupMenuLink[]>;
+      },
+    })),
+  });
+
+  const groupMenuMap = useMemo(() => {
+    const map = new Map<number, number[]>();
+    allGroups.forEach((group, i) => {
+      const links = groupMenuQueries[i]?.data ?? [];
+      map.set(group.id, links.map(l => l.menuId));
+    });
+    return map;
+  }, [allGroups, groupMenuQueries]);
+
+  // What this user would actually see with no direct overrides at all —
+  // the role's baseline groups plus the user's own assigned groups. Shown
+  // in the UI below so an admin can tell "unchecked, no access" apart from
+  // "unchecked here, but already granted via role/group" before touching
+  // anything — the ambiguity that let an accidental override silently
+  // revoke a user's only source of access to a menu.
+  const baselineMenuIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const rg of selectedRoleGroups) {
+      for (const menuId of groupMenuMap.get(rg.menuGroupId) ?? []) ids.add(menuId);
+    }
+    for (const groupId of selectedGroupIds) {
+      for (const menuId of groupMenuMap.get(groupId) ?? []) ids.add(menuId);
+    }
+    return ids;
+  }, [selectedRoleGroups, selectedGroupIds, groupMenuMap]);
+
+  const getEffectivePermissions = (menuId: number): { canView: boolean; canEdit: boolean } => {
+    return menuPermissions.get(menuId) || { canView: baselineMenuIds.has(menuId), canEdit: false };
+  };
+
   const toggleMenuPermission = (menuId: number, type: "canView" | "canEdit") => {
     setMenuPermissions(prev => {
       const newMap = new Map(prev);
-      const current = newMap.get(menuId) || { canView: false, canEdit: false };
+      // Seed from the effective (baseline-aware) state, not a blind "false" —
+      // otherwise unchecking a menu that reads as granted-via-role/group
+      // would flip it the wrong way (false -> true) instead of revoking it.
+      const current = newMap.get(menuId) || { canView: baselineMenuIds.has(menuId), canEdit: false };
       if (type === "canView") {
         newMap.set(menuId, { canView: !current.canView, canEdit: current.canEdit && !current.canView ? false : current.canEdit });
       } else {
         const newCanEdit = !current.canEdit;
         newMap.set(menuId, { canView: newCanEdit ? true : current.canView, canEdit: newCanEdit });
       }
+      return newMap;
+    });
+    setHasChanges(true);
+  };
+
+  const clearMenuOverride = (menuId: number) => {
+    setMenuPermissions(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(menuId);
       return newMap;
     });
     setHasChanges(true);
@@ -275,11 +337,18 @@ export default function UserMenuAccess() {
                 </TabsList>
 
                 <TabsContent value="menus" className="mt-4">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Shows this user's <span className="font-medium">effective</span> access, including what's
+                    granted by their role or menu groups — not just explicit overrides. Toggling a checkbox
+                    creates an override for that one menu; use "Reset" to remove an override and fall back
+                    to the role/group baseline.
+                  </p>
                   <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-                    <div className="grid grid-cols-[1fr,100px,100px] bg-gradient-to-r from-muted/80 to-muted/40 border-b">
+                    <div className="grid grid-cols-[1fr,100px,100px,90px] bg-gradient-to-r from-muted/80 to-muted/40 border-b">
                       <div className="px-5 py-3.5 font-semibold text-sm tracking-wide">Menu Item</div>
                       <div className="px-4 py-3.5 font-semibold text-sm text-center tracking-wide">View</div>
                       <div className="px-4 py-3.5 font-semibold text-sm text-center tracking-wide">Edit</div>
+                      <div className="px-4 py-3.5 font-semibold text-sm text-center tracking-wide">Source</div>
                     </div>
                     <ScrollArea className="h-[380px]">
                       <div className="divide-y divide-border/50">
@@ -287,11 +356,13 @@ export default function UserMenuAccess() {
                           .filter(m => m.isActive)
                           .sort((a, b) => a.displayOrder - b.displayOrder)
                           .map((menu, index) => {
-                            const perms = menuPermissions.get(menu.id) || { canView: false, canEdit: false };
+                            const perms = getEffectivePermissions(menu.id);
+                            const hasOverride = menuPermissions.has(menu.id);
+                            const grantedByBaseline = !hasOverride && baselineMenuIds.has(menu.id);
                             return (
                               <div
                                 key={menu.id}
-                                className={`grid grid-cols-[1fr,100px,100px] items-center transition-colors duration-150 hover:bg-primary/5 ${
+                                className={`grid grid-cols-[1fr,100px,100px,90px] items-center transition-colors duration-150 hover:bg-primary/5 ${
                                   index % 2 === 0 ? 'bg-background' : 'bg-muted/20'
                                 }`}
                               >
@@ -318,6 +389,24 @@ export default function UserMenuAccess() {
                                       data-testid={`checkbox-edit-${menu.id}`}
                                     />
                                   </div>
+                                </div>
+                                <div className="px-4 py-3.5 flex justify-center">
+                                  {hasOverride ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => clearMenuOverride(menu.id)}
+                                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                      data-testid={`button-clear-override-${menu.id}`}
+                                      title="Remove override, fall back to role/group baseline"
+                                    >
+                                      <Badge variant="outline" className="text-[10px]">Override</Badge>
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  ) : grantedByBaseline ? (
+                                    <Badge variant="secondary" className="text-[10px]">Role/Group</Badge>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
                                 </div>
                               </div>
                             );

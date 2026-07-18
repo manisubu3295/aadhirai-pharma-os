@@ -32,7 +32,7 @@ import { usePlan } from "@/lib/planContext";
 import { useToast } from "@/hooks/use-toast";
 import { formatAppDate, localDateKey, parseServerDate } from "@/lib/dateTime";
 import { isExpired, isNearExpiry, threeMonthsFromNow } from "@/lib/expiry";
-import type { Sale, Medicine, Customer } from "@shared/schema";
+import type { Sale, Medicine, Customer, SalesReturn } from "@shared/schema";
 
 export default function Reports() {
   const { isPro } = usePlan();
@@ -71,6 +71,15 @@ export default function Reports() {
     },
   });
 
+  const { data: salesReturns = [] } = useQuery<SalesReturn[]>({
+    queryKey: ["/api/sales-returns"],
+    queryFn: async () => {
+      const res = await fetch("/api/sales-returns");
+      if (!res.ok) throw new Error("Failed to fetch sales returns");
+      return res.json();
+    },
+  });
+
   const todayStr = localDateKey(today);
   const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
@@ -86,9 +95,21 @@ export default function Reports() {
     return saleDate >= fromDate && saleDate <= toDate;
   });
 
-  const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total), 0);
-  const weekTotal = weekSales.reduce((sum, s) => sum + Number(s.total), 0);
-  const filteredTotal = filteredSales.reduce((sum, s) => sum + Number(s.total), 0);
+  // Netted by return_date (when the refund happened) so a refund reduces
+  // these totals immediately instead of leaving them permanently overstated.
+  const todayReturns = salesReturns.filter(r => localDateKey(r.returnDate) === todayStr);
+  const weekReturns = salesReturns.filter(r => parseServerDate(r.returnDate) >= weekAgo);
+  const filteredReturns = salesReturns.filter(r => {
+    const returnDate = localDateKey(r.returnDate);
+    return returnDate >= fromDate && returnDate <= toDate;
+  });
+
+  const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total), 0)
+    - todayReturns.reduce((sum, r) => sum + Number(r.totalRefundAmount), 0);
+  const weekTotal = weekSales.reduce((sum, s) => sum + Number(s.total), 0)
+    - weekReturns.reduce((sum, r) => sum + Number(r.totalRefundAmount), 0);
+  const filteredTotal = filteredSales.reduce((sum, s) => sum + Number(s.total), 0)
+    - filteredReturns.reduce((sum, r) => sum + Number(r.totalRefundAmount), 0);
 
   const expiringMedicines = medicines.filter(m => isNearExpiry(m.expiryDate, threeMonthsFromNow()) && !isExpired(m.expiryDate));
   const expiredMedicines = medicines.filter(m => isExpired(m.expiryDate));

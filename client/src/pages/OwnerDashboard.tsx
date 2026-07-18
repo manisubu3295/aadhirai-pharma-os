@@ -41,8 +41,9 @@ import {
   Pie,
   Cell
 } from "recharts";
-import type { Sale, Medicine, Customer, SalePayment } from "@shared/schema";
+import type { Sale, Medicine, Customer, SalePayment, SalesReturn } from "@shared/schema";
 import { resolveSalePayments } from "@shared/salePayments";
+import { refundModeToBucket } from "@shared/salesReturns";
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -101,6 +102,15 @@ export default function OwnerDashboard() {
     },
   });
 
+  const { data: salesReturns = [] } = useQuery<SalesReturn[]>({
+    queryKey: ["/api/sales-returns"],
+    queryFn: async () => {
+      const res = await fetch("/api/sales-returns");
+      if (!res.ok) throw new Error("Failed to fetch sales returns");
+      return res.json();
+    },
+  });
+
   const today = new Date();
   const todayStr = localDateKey(today);
   const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -112,9 +122,19 @@ export default function OwnerDashboard() {
   const last7DaysSales = sales.filter(s => parseServerDate(s.createdAt) >= sevenDaysAgo);
   const todaySales = sales.filter(s => localDateKey(s.createdAt) === todayStr);
 
-  const totalRevenue30Days = last30DaysSales.reduce((sum, s) => sum + Number(s.total), 0);
-  const totalRevenue7Days = last7DaysSales.reduce((sum, s) => sum + Number(s.total), 0);
-  const revenueToday = todaySales.reduce((sum, s) => sum + Number(s.total), 0);
+  // Netted by return_date (when the refund happened), same convention as the
+  // server's netRevenue figure, so a refund reduces revenue the moment it's
+  // processed rather than leaving these cards permanently overstated.
+  const last30DaysReturns = salesReturns.filter(r => parseServerDate(r.returnDate) >= thirtyDaysAgo);
+  const last7DaysReturns = salesReturns.filter(r => parseServerDate(r.returnDate) >= sevenDaysAgo);
+  const todayReturns = salesReturns.filter(r => localDateKey(r.returnDate) === todayStr);
+
+  const totalRevenue30Days = last30DaysSales.reduce((sum, s) => sum + Number(s.total), 0)
+    - last30DaysReturns.reduce((sum, r) => sum + Number(r.totalRefundAmount), 0);
+  const totalRevenue7Days = last7DaysSales.reduce((sum, s) => sum + Number(s.total), 0)
+    - last7DaysReturns.reduce((sum, r) => sum + Number(r.totalRefundAmount), 0);
+  const revenueToday = todaySales.reduce((sum, s) => sum + Number(s.total), 0)
+    - todayReturns.reduce((sum, r) => sum + Number(r.totalRefundAmount), 0);
   const avgDailySales = totalRevenue30Days / 30;
 
   // Bucket by calendar date (not weekday name) so two different dates that
@@ -126,6 +146,11 @@ export default function OwnerDashboard() {
     acc[dateKey] = (acc[dateKey] || 0) + Number(sale.total);
     return acc;
   }, {} as Record<string, number>);
+
+  last7DaysReturns.forEach((ret) => {
+    const dateKey = localDateKey(ret.returnDate);
+    salesByDate[dateKey] = (salesByDate[dateKey] || 0) - Number(ret.totalRefundAmount);
+  });
 
   const chartData = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today.getTime() - (6 - i) * 24 * 60 * 60 * 1000);
@@ -142,6 +167,11 @@ export default function OwnerDashboard() {
     }
     return acc;
   }, {} as Record<string, number>);
+
+  last30DaysReturns.forEach((ret) => {
+    const bucket = refundModeToBucket(ret.refundMode);
+    paymentMethodBreakdown[bucket] = (paymentMethodBreakdown[bucket] || 0) - Number(ret.totalRefundAmount);
+  });
 
   const paymentData = Object.entries(paymentMethodBreakdown).map(([name, value]) => ({
     name,

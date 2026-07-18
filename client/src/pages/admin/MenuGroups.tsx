@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -175,6 +175,7 @@ export default function MenuGroups() {
   };
 
   const handleManageMenus = async (group: MenuGroup) => {
+    setSelectedMenuIds([]);
     setSelectedGroup(group);
     setIsMenusDialogOpen(true);
   };
@@ -207,11 +208,9 @@ export default function MenuGroups() {
     );
   };
 
-  useState(() => {
-    if (groupMenus.length > 0) {
-      setSelectedMenuIds(groupMenus.map(gm => gm.menuId));
-    }
-  });
+  useEffect(() => {
+    setSelectedMenuIds(groupMenus.map(gm => gm.menuId));
+  }, [groupMenus]);
 
   return (
     <AppLayout title="Menu Groups">
