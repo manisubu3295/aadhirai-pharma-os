@@ -79,7 +79,7 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
           <p className="text-sm">Phone: {storeInfo.phone}</p>
           <div className="flex justify-center gap-8 mt-2 text-sm">
             {!settings.hideStoreGstin && <span>GSTIN: {storeInfo.gstin}</span>}
-            <span>D.L. No: {storeInfo.dlNo}</span>
+            {storeInfo.dlNo && <span>D.L. No: {storeInfo.dlNo}</span>}
           </div>
         </div>
 
