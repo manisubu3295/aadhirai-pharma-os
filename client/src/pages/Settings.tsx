@@ -98,13 +98,16 @@ interface SettingsData {
   enableCreditBilling: string;
 }
 
+// Identity fields (name/address/phone/email/license/GSTIN) intentionally have
+// no placeholder text — they must always come from what the pharmacy saved
+// in Settings, never a fallback brand name that could end up on a real bill.
 const defaultSettings: SettingsData = {
-  storeName: "Aadhirai Innovations Pharmacy",
-  storePhone: "+91 98765 43210",
-  storeAddress: "123 Main Street, Chennai, Tamil Nadu - 600001",
-  storeEmail: "contact@aadhiraipharmacy.com",
-  dlNo: "TN-01-123456",
-  gstin: "33AABCU9603R1ZM",
+  storeName: "",
+  storePhone: "",
+  storeAddress: "",
+  storeEmail: "",
+  dlNo: "",
+  gstin: "",
   stateCode: "33",
   autoGst: "true",
   invoicePrefix: "INV-",
