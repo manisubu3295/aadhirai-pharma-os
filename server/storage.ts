@@ -202,13 +202,17 @@ async function seedDefaultAppSettings() {
     return;
   }
 
+  // Identity fields (name/address/phone/email/license/GSTIN) seed blank —
+  // this software is deployed per-client, so a fresh install must never
+  // start with another pharmacy's (or the vendor's own) name/address baked
+  // in; the client fills these in during onboarding via Settings.
   const defaultSettings: Record<string, string> = {
-    storeName: "Medora+",
-    storePhone: "+91 98765 43210",
-    storeAddress: "123 Main Street, Chennai, Tamil Nadu - 600001",
-    storeEmail: "contact@medoraplus.com",
-    dlNo: "TN-01-123456",
-    gstin: "33AABCU9603R1ZM",
+    storeName: "",
+    storePhone: "",
+    storeAddress: "",
+    storeEmail: "",
+    dlNo: "",
+    gstin: "",
     stateCode: "33",
     autoGst: "true",
     invoicePrefix: "INV-",

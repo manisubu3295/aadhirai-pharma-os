@@ -25,12 +25,14 @@ interface PrintableInvoiceProps {
   invoiceSettings?: InvoiceSettings;
 }
 
+// No placeholder brand here either — every real caller passes storeInfo
+// from Settings; this fallback only covers a caller that forgets to.
 const defaultStoreInfo = {
-  name: "Aadhirai Innovations Pharmacy",
-  address: "123 Main Street, Chennai, Tamil Nadu - 600001",
-  phone: "+91 98765 43210",
-  gstin: "33AABCU9603R1ZM",
-  dlNo: "TN-01-123456",
+  name: "",
+  address: "",
+  phone: "",
+  gstin: "",
+  dlNo: "",
 };
 
 const defaultInvoiceSettings: InvoiceSettings = {

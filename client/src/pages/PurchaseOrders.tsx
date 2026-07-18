@@ -34,6 +34,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth, endOfDay, startOfDay, parseISO } from "date-fns";
 import { exportToCSV } from "@/lib/exportUtils";
+import { useSettings } from "@/contexts/SettingsContext";
 import type { Supplier, Medicine, PurchaseOrder, PurchaseOrderItem, SupplierRate } from "@shared/schema";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -142,6 +143,7 @@ const statusIcons: Record<string, React.ReactNode> = {
 };
 
 export default function PurchaseOrders() {
+  const { settings: appSettings } = useSettings();
   const [searchTerm, setSearchTerm] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -1162,8 +1164,8 @@ export default function PurchaseOrders() {
                   </head>
                   <body>
                     <div class="header">
-                      <h1>Aadhirai Innovations Pharmacy</h1>
-                      <p>123 Main Street, Chennai, Tamil Nadu - 600001</p>
+                      <h1>${appSettings.storeName}</h1>
+                      <p>${appSettings.storeAddress}</p>
                       <h2>PURCHASE ORDER</h2>
                     </div>
                     <div class="info-grid">

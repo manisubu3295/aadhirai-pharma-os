@@ -1138,8 +1138,8 @@ export default function GoodsReceipts() {
                   </head>
                   <body>
                     <div class="header">
-                      <h1>Aadhirai Innovations Pharmacy</h1>
-                      <p>123 Main Street, Chennai, Tamil Nadu - 600001</p>
+                      <h1>${appSettings.storeName}</h1>
+                      <p>${appSettings.storeAddress}</p>
                       <h2>GOODS RECEIPT NOTE</h2>
                     </div>
                     <div class="info-grid">
