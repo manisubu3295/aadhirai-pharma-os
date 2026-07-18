@@ -146,7 +146,9 @@ export function generateSaleInvoicePdfBlob(
       { text: storeInfo.name, style: "header", alignment: "center" },
       { text: storeInfo.address, alignment: "center", margin: [0, 0, 0, 2] },
       { text: `Phone: ${storeInfo.phone}${settings.hideStoreGstin ? "" : `   GSTIN: ${storeInfo.gstin}`}`, alignment: "center" },
-      { text: `D.L. No: ${storeInfo.dlNo}`, alignment: "center", margin: [0, 0, 0, 10] },
+      ...(storeInfo.dlNo
+        ? [{ text: `D.L. No: ${storeInfo.dlNo}`, alignment: "center" as const, margin: [0, 0, 0, 10] as [number, number, number, number] }]
+        : []),
       { text: settings.hideTaxDetails ? "INVOICE" : "TAX INVOICE", style: "subheader", alignment: "center" },
       {
         columns: [
