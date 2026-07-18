@@ -45,10 +45,10 @@ interface Sale {
 
 interface SalesReturn {
   id: number;
-  saleId: number;
+  originalSaleId: number;
   invoiceNo: string;
   returnDate: string;
-  totalRefund: string;
+  totalRefundAmount: string;
   refundMode: string;
   reason: string;
   createdAt: string;
@@ -112,6 +112,7 @@ export default function Collections() {
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
   const [printSale, setPrintSale] = useState<Sale | null>(null);
   const [printItems, setPrintItems] = useState<(SaleItem & { returnedQty?: number })[]>([]);
+  const [printReturns, setPrintReturns] = useState<{ totalRefundAmount: string }[]>([]);
 
   const handleReprint = async (sale: Sale) => {
     try {
@@ -120,6 +121,7 @@ export default function Collections() {
         const data = await res.json();
         setPrintSale(sale);
         setPrintItems(data.items);
+        setPrintReturns(data.returns || []);
         setPrintDialogOpen(true);
       }
     } catch (error) {
@@ -267,7 +269,7 @@ export default function Collections() {
     return isNaN(parsed) ? 0 : parsed;
   };
 
-  const totalRefundAmount = filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0);
+  const totalRefundAmount = filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefundAmount), 0);
   const formattedTotalRefund = `${totalRefundAmount > 0 ? "-" : ""}₹${totalRefundAmount.toFixed(2)}`;
 
   const paymentTotals = filteredSales.reduce((acc, sale) => {
@@ -283,7 +285,7 @@ export default function Collections() {
   // actually retained, not gross sales before returns.
   filteredReturns.forEach((ret) => {
     const bucket = refundModeToBucket(ret.refundMode);
-    paymentTotals[bucket] = (paymentTotals[bucket] || 0) - safeParseFloat(ret.totalRefund);
+    paymentTotals[bucket] = (paymentTotals[bucket] || 0) - safeParseFloat(ret.totalRefundAmount);
   });
 
   const grandTotal = filteredSales.reduce((sum, sale) => sum + resolveSalePayments(sale, sale.payments).reduce((s, p) => s + p.amount, 0), 0);
@@ -314,7 +316,7 @@ export default function Collections() {
   // sale (the sale may fall outside the current date filter even though the
   // return date is inside it), so per-staff totals aren't left overstated.
   filteredReturns.forEach((ret) => {
-    const originalSale = sales.find(s => s.id === ret.saleId);
+    const originalSale = sales.find(s => s.id === ret.originalSaleId);
     const staff = originalSale ? users.find(u => u.id === (originalSale.userId || 0)) : undefined;
     const staffName = staff?.name || staff?.username || "Unknown";
 
@@ -323,7 +325,7 @@ export default function Collections() {
     }
 
     const bucket = refundModeToBucket(ret.refundMode);
-    const amount = safeParseFloat(ret.totalRefund);
+    const amount = safeParseFloat(ret.totalRefundAmount);
     staffCollections[staffName].total -= amount;
     staffCollections[staffName][bucket] -= amount;
   });
@@ -577,7 +579,7 @@ export default function Collections() {
                     <CardContent className="pt-4">
                       <div className="text-green-600 text-sm">Net Collection</div>
                       <p className="text-2xl font-bold text-green-700 mt-1" data-testid="text-net-collection">
-                        ₹{(grandTotal - filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefund), 0)).toFixed(2)}
+                        ₹{(grandTotal - filteredReturns.reduce((s, r) => s + safeParseFloat(r.totalRefundAmount), 0)).toFixed(2)}
                       </p>
                     </CardContent>
                   </Card>
@@ -639,7 +641,7 @@ export default function Collections() {
                       onClick={() => exportToCSV(
                         `refunds_${dateFrom}_to_${dateTo}.csv`,
                         ["Return No", "Invoice", "Date", "Refund Mode", "Amount", "Reason"],
-                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, formatAppDate(r.createdAt, "dd/MM/yyyy"), r.refundMode, r.totalRefund, r.reason || ""])
+                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, formatAppDate(r.createdAt, "dd/MM/yyyy"), r.refundMode, r.totalRefundAmount, r.reason || ""])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -651,7 +653,7 @@ export default function Collections() {
                       onClick={() => exportToPDF(
                         "Refunds Report",
                         ["Return No", "Invoice", "Date", "Mode", "Amount"],
-                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, formatAppDate(r.createdAt, "dd/MM/yyyy"), r.refundMode, `₹${safeParseFloat(r.totalRefund).toFixed(2)}`])
+                        filteredReturns.map(r => [`RET-${r.id}`, r.invoiceNo, formatAppDate(r.createdAt, "dd/MM/yyyy"), r.refundMode, `₹${safeParseFloat(r.totalRefundAmount).toFixed(2)}`])
                       )} 
                       variant="outline" 
                       size="sm"
@@ -703,7 +705,7 @@ export default function Collections() {
                           </TableCell>
                           <TableCell>{ret.reason || "-"}</TableCell>
                           <TableCell className="text-right font-semibold text-red-600">
-                            -₹{safeParseFloat(ret.totalRefund).toFixed(2)}
+                            -₹{safeParseFloat(ret.totalRefundAmount).toFixed(2)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1121,9 +1123,10 @@ export default function Collections() {
           </DialogHeader>
           {printSale && (
             <div id="reprint-invoice-content">
-              <PrintableInvoice 
-                sale={printSale as unknown as SaleType} 
+              <PrintableInvoice
+                sale={printSale as unknown as SaleType}
                 items={printItems}
+                returns={printReturns}
                 storeInfo={{
                   name: appSettings.storeName,
                   address: appSettings.storeAddress,
@@ -1166,6 +1169,7 @@ export default function Collections() {
                         showDoctor: appSettings.showDoctor,
                         hideStoreGstin: true,
                       },
+                      printReturns,
                     );
 
                     const invoiceNo = printSale.invoiceNo || `INV-${printSale.id}`;

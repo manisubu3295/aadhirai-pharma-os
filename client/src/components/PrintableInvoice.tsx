@@ -14,6 +14,7 @@ interface InvoiceSettings {
 interface PrintableInvoiceProps {
   sale: Sale & { payments?: SalePayment[] };
   items: (SaleItem & { returnedQty?: number })[];
+  returns?: { totalRefundAmount: string }[];
   storeInfo?: {
     name: string;
     address: string;
@@ -41,9 +42,10 @@ const defaultInvoiceSettings: InvoiceSettings = {
 };
 
 export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps>(
-  ({ sale, items, storeInfo = defaultStoreInfo, invoiceSettings = defaultInvoiceSettings }, ref) => {
+  ({ sale, items, returns = [], storeInfo = defaultStoreInfo, invoiceSettings = defaultInvoiceSettings }, ref) => {
     const settings = { ...defaultInvoiceSettings, ...invoiceSettings };
     const hasReturns = items.some(item => (item.returnedQty || 0) > 0);
+    const totalRefunded = returns.reduce((sum, r) => sum + Number(r.totalRefundAmount || 0), 0);
 
     const formatDate = (date: Date | string) => {
       const d = parseServerDate(date);
@@ -191,6 +193,18 @@ export const PrintableInvoice = forwardRef<HTMLDivElement, PrintableInvoiceProps
               <span>TOTAL:</span>
               <span>₹{Number(sale.total).toFixed(2)}</span>
             </div>
+            {totalRefunded > 0 && (
+              <>
+                <div className="flex justify-between py-1 border-b text-red-600">
+                  <span>Refunded:</span>
+                  <span>-₹{totalRefunded.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between py-2 font-bold text-base border-t-2 border-black">
+                  <span>NET PAYABLE:</span>
+                  <span>₹{(Number(sale.total) - totalRefunded).toFixed(2)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
