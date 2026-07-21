@@ -76,6 +76,7 @@ export const medicines = pgTable("medicines", {
   baseUnit: text("base_unit").default("UNIT"),
   packSize: integer("pack_size").default(1),
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }),
+  isActive: boolean("is_active").notNull().default(true),
 });
 
 export const genericNames = pgTable("generic_names", {
@@ -96,6 +97,7 @@ export const customers = pgTable("customers", {
   creditLimit: decimal("credit_limit", { precision: 10, scale: 2 }).default("0"),
   outstandingBalance: decimal("outstanding_balance", { precision: 10, scale: 2 }).default("0"),
   creditPeriodDays: integer("credit_period_days").default(30),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -143,6 +145,7 @@ export const doctors = pgTable("doctors", {
   commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }),
   commissionFixedAmount: decimal("commission_fixed_amount", { precision: 10, scale: 2 }),
   minSaleAmount: decimal("min_sale_amount", { precision: 10, scale: 2 }).default("0"),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

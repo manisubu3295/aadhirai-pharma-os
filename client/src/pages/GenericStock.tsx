@@ -250,7 +250,7 @@ export default function GenericStock() {
   }, [genericNames, searchTerm]);
 
   const medicineOptions = useMemo(
-    () => [...medicines].sort((a, b) => a.name.localeCompare(b.name)),
+    () => medicines.filter((m) => m.isActive).sort((a, b) => a.name.localeCompare(b.name)),
     [medicines],
   );
 

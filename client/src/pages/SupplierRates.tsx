@@ -171,7 +171,7 @@ const RateFormFields = memo(function RateFormFields({ formData, setFormData, sup
               <CommandList>
                 <CommandEmpty>No medicine found.</CommandEmpty>
                 <CommandGroup>
-                  {medicines.map((medicine) => (
+                  {medicines.filter((medicine) => medicine.isActive).map((medicine) => (
                     <CommandItem
                       key={medicine.id}
                       value={`${medicine.name} ${medicine.manufacturer || ""}`}

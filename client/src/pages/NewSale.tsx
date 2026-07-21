@@ -454,9 +454,10 @@ export default function NewSale() {
   });
 
   const filteredCustomers = useMemo(() => {
-    if (!customerSearch) return customers;
+    const active = customers.filter((c) => c.isActive);
+    if (!customerSearch) return active;
     const search = customerSearch.toLowerCase();
-    return customers.filter(
+    return active.filter(
       (c) =>
         c.name.toLowerCase().includes(search) ||
         (c.phone && c.phone.includes(search))
@@ -474,11 +475,12 @@ export default function NewSale() {
     (a.expiryDate || "9999-99-99").localeCompare(b.expiryDate || "9999-99-99");
 
   const filteredMedicines = useMemo(() => {
-    if (!medicineSearch) return medicines.filter((m) => getAvailableQty(m) > 0).sort(byExpirySoonestFirst);
+    if (!medicineSearch) return medicines.filter((m) => m.isActive && getAvailableQty(m) > 0).sort(byExpirySoonestFirst);
     const search = medicineSearch.toLowerCase();
     return medicines
       .filter(
         (m) =>
+          m.isActive &&
           getAvailableQty(m) > 0 &&
           (m.name.toLowerCase().includes(search) ||
             ((m as any).genericName && String((m as any).genericName).toLowerCase().includes(search)) ||
@@ -1280,7 +1282,7 @@ export default function NewSale() {
                         <CommandList>
                           <CommandEmpty>No doctor found.</CommandEmpty>
                           <CommandGroup>
-                            {doctors.map((doctor) => (
+                            {doctors.filter((doctor) => doctor.isActive).map((doctor) => (
                               <CommandItem
                                 key={doctor.id}
                                 value={doctor.name}

@@ -935,6 +935,11 @@ export async function registerRoutes(
           error: "Cannot delete a medicine with existing stock batches — reduce its stock via Stock Adjustments first.",
         });
       }
+      if (await storage.medicineHasHistory(id)) {
+        return res.status(400).json({
+          error: "Cannot delete a medicine with existing sales, purchase, or return history — mark it inactive instead.",
+        });
+      }
       const deleted = await storage.deleteMedicine(id);
       if (!deleted) {
         return res.status(404).json({ error: "Medicine not found" });
@@ -1108,6 +1113,11 @@ export async function registerRoutes(
   app.delete("/api/customers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (await storage.customerHasHistory(id)) {
+        return res.status(400).json({
+          error: "Cannot delete a customer with sales or payment history — mark them inactive instead.",
+        });
+      }
       const deleted = await storage.deleteCustomer(id);
       if (!deleted) {
         return res.status(404).json({ error: "Customer not found" });
@@ -1194,6 +1204,11 @@ export async function registerRoutes(
   app.delete("/api/doctors/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (await storage.doctorHasHistory(id)) {
+        return res.status(400).json({
+          error: "Cannot delete a doctor with sales or commission history — mark them inactive instead.",
+        });
+      }
       const deleted = await storage.deleteDoctor(id);
       if (!deleted) {
         return res.status(404).json({ error: "Doctor not found" });

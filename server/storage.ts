@@ -312,7 +312,8 @@ console.log("Connected DB:", r.rows[0].db);
 
       ALTER TABLE medicines
         ADD COLUMN IF NOT EXISTS generic_name TEXT,
-        ADD COLUMN IF NOT EXISTS sku_name TEXT;
+        ADD COLUMN IF NOT EXISTS sku_name TEXT,
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
       CREATE TABLE IF NOT EXISTS generic_names (
         id SERIAL PRIMARY KEY,
@@ -337,7 +338,10 @@ console.log("Connected DB:", r.rows[0].db);
         credit_period_days INTEGER DEFAULT 30,
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
-      
+
+      ALTER TABLE customers
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
       CREATE TABLE IF NOT EXISTS doctors (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -351,7 +355,8 @@ console.log("Connected DB:", r.rows[0].db);
         ADD COLUMN IF NOT EXISTS commission_basis TEXT,
         ADD COLUMN IF NOT EXISTS commission_rate DECIMAL(5,2),
         ADD COLUMN IF NOT EXISTS commission_fixed_amount DECIMAL(10,2),
-        ADD COLUMN IF NOT EXISTS min_sale_amount DECIMAL(10,2) DEFAULT 0;
+        ADD COLUMN IF NOT EXISTS min_sale_amount DECIMAL(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
       CREATE TABLE IF NOT EXISTS doctor_commission_transactions (
         id SERIAL PRIMARY KEY,
@@ -1026,6 +1031,7 @@ export interface IStorage {
   createMedicine(medicine: InsertMedicine): Promise<Medicine>;
   updateMedicine(id: number, medicine: Partial<InsertMedicine>): Promise<Medicine | undefined>;
   deleteMedicine(id: number): Promise<boolean>;
+  medicineHasHistory(medicineId: number): Promise<boolean>;
   updateMedicineStock(id: number, quantityChange: number): Promise<Medicine | undefined>;
   getGenericNames(includeInactive?: boolean): Promise<GenericName[]>;
   createGenericName(input: { name: string }): Promise<GenericName>;
@@ -1037,12 +1043,14 @@ export interface IStorage {
   createCustomer(customer: InsertCustomer): Promise<Customer>;
   updateCustomer(id: number, customer: Partial<InsertCustomer>): Promise<Customer | undefined>;
   deleteCustomer(id: number): Promise<boolean>;
-  
+  customerHasHistory(customerId: number): Promise<boolean>;
+
   getDoctors(): Promise<(Doctor & { commissionBalance: string })[]>;
   getDoctor(id: number): Promise<Doctor | undefined>;
   createDoctor(doctor: InsertDoctor): Promise<Doctor>;
   updateDoctor(id: number, doctor: Partial<InsertDoctor>): Promise<Doctor | undefined>;
   deleteDoctor(id: number): Promise<boolean>;
+  doctorHasHistory(doctorId: number): Promise<boolean>;
   getDoctorCommissionBalance(doctorId: number): Promise<string>;
   getDoctorCommissionTransactions(doctorId?: number): Promise<DoctorCommissionTransaction[]>;
   createDoctorCommissionPayout(data: { doctorId: number; amount: string; notes?: string | null; userId?: string | null }): Promise<DoctorCommissionTransaction>;
@@ -1510,6 +1518,7 @@ export class DatabaseStorage implements IStorage {
       baseUnit: row.base_unit,
       packSize: row.pack_size == null ? null : Number(row.pack_size),
       pricePerUnit: row.price_per_unit,
+      isActive: Boolean(row.is_active),
     })) as Medicine[];
   }
 
@@ -1653,6 +1662,7 @@ export class DatabaseStorage implements IStorage {
       baseUnit: row.base_unit,
       packSize: row.pack_size == null ? null : Number(row.pack_size),
       pricePerUnit: row.price_per_unit,
+      isActive: Boolean(row.is_active),
     })) as Medicine[];
   }
 
@@ -1805,6 +1815,7 @@ export class DatabaseStorage implements IStorage {
       baseUnit: row.base_unit,
       packSize: row.pack_size == null ? null : Number(row.pack_size),
       pricePerUnit: row.price_per_unit,
+      isActive: Boolean(row.is_active),
     })) as Medicine[];
   }
 
@@ -1988,6 +1999,22 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
+  // Checks every drizzle-tracked table that can reference a medicine. Does
+  // NOT check inventory_batches (raw-SQL-only table) -- callers must also
+  // check InventoryPostingRepository.hasBatches() separately.
+  async medicineHasHistory(medicineId: number): Promise<boolean> {
+    const checks = await Promise.all([
+      db.select({ id: saleItems.id }).from(saleItems).where(eq(saleItems.medicineId, medicineId)).limit(1),
+      db.select({ id: purchaseOrderItems.id }).from(purchaseOrderItems).where(eq(purchaseOrderItems.medicineId, medicineId)).limit(1),
+      db.select({ id: goodsReceiptItems.id }).from(goodsReceiptItems).where(eq(goodsReceiptItems.medicineId, medicineId)).limit(1),
+      db.select({ id: purchaseReturnItems.id }).from(purchaseReturnItems).where(eq(purchaseReturnItems.medicineId, medicineId)).limit(1),
+      db.select({ id: salesReturnItems.id }).from(salesReturnItems).where(eq(salesReturnItems.medicineId, medicineId)).limit(1),
+      db.select({ id: stockAdjustments.id }).from(stockAdjustments).where(eq(stockAdjustments.medicineId, medicineId)).limit(1),
+      db.select({ id: supplierRates.id }).from(supplierRates).where(eq(supplierRates.medicineId, medicineId)).limit(1),
+    ]);
+    return checks.some(rows => rows.length > 0);
+  }
+
   async updateMedicineStock(id: number, quantityChange: number): Promise<Medicine | undefined> {
     const medicine = await this.getMedicine(id);
     if (!medicine) return undefined;
@@ -2027,6 +2054,16 @@ export class DatabaseStorage implements IStorage {
   async deleteCustomer(id: number): Promise<boolean> {
     const result = await db.delete(customers).where(eq(customers.id, id)).returning();
     return result.length > 0;
+  }
+
+  async customerHasHistory(customerId: number): Promise<boolean> {
+    const checks = await Promise.all([
+      db.select({ id: sales.id }).from(sales).where(eq(sales.customerId, customerId)).limit(1),
+      db.select({ id: creditPayments.id }).from(creditPayments).where(eq(creditPayments.customerId, customerId)).limit(1),
+      db.select({ id: heldBills.id }).from(heldBills).where(eq(heldBills.customerId, customerId)).limit(1),
+      db.select({ id: salesReturns.id }).from(salesReturns).where(eq(salesReturns.customerId, customerId)).limit(1),
+    ]);
+    return checks.some(rows => rows.length > 0);
   }
 
   async getDoctors(): Promise<(Doctor & { commissionBalance: string })[]> {
@@ -2089,6 +2126,15 @@ export class DatabaseStorage implements IStorage {
   async deleteDoctor(id: number): Promise<boolean> {
     const result = await db.delete(doctors).where(eq(doctors.id, id)).returning();
     return result.length > 0;
+  }
+
+  async doctorHasHistory(doctorId: number): Promise<boolean> {
+    const checks = await Promise.all([
+      db.select({ id: doctorCommissionTransactions.id }).from(doctorCommissionTransactions).where(eq(doctorCommissionTransactions.doctorId, doctorId)).limit(1),
+      db.select({ id: sales.id }).from(sales).where(eq(sales.doctorId, doctorId)).limit(1),
+      db.select({ id: heldBills.id }).from(heldBills).where(eq(heldBills.doctorId, doctorId)).limit(1),
+    ]);
+    return checks.some(rows => rows.length > 0);
   }
 
   private async attachSalePayments<T extends { id: number }>(rows: T[]): Promise<(T & { payments: SalePayment[] })[]> {

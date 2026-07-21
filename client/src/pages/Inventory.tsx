@@ -21,12 +21,22 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ImportDialog } from "@/components/ui/import-dialog";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
   Select,
@@ -35,7 +45,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download, MapPin, Upload, Layers } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Search, Filter, MoreHorizontal, Plus, FileDown, Edit, Package, Barcode, Printer, ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet, Download, MapPin, Upload, Layers, Ban, CheckCircle2, Trash2 } from "lucide-react";
 import { downloadFile, generateCSV, parseCSV } from "@/lib/exportUtils";
 import { useState, memo, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -367,6 +378,7 @@ export default function Inventory() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Medicine | null>(null);
   const [formData, setFormData] = useState<MedicineFormData>(emptyForm);
   // Near-expiry stock first by default (FEFO), still fully sortable by any column.
   const [sortField, setSortField] = useState<SortField>('expiryDate');
@@ -560,6 +572,47 @@ export default function Inventory() {
     onError: (error: Error) => {
       applyInlineFieldErrors(error.message);
       toast({ title: "Failed to update medicine", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await fetch(`/api/medicines/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (!res.ok) throw new Error("Failed to update medicine");
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
+      toast({ title: variables.isActive ? "Medicine reactivated" : "Medicine marked inactive" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update medicine", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/medicines/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || "Failed to delete medicine");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/sale-list"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
+      setDeleteTarget(null);
+      toast({ title: "Medicine deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Couldn't delete medicine", description: error.message, variant: "destructive" });
     },
   });
 
@@ -905,6 +958,7 @@ export default function Inventory() {
                     <TableHead>Location</TableHead>
                     <SortableHeader field="expiryDate">Expiry</SortableHeader>
                     <SortableHeader field="status">Status</SortableHeader>
+                    <TableHead>Active</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -968,6 +1022,11 @@ export default function Inventory() {
                           {item.status}
                         </span>
                       </TableCell>
+                      <TableCell>
+                        <Badge variant={item.isActive ? "default" : "secondary"}>
+                          {item.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -985,6 +1044,21 @@ export default function Inventory() {
                                 <Printer className="h-4 w-4 mr-2" /> Print Label
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuItem
+                              onClick={() => toggleActiveMutation.mutate({ id: item.id, isActive: !item.isActive })}
+                            >
+                              {item.isActive ? (
+                                <><Ban className="h-4 w-4 mr-2" /> Mark Inactive</>
+                              ) : (
+                                <><CheckCircle2 className="h-4 w-4 mr-2" /> Reactivate</>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(item)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -1107,6 +1181,26 @@ export default function Inventory() {
           queryClient.invalidateQueries({ queryKey: ["/api/medicines/inventory-list"] });
         }}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Medicine</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Do you want to permanently delete "${deleteTarget?.name || ""}"? This cannot be undone. If this medicine has existing stock batches or any sales/purchase history, deletion will be blocked — mark it inactive instead.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              data-testid="button-confirm-delete-medicine"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

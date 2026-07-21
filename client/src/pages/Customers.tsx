@@ -15,6 +15,7 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -22,13 +23,23 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, Plus, Edit, Users, Phone, Mail, CreditCard, Clock, History, Crown, Receipt, FileDown, Upload, Download } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Users, Phone, Mail, CreditCard, Clock, History, Crown, Receipt, FileDown, Upload, Download, Ban, CheckCircle2, Trash2 } from "lucide-react";
 import { useState, memo } from "react";
 import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -206,6 +217,7 @@ export default function Customers() {
   const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm);
   const [formErrors, setFormErrors] = useState<{ phone?: string; email?: string }>({});
 
@@ -288,6 +300,43 @@ export default function Customers() {
     },
     onError: () => {
       toast({ title: "Failed to update customer", variant: "destructive" });
+    },
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await fetch(`/api/customers/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (!res.ok) throw new Error("Failed to update customer");
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      toast({ title: variables.isActive ? "Customer reactivated" : "Customer marked inactive" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update customer", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/customers/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || "Failed to delete customer");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setDeleteTarget(null);
+      toast({ title: "Customer deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Couldn't delete customer", description: error.message, variant: "destructive" });
     },
   });
 
@@ -487,6 +536,7 @@ export default function Customers() {
                     <TableHead className="text-right">Credit Limit</TableHead>
                     {isPro && <TableHead className="text-center">Credit Period</TableHead>}
                     <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -549,6 +599,11 @@ export default function Customers() {
                           <span className="text-green-600">₹0.00</span>
                         )}
                       </TableCell>
+                      <TableCell>
+                        <Badge variant={customer.isActive ? "default" : "secondary"}>
+                          {customer.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -566,6 +621,21 @@ export default function Customers() {
                                 <History className="h-4 w-4 mr-2" /> Payment History
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuItem
+                              onClick={() => toggleActiveMutation.mutate({ id: customer.id, isActive: !customer.isActive })}
+                            >
+                              {customer.isActive ? (
+                                <><Ban className="h-4 w-4 mr-2" /> Mark Inactive</>
+                              ) : (
+                                <><CheckCircle2 className="h-4 w-4 mr-2" /> Reactivate</>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(customer)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -777,6 +847,26 @@ export default function Customers() {
         }}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/customers"] })}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Do you want to permanently delete "${deleteTarget?.name || ""}"? This cannot be undone. If this customer has any sales or payment history, deletion will be blocked — mark them inactive instead.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              data-testid="button-confirm-delete-customer"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
