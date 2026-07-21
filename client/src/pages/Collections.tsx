@@ -99,7 +99,7 @@ interface YearlyData {
 
 export default function Collections() {
   const { isPro } = usePlan();
-  const { settings: appSettings, isLoading: settingsLoading } = useSettings();
+  const { settings: appSettings, isLoading: settingsLoading, isError: settingsError } = useSettings();
   const { toast } = useToast();
   const today = new Date();
   const currentYear = today.getFullYear();
@@ -116,9 +116,10 @@ export default function Collections() {
 
   const handleReprint = async (sale: Sale) => {
     // Store details (name/address/GSTIN/DL no.) default to blank until the
-    // Settings fetch resolves — a reprint triggered in that window would
-    // render with a blank header instead of the store's real details.
-    if (settingsLoading) {
+    // Settings fetch resolves, or stay blank if that fetch errored out — a
+    // reprint triggered in either case would render with a blank header
+    // instead of the store's real details.
+    if (settingsLoading || settingsError) {
       toast({ title: "Still loading store settings, try again in a moment" });
       return;
     }

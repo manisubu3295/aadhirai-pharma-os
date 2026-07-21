@@ -236,7 +236,7 @@ export default function NewSale() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { settings: appSettings, isLoading: settingsLoading } = useSettings();
+  const { settings: appSettings, isLoading: settingsLoading, isError: settingsError } = useSettings();
   const isGstEnabled = appSettings.autoGst;
   const isOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
 
@@ -1059,15 +1059,18 @@ export default function NewSale() {
   }, []);
 
   // Store details (name/address/GST no./DL no.) and GST-enabled status come
-  // from Settings and default to blank/false until that fetch resolves.
-  // Rendering the checkout before it resolves risks both a blank invoice
-  // header and, worse, creating a sale with the wrong GST treatment for a
-  // user who reaches this page in a fresh session (no warm settings cache).
-  if (settingsLoading) {
+  // from Settings and default to blank/true (autoGst) until that fetch
+  // resolves or if it fails outright. Rendering the checkout in either case
+  // risks both a blank invoice header and, worse, creating a sale with the
+  // wrong GST treatment for a user who reaches this page in a fresh session
+  // (no warm settings cache) or after the settings fetch errored out.
+  if (settingsLoading || settingsError) {
     return (
       <AppLayout title="New Sale / Invoice">
         <div className="flex items-center justify-center h-[60vh] text-muted-foreground">
-          Loading store settings...
+          {settingsError
+            ? "Couldn't load store settings. Please refresh the page."
+            : "Loading store settings..."}
         </div>
       </AppLayout>
     );
