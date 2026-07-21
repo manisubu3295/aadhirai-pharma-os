@@ -236,7 +236,8 @@ export default function NewSale() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { settings: appSettings, isLoading: settingsLoading, isError: settingsError } = useSettings();
+  const { settings: appSettings, isLoading: settingsLoading, isError: settingsError, hasData: settingsHasData } = useSettings();
+  const settingsHardFailure = settingsError && !settingsHasData;
   const isGstEnabled = appSettings.autoGst;
   const isOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
 
@@ -1058,19 +1059,40 @@ export default function NewSale() {
     }, 100);
   }, []);
 
+  // Settings never having loaded at all (as opposed to a stale-but-cached
+  // value from earlier) usually means the server/DB itself is unreachable --
+  // worth a server-side record even though the outage itself is self-evident.
+  useEffect(() => {
+    if (!settingsHardFailure) return;
+    fetch("/api/client-errors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "settings_never_loaded", path: "/new-sale" }),
+      credentials: "include",
+    }).catch(() => {});
+  }, [settingsHardFailure]);
+
   // Store details (name/address/GST no./DL no.) and GST-enabled status come
   // from Settings and default to blank/true (autoGst) until that fetch
-  // resolves or if it fails outright. Rendering the checkout in either case
-  // risks both a blank invoice header and, worse, creating a sale with the
-  // wrong GST treatment for a user who reaches this page in a fresh session
-  // (no warm settings cache) or after the settings fetch errored out.
-  if (settingsLoading || settingsError) {
+  // resolves for the first time. A stale-but-previously-loaded settings
+  // value is fine to keep using (settingsHasData) -- only block when there
+  // has never been a successful load, since rendering checkout then risks
+  // both a blank invoice header and, worse, creating a sale with the wrong
+  // GST treatment.
+  if (settingsLoading || settingsHardFailure) {
     return (
       <AppLayout title="New Sale / Invoice">
-        <div className="flex items-center justify-center h-[60vh] text-muted-foreground">
-          {settingsError
-            ? "Couldn't load store settings. Please refresh the page."
-            : "Loading store settings..."}
+        <div className="flex flex-col items-center justify-center gap-3 h-[60vh] text-muted-foreground">
+          <p>
+            {settingsHardFailure
+              ? "Couldn't load store settings. The server or database may be unreachable."
+              : "Loading store settings..."}
+          </p>
+          {settingsHardFailure && (
+            <Button onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/settings"] })}>
+              Retry
+            </Button>
+          )}
         </div>
       </AppLayout>
     );

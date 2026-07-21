@@ -2375,6 +2375,22 @@ export async function registerRoutes(
     }
   });
 
+  // No requireAuth/DB access here on purpose: this exists to record the
+  // client hitting a hard "settings never loaded" failure, which can itself
+  // be caused by the DB being unreachable -- the report has to work even
+  // when the thing it's reporting about is what's broken.
+  app.post("/api/client-errors", (req, res) => {
+    const { code, path: clientPath } = req.body || {};
+    console.error("[client.error]", JSON.stringify({
+      code: typeof code === "string" ? code.slice(0, 100) : null,
+      path: typeof clientPath === "string" ? clientPath.slice(0, 200) : null,
+      userId: req.session?.userId || null,
+      userRole: req.session?.userRole || null,
+      time: new Date().toISOString(),
+    }));
+    res.status(204).end();
+  });
+
   // Settings routes
   app.get("/api/settings", requireAuth, async (req, res) => {
     try {

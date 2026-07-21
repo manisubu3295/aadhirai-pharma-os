@@ -51,12 +51,18 @@ interface SettingsContextType {
   settings: AppSettings;
   isLoading: boolean;
   isError: boolean;
+  // True once a settings fetch has ever succeeded in this session, even if a
+  // later background refetch subsequently fails — lets callers tell "stale
+  // but known-good" apart from "never loaded", so they can keep using the
+  // cached settings instead of treating every transient error as fatal.
+  hasData: boolean;
 }
 
 const SettingsContext = createContext<SettingsContextType>({
   settings: defaultSettings,
   isLoading: false,
   isError: false,
+  hasData: false,
 });
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
@@ -98,7 +104,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     : defaultSettings;
 
   return (
-    <SettingsContext.Provider value={{ settings, isLoading, isError }}>
+    <SettingsContext.Provider value={{ settings, isLoading, isError, hasData: rawSettings !== undefined }}>
       {children}
     </SettingsContext.Provider>
   );

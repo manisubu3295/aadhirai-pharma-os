@@ -99,7 +99,7 @@ interface YearlyData {
 
 export default function Collections() {
   const { isPro } = usePlan();
-  const { settings: appSettings, isLoading: settingsLoading, isError: settingsError } = useSettings();
+  const { settings: appSettings, isLoading: settingsLoading, isError: settingsError, hasData: settingsHasData } = useSettings();
   const { toast } = useToast();
   const today = new Date();
   const currentYear = today.getFullYear();
@@ -116,11 +116,20 @@ export default function Collections() {
 
   const handleReprint = async (sale: Sale) => {
     // Store details (name/address/GSTIN/DL no.) default to blank until the
-    // Settings fetch resolves, or stay blank if that fetch errored out — a
-    // reprint triggered in either case would render with a blank header
-    // instead of the store's real details.
-    if (settingsLoading || settingsError) {
+    // Settings fetch resolves for the first time. A stale-but-previously-
+    // loaded value (settingsHasData) is fine to print from; only block when
+    // there's never been a successful load, since that's when the header
+    // would actually come out blank.
+    if (settingsLoading || (settingsError && !settingsHasData)) {
       toast({ title: "Still loading store settings, try again in a moment" });
+      if (settingsError && !settingsHasData) {
+        fetch("/api/client-errors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: "settings_never_loaded", path: "/collections" }),
+          credentials: "include",
+        }).catch(() => {});
+      }
       return;
     }
     try {
