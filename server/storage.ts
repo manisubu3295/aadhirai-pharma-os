@@ -1562,6 +1562,7 @@ export class DatabaseStorage implements IStorage {
             ,m.base_unit
             ,m.pack_size
             ,m.price_per_unit
+            ,m.is_active
           FROM inventory_batches ib
           JOIN medicines m ON m.id = ib.medicine_id
           WHERE COALESCE(ib.available_qty_base, 0) > 0
@@ -1590,7 +1591,8 @@ export class DatabaseStorage implements IStorage {
           b.location_id,
           b.base_unit,
           b.pack_size,
-          b.price_per_unit
+          b.price_per_unit,
+          b.is_active
         FROM batch_rows b
 
         UNION ALL
@@ -1619,7 +1621,8 @@ export class DatabaseStorage implements IStorage {
           m.location_id,
           m.base_unit,
           m.pack_size,
-          m.price_per_unit
+          m.price_per_unit,
+          m.is_active
         FROM medicines m
         CROSS JOIN has_batches
         WHERE (
@@ -1710,6 +1713,7 @@ export class DatabaseStorage implements IStorage {
             ,m.base_unit
             ,m.pack_size
             ,m.price_per_unit
+            ,m.is_active
           FROM inventory_batches ib
           JOIN medicines m ON m.id = ib.medicine_id
         )
@@ -1741,7 +1745,8 @@ export class DatabaseStorage implements IStorage {
           b.location_id,
           b.base_unit,
           b.pack_size,
-          b.price_per_unit
+          b.price_per_unit,
+          b.is_active
         FROM batch_rows b
 
         UNION ALL
@@ -1774,7 +1779,8 @@ export class DatabaseStorage implements IStorage {
           m.location_id,
           m.base_unit,
           m.pack_size,
-          m.price_per_unit
+          m.price_per_unit,
+          m.is_active
         FROM medicines m
         CROSS JOIN has_batches
         WHERE (
