@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useLocation, Link } from "wouter";
 import { useAutoLogout } from "@/hooks/useAutoLogout";
-import { setSessionExpiredHandler } from "@/lib/queryClient";
+import { setSessionExpiredHandler, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigation } from "@/contexts/NavigationContext";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -40,6 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         setUser(data.user);
+        // SettingsProvider's /api/settings query fires on first app mount,
+        // before this resolves — if that request 401'd (no session yet), it
+        // needs a forced refetch now that we know a session exists, or it
+        // stays stuck on its pre-auth error for the rest of the tab's life.
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       } else {
         setUser(null);
       }
@@ -66,6 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         setUser(data.user);
+        // Same reasoning as checkAuth: force a fresh, authenticated settings
+        // fetch right away instead of leaving it stuck on a pre-login 401.
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
         return { success: true };
       } else {
         const error = await response.json();

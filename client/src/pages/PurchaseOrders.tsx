@@ -589,7 +589,7 @@ export default function PurchaseOrders() {
     keywords: [supplier.name, supplier.code || ""],
   }));
 
-  const medicineOptions = medicines.map((medicine) => ({
+  const medicineOptions = medicines.filter((medicine) => medicine.isActive).map((medicine) => ({
     value: medicine.id.toString(),
     label: medicine.name,
     keywords: [medicine.name, medicine.manufacturer || "", medicine.batchNumber || ""],

@@ -20,6 +20,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -32,8 +42,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { NumericInput } from "@/components/ui/numeric-input";
-import { Search, MoreHorizontal, Plus, Edit, Stethoscope, Phone, BadgeCheck, Crown, Lock, FileDown, Upload, Download, IndianRupee } from "lucide-react";
+import { Search, MoreHorizontal, Plus, Edit, Stethoscope, Phone, BadgeCheck, Crown, Lock, FileDown, Upload, Download, IndianRupee, Ban, CheckCircle2, Trash2 } from "lucide-react";
 import { useState, memo } from "react";
 import { ImportDialog } from "@/components/ui/import-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -201,6 +212,7 @@ export default function Doctors() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [payoutDialogOpen, setPayoutDialogOpen] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<DoctorWithBalance | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DoctorWithBalance | null>(null);
   const [formData, setFormData] = useState<DoctorFormData>(emptyForm);
   const [payoutAmount, setPayoutAmount] = useState(0);
   const [payoutNotes, setPayoutNotes] = useState("");
@@ -280,6 +292,43 @@ export default function Doctors() {
     },
     onError: () => {
       toast({ title: "Failed to update doctor", variant: "destructive" });
+    },
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await fetch(`/api/doctors/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (!res.ok) throw new Error("Failed to update doctor");
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors"] });
+      toast({ title: variables.isActive ? "Doctor reactivated" : "Doctor marked inactive" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update doctor", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/doctors/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || "Failed to delete doctor");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors"] });
+      setDeleteTarget(null);
+      toast({ title: "Doctor deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Couldn't delete doctor", description: error.message, variant: "destructive" });
     },
   });
 
@@ -474,6 +523,7 @@ export default function Doctors() {
                     <TableHead>Registration No.</TableHead>
                     <TableHead>Commission</TableHead>
                     <TableHead>Balance Owed</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -523,6 +573,11 @@ export default function Doctors() {
                         ₹{balance.toFixed(2)}
                       </TableCell>
                       <TableCell>
+                        <Badge variant={doctor.isActive ? "default" : "secondary"}>
+                          {doctor.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" data-testid={`button-actions-doctor-${doctor.id}`}>
@@ -538,6 +593,23 @@ export default function Doctors() {
                                 <IndianRupee className="h-4 w-4 mr-2" /> Pay Commission
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuItem
+                              onClick={() => toggleActiveMutation.mutate({ id: doctor.id, isActive: !doctor.isActive })}
+                              data-testid={`menu-toggle-active-doctor-${doctor.id}`}
+                            >
+                              {doctor.isActive ? (
+                                <><Ban className="h-4 w-4 mr-2" /> Mark Inactive</>
+                              ) : (
+                                <><CheckCircle2 className="h-4 w-4 mr-2" /> Reactivate</>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(doctor)}
+                              data-testid={`menu-delete-doctor-${doctor.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -661,6 +733,26 @@ export default function Doctors() {
         }}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["/api/doctors"] })}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Doctor</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Do you want to permanently delete "${deleteTarget?.name || ""}"? This cannot be undone. If this doctor has any sales or commission history, deletion will be blocked — mark them inactive instead.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              data-testid="button-confirm-delete-doctor"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

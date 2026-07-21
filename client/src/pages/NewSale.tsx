@@ -236,7 +236,8 @@ export default function NewSale() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { settings: appSettings, isLoading: settingsLoading } = useSettings();
+  const { settings: appSettings, isLoading: settingsLoading, isError: settingsError, hasData: settingsHasData } = useSettings();
+  const settingsHardFailure = settingsError && !settingsHasData;
   const isGstEnabled = appSettings.autoGst;
   const isOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
 
@@ -453,9 +454,10 @@ export default function NewSale() {
   });
 
   const filteredCustomers = useMemo(() => {
-    if (!customerSearch) return customers;
+    const active = customers.filter((c) => c.isActive);
+    if (!customerSearch) return active;
     const search = customerSearch.toLowerCase();
-    return customers.filter(
+    return active.filter(
       (c) =>
         c.name.toLowerCase().includes(search) ||
         (c.phone && c.phone.includes(search))
@@ -473,11 +475,12 @@ export default function NewSale() {
     (a.expiryDate || "9999-99-99").localeCompare(b.expiryDate || "9999-99-99");
 
   const filteredMedicines = useMemo(() => {
-    if (!medicineSearch) return medicines.filter((m) => getAvailableQty(m) > 0).sort(byExpirySoonestFirst);
+    if (!medicineSearch) return medicines.filter((m) => m.isActive && getAvailableQty(m) > 0).sort(byExpirySoonestFirst);
     const search = medicineSearch.toLowerCase();
     return medicines
       .filter(
         (m) =>
+          m.isActive &&
           getAvailableQty(m) > 0 &&
           (m.name.toLowerCase().includes(search) ||
             ((m as any).genericName && String((m as any).genericName).toLowerCase().includes(search)) ||
@@ -1058,16 +1061,40 @@ export default function NewSale() {
     }, 100);
   }, []);
 
+  // Settings never having loaded at all (as opposed to a stale-but-cached
+  // value from earlier) usually means the server/DB itself is unreachable --
+  // worth a server-side record even though the outage itself is self-evident.
+  useEffect(() => {
+    if (!settingsHardFailure) return;
+    fetch("/api/client-errors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "settings_never_loaded", path: "/new-sale" }),
+      credentials: "include",
+    }).catch(() => {});
+  }, [settingsHardFailure]);
+
   // Store details (name/address/GST no./DL no.) and GST-enabled status come
-  // from Settings and default to blank/false until that fetch resolves.
-  // Rendering the checkout before it resolves risks both a blank invoice
-  // header and, worse, creating a sale with the wrong GST treatment for a
-  // user who reaches this page in a fresh session (no warm settings cache).
-  if (settingsLoading) {
+  // from Settings and default to blank/true (autoGst) until that fetch
+  // resolves for the first time. A stale-but-previously-loaded settings
+  // value is fine to keep using (settingsHasData) -- only block when there
+  // has never been a successful load, since rendering checkout then risks
+  // both a blank invoice header and, worse, creating a sale with the wrong
+  // GST treatment.
+  if (settingsLoading || settingsHardFailure) {
     return (
       <AppLayout title="New Sale / Invoice">
-        <div className="flex items-center justify-center h-[60vh] text-muted-foreground">
-          Loading store settings...
+        <div className="flex flex-col items-center justify-center gap-3 h-[60vh] text-muted-foreground">
+          <p>
+            {settingsHardFailure
+              ? "Couldn't load store settings. The server or database may be unreachable."
+              : "Loading store settings..."}
+          </p>
+          {settingsHardFailure && (
+            <Button onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/settings"] })}>
+              Retry
+            </Button>
+          )}
         </div>
       </AppLayout>
     );
@@ -1255,7 +1282,7 @@ export default function NewSale() {
                         <CommandList>
                           <CommandEmpty>No doctor found.</CommandEmpty>
                           <CommandGroup>
-                            {doctors.map((doctor) => (
+                            {doctors.filter((doctor) => doctor.isActive).map((doctor) => (
                               <CommandItem
                                 key={doctor.id}
                                 value={doctor.name}

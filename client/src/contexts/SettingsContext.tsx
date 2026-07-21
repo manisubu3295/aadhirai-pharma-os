@@ -1,5 +1,6 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getQueryFn } from "@/lib/queryClient";
 
 export interface AppSettings {
   storeName: string;
@@ -49,22 +50,34 @@ const defaultSettings: AppSettings = {
 interface SettingsContextType {
   settings: AppSettings;
   isLoading: boolean;
+  isError: boolean;
+  // True once a settings fetch has ever succeeded in this session, even if a
+  // later background refetch subsequently fails — lets callers tell "stale
+  // but known-good" apart from "never loaded", so they can keep using the
+  // cached settings instead of treating every transient error as fatal.
+  hasData: boolean;
 }
 
 const SettingsContext = createContext<SettingsContextType>({
   settings: defaultSettings,
   isLoading: false,
+  isError: false,
+  hasData: false,
 });
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const { data: rawSettings, isLoading } = useQuery<Record<string, string>>({
+  // Uses the shared default queryFn (not a hand-rolled fetch) so a real
+  // session expiry is caught by throwIfResNotOk/sessionExpiredHandler and
+  // redirects to login, instead of silently settling into an error state
+  // that leaves every setting (including autoGst) stuck on its default.
+  // retry is enabled here (unlike the app-wide default) so a one-off
+  // transient failure self-heals instead of staying stuck for the rest of
+  // the tab's session until someone happens to re-save Settings.
+  const { data: rawSettings, isLoading, isError } = useQuery<Record<string, string>>({
     queryKey: ["/api/settings"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error("Failed to fetch settings");
-      return res.json();
-    },
+    queryFn: getQueryFn({ on401: "throw" }),
     staleTime: 1000 * 60 * 5,
+    retry: 2,
   });
 
   const settings: AppSettings = rawSettings
@@ -91,7 +104,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     : defaultSettings;
 
   return (
-    <SettingsContext.Provider value={{ settings, isLoading }}>
+    <SettingsContext.Provider value={{ settings, isLoading, isError, hasData: rawSettings !== undefined }}>
       {children}
     </SettingsContext.Provider>
   );

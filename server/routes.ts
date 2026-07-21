@@ -935,6 +935,11 @@ export async function registerRoutes(
           error: "Cannot delete a medicine with existing stock batches — reduce its stock via Stock Adjustments first.",
         });
       }
+      if (await storage.medicineHasHistory(id)) {
+        return res.status(400).json({
+          error: "Cannot delete a medicine with existing sales, purchase, or return history — mark it inactive instead.",
+        });
+      }
       const deleted = await storage.deleteMedicine(id);
       if (!deleted) {
         return res.status(404).json({ error: "Medicine not found" });
@@ -1108,6 +1113,11 @@ export async function registerRoutes(
   app.delete("/api/customers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (await storage.customerHasHistory(id)) {
+        return res.status(400).json({
+          error: "Cannot delete a customer with sales or payment history — mark them inactive instead.",
+        });
+      }
       const deleted = await storage.deleteCustomer(id);
       if (!deleted) {
         return res.status(404).json({ error: "Customer not found" });
@@ -1194,6 +1204,11 @@ export async function registerRoutes(
   app.delete("/api/doctors/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (await storage.doctorHasHistory(id)) {
+        return res.status(400).json({
+          error: "Cannot delete a doctor with sales or commission history — mark them inactive instead.",
+        });
+      }
       const deleted = await storage.deleteDoctor(id);
       if (!deleted) {
         return res.status(404).json({ error: "Doctor not found" });
@@ -2373,6 +2388,22 @@ export async function registerRoutes(
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       res.status(500).json({ error: "Failed to create sales return", details: errorMessage });
     }
+  });
+
+  // No requireAuth/DB access here on purpose: this exists to record the
+  // client hitting a hard "settings never loaded" failure, which can itself
+  // be caused by the DB being unreachable -- the report has to work even
+  // when the thing it's reporting about is what's broken.
+  app.post("/api/client-errors", (req, res) => {
+    const { code, path: clientPath } = req.body || {};
+    console.error("[client.error]", JSON.stringify({
+      code: typeof code === "string" ? code.slice(0, 100) : null,
+      path: typeof clientPath === "string" ? clientPath.slice(0, 200) : null,
+      userId: req.session?.userId || null,
+      userRole: req.session?.userRole || null,
+      time: new Date().toISOString(),
+    }));
+    res.status(204).end();
   });
 
   // Settings routes

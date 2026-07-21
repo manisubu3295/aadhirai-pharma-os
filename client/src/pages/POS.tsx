@@ -48,9 +48,10 @@ export default function POS() {
   const tax = subtotal * 0.08;
   const total = subtotal + tax;
 
-  const filteredItems = medicines.filter((item: any) => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    String(item.id).includes(searchTerm)
+  const filteredItems = medicines.filter((item: any) =>
+    item.isActive &&
+    (item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    String(item.id).includes(searchTerm))
   );
 
   return (
